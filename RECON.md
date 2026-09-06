@@ -2096,3 +2096,58 @@ first CI run: floor (3.10) · floor (3.12) · gate — success
 PyPI did not run: no token on this box (no `~/.pypirc`, no `TWINE_*`, no keyring backend). The
 wheel and the sdist are built and checked; the publish is one command with a credential, and it
 is issue 1 on the public board.
+
+## 40 · DRAW — the codebase drawn mechanically from the store (2026-09-06 · graphyos issue 2)
+
+`graphy draw` is the visual half of the product: the pillars, the unit map, one arm of the
+partition, or a symbol's neighbourhood, computed from the compiled store (a query — `owned`,
+`edges`, `neighbours` — never a shard load), laid out by the sugiyama engine (cycle removal →
+layering → crossing minimization → coordinates), and rendered two ways from the same routes:
+ASCII on a wcwidth canvas for the terminal, and one self-contained two-theme HTML+SVG page for a
+human, with click-focus reachability, zoom and pan, no library, no external resource, no brand.
+`--check` is the done-token over a written page (one svg with a viewBox, both themes, nothing
+fetched, no overlapping cards, no colliding labels) and `-o page.html` runs it on the way out.
+`--atlas` writes every picture with a receipt; the four rebuilds land it at `substrate/atlas/`.
+The MCP server gained `draw`, so a model hands the human the picture with no work of its own
+(the demo enumerates the tool list, so it carries it). The engine's `sugiyama.py` gained the
+host's html emitter and check, ported with a neutral skin; its layout core was already the same.
+The rule is the docstring of `engine/graphy/draw.py`; the floor is `tests/test_draw.py`.
+
+```bash
+cd engine; T=tenants/fastapi
+python3 -m graphy draw --tenant $T/tenant.json --tenant-id fastapi --corpus fastapi --pillars --partition $T/partition.json --lr
+```
+```text
+  fastapi · the pillars   5 layers · 5 nodes · 10 edges · 0 unconnected · [LR]
+
+┌────────────────────┐┌─────────────────────────────────────────────────────────────────────────────┐    ┌────────────────┐
+│ OPENAPI (39→ ·→24) ├┤                                                                             └╪╪┌◀│ EDGE (7→ ·→17) │
+└────────────────────┘├──────────────────────┐  ┌─────────────────────────┐┌─────────────────────────╪┘│ └────────────────┘
+                      │                      └┌▶│ DEPENDENCIES (68→ ·→23) ├┤                         │ │
+                      ├──────────────────────┐│ └─────────────────────────┘│   ┌───────────────────┐ │ │
+                      │                      ││                            └┌┌◀│ COMPAT (5→ ·→132) ├─┘ │
+                      │ ┌───────────────────┐└╪─────────────────────────────┘│ └───────────────────┘   │
+                      └◀│ ROUTING (84→ ·→7) ├─┤                              │                         │
+                        └───────────────────┘ ├────────────────────────────┌─╪─────────────────────────┘
+                                              │                            │
+                                              └────────────────────────────┘
+```
+The numbers on each pillar are its cross-arm edges out and in; COMPAT is the floor everything
+reaches (132 in, 5 out), ROUTING orchestrates (84 out). The same command over hono and express
+draws their pillars the same way — the language is not in the drawing.
+
+```bash
+python3 -m graphy draw … --arm ROUTING --partition $T/partition.json --lr --min-weight 2        # routing · applications · sse and the arms they reach, 7 nodes
+python3 -m graphy draw … --symbol get_request_handler --radius 1 --lr                          # 23 nodes: the callers on the left, the callees on the right, each ·owner
+python3 -m graphy draw … --corpus fastapi --lr --min-weight 3 --emit html --interactive -o page.html
+#   DRAW OK: 13 node(s) · 23 edge(s) · 60 under the weight floor -> page.html · CHECK GREEN       21 KB, no private token
+bash $T/rebuild.sh   # … ATLAS OK: 6 picture(s) × ascii+html -> $T/substrate/atlas · FASTAPI_TENANT_OK
+```
+
+| check | result |
+|---|---|
+| the pillars drawn | FastAPI's four (and EDGE) from the store; hono's five; express's four |
+| the html page | CHECK GREEN, 21 KB, self-contained, no private token |
+| the atlas in every rebuild | fastapi 6 · sqlalchemy 6 · hono 7 · express 6 pictures, ascii+html, receipted |
+| the MCP tool | `draw` answers with the ASCII and its read count |
+| the floor | `tests/test_draw.py` 3 passed; `test_sugiyama.py` and `test_mcp.py` green |

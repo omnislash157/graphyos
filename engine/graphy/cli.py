@@ -387,6 +387,82 @@ def _cmd_farm(args: argparse.Namespace) -> int:
     return 0 if t["minted"] or not t["refused"] else 1
 
 
+def _cmd_draw(args: argparse.Namespace) -> int:
+    from graphy import draw as draw_lane
+    from graphy import sugiyama as sugi
+    if args.check:
+        red = sugi.check_artifact(args.check)
+        for r in red:
+            print(f"CHECK RED {r}")
+        print("CHECK GREEN" if not red else f"CHECK RED: {len(red)} reason(s) over {args.check}")
+        return 0 if not red else 1
+    if not args.tenant or not args.tenant_id:
+        print("DRAW REFUSED: --tenant and --tenant-id are required — graphy resolves identity only through a declared Tenant",
+              file=sys.stderr)
+        return 2
+    try:
+        tenant = _load_tenant(args.tenant)
+    except TenantError as exc:
+        print(f"DRAW REFUSED: {exc}", file=sys.stderr)
+        return 2
+    roster = _roster(tenant)
+    corpus = args.corpus
+    if corpus is None and not args.symbol:
+        if len(roster) != 1:
+            print(f"DRAW REFUSED: the tenant holds {len(roster)} corpora ({', '.join(roster)}) — name one with --corpus; "
+                  "a door never guesses", file=sys.stderr)
+            return 2
+        corpus = roster[0]
+    try:
+        store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
+    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+        print(_flatten(f"DRAW REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        return 2
+    counted = traversal.Counting(store)
+    counted.find = store.find
+    counted.owned, counted.edges = store.owned, store.edges
+    try:
+        if args.atlas:
+            if not args.partition:
+                print("DRAW REFUSED: --atlas needs --partition — the arms are the partition's groups", file=sys.stderr)
+                return 2
+            cut = fanout.load_partition(args.partition)
+            r = draw_lane.atlas(counted, corpus, cut, args.atlas, lr=args.lr, min_weight=args.min_weight)
+            print(f"ATLAS OK: {len(r['pictures'])} picture(s) × ascii+html -> {args.atlas} (generation {r['generation']})")
+            return 0
+        if args.symbol:
+            seed = doors.resolve(counted, args.symbol)
+            pic = draw_lane.neighbourhood(counted, seed, radius=args.radius, max_nodes=args.max_nodes)
+        elif args.arm:
+            if not args.partition:
+                print("DRAW REFUSED: --arm needs --partition", file=sys.stderr)
+                return 2
+            pic = draw_lane.arm(counted, corpus, fanout.load_partition(args.partition), args.arm, min_weight=args.min_weight)
+        elif args.pillars:
+            if not args.partition:
+                print("DRAW REFUSED: --pillars needs --partition", file=sys.stderr)
+                return 2
+            pic = draw_lane.pillars(counted, corpus, fanout.load_partition(args.partition), min_weight=args.min_weight)
+        else:
+            pic = draw_lane.units(counted, corpus, depth=args.depth, min_weight=args.min_weight)
+        text = draw_lane.render(pic, emit=args.emit, lr=args.lr, color=(args.emit == "ascii" and not args.out and args.color),
+                                interactive=args.interactive, title=args.title)
+    except (draw_lane.DrawError, doors.DoorError, fanout.FanoutError) as exc:
+        print(f"DRAW UNANSWERABLE: {exc}", file=sys.stderr)
+        return 1
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        line = f"DRAW OK: {pic.summary()} -> {args.out}"
+        if args.emit == "html":
+            red = sugi.check_artifact(args.out)
+            line += " · CHECK " + ("GREEN" if not red else "RED " + "; ".join(red))
+        print(line)
+        return 0 if not (args.emit == "html" and red) else 1
+    print(text)
+    print(f"DRAW: {pic.summary()} reads={counted.reads} generation={store.generation()}")
+    return 0
+
+
 def _cmd_door(args: argparse.Namespace) -> int:
     verb = args.door.upper()
     if not args.tenant or not args.tenant_id:
@@ -1216,7 +1292,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     "The exit code is the contract: 0 healthy, 1 an audit verdict "
                     "that cannot prove health, 2 the command never ran.",
     )
-    sub = parser.add_subparsers(dest="verb", metavar="{eat,init,smash,push,pull,index,converge,build,container,estate,walk,bridge,arms,farm,descend,blast,explain,pillars,mcp,traversals,shell,check,fanout}")
+    sub = parser.add_subparsers(dest="verb", metavar="{eat,init,smash,push,pull,index,converge,build,container,estate,walk,bridge,arms,farm,draw,descend,blast,explain,pillars,mcp,traversals,shell,check,fanout}")
 
     p_eat = sub.add_parser(
         "eat", help="the bolt-on: mint a repo's package and its import ring into <repo>/.graphy, "
@@ -1365,6 +1441,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p_farm.add_argument("--keep-venv", action="store_true", help="keep each job's venv (default: deleted after the mint)")
     p_farm.add_argument("--force", action="store_true", help="re-mint names the index already holds")
     p_farm.set_defaults(handler=_cmd_farm)
+
+    p_draw = sub.add_parser("draw", help="draw the codebase from the store: the unit map (default), one arm of a partition, or a "
+                                         "symbol's neighbourhood — ASCII for the terminal, a self-contained HTML+SVG page for a human")
+    p_draw.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
+    p_draw.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
+    p_draw.add_argument("--corpus", default=None, help="which corpus to draw (required when the tenant holds more than one)")
+    p_draw.add_argument("--depth", type=int, default=2, help="dotted segments that make a unit (default 2)")
+    p_draw.add_argument("--min-weight", type=int, default=1, help="drop unit edges lighter than this (default 1: every edge)")
+    p_draw.add_argument("--arm", default=None, help="one arm of --partition, module to module")
+    p_draw.add_argument("--pillars", action="store_true", help="the partition's groups as nodes with the cross-arm edge counts")
+    p_draw.add_argument("--partition", default=None, help="the partition file (--arm, --atlas)")
+    p_draw.add_argument("--symbol", default=None, help="a symbol's neighbourhood: an exact id or its dotted tail")
+    p_draw.add_argument("--radius", type=int, default=2, help="hops either way around --symbol (default 2)")
+    p_draw.add_argument("--max-nodes", type=int, default=60, help="the neighbourhood's node budget (default 60)")
+    p_draw.add_argument("--atlas", default=None, metavar="DIR", help="one drawing per arm plus the unit map, ascii and html, with a receipt")
+    p_draw.add_argument("--lr", action="store_true", help="left-to-right flow (trees and wide fans read better)")
+    p_draw.add_argument("--emit", choices=("ascii", "html", "json"), default="ascii")
+    p_draw.add_argument("--interactive", action="store_true", help="html: click-focus reachability, zoom and pan")
+    p_draw.add_argument("--color", action="store_true", help="ascii to a terminal: ANSI color")
+    p_draw.add_argument("--title", default=None)
+    p_draw.add_argument("-o", "--out", default=None, help="write the drawing here (html is checked on the way out)")
+    p_draw.add_argument("--check", default=None, metavar="FILE", help="verify a written html page and exit")
+    p_draw.add_argument("--on-stale", default="refuse")
+    p_draw.set_defaults(handler=_cmd_draw)
 
     p_trav = sub.add_parser(
         "traversals", help="the traversal store: list the stored walks, or --replay past generations against the live store")

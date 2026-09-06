@@ -128,6 +128,9 @@ PY
 # verified against the ring-minted store only, and the placement says so.
 if [ -f "$SUB/ring.json" ] || [ -n "$INDEX" ]; then
     "$PY" -m graphy arms --tenant "$DESC" --tenant-id fastapi --corpus fastapi --partition "$HERE/partition.json" --dir "$HERE/arms" --verify
+# The atlas: the pillars, the unit map and one drawing per arm, ascii and html, computed from the
+# store — a build product under the substrate with a receipt.
+"$PY" -m graphy draw --tenant "$DESC" --tenant-id fastapi --corpus fastapi --partition "$HERE/partition.json" --atlas "$SUB/atlas" --lr --min-weight 2
 else
     echo "ARMS SKIPPED: the fixture placed alone carries no ring, so the joins out are unresolved — verify with GRAPHY_CORPUS_SITE_PACKAGES or GRAPHY_SHARD_INDEX set"
 fi

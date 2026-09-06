@@ -123,6 +123,9 @@ PY
 "$PY" -m graphy fanout --graph-dir "$SUB/hono_graph" --out "$SUB/fanout" --partition "$HERE/partition.json"
 "$PY" -m graphy fanout --verify --out "$SUB/fanout"
 "$PY" -m graphy arms --tenant "$DESC" --tenant-id hono --corpus hono --partition "$HERE/partition.json" --dir "$HERE/arms" --verify
+# The atlas: the pillars, the unit map and one drawing per arm, ascii and html, computed from the
+# store — a build product under the substrate with a receipt.
+"$PY" -m graphy draw --tenant "$DESC" --tenant-id hono --corpus hono --partition "$HERE/partition.json" --atlas "$SUB/atlas" --lr --min-weight 2
 "$PY" -m graphy pillars --tenant "$DESC" --tenant-id hono --corpus hono --write "$SUB/pillars.json" > "$SUB/pillars.txt"
 tail -n 2 "$SUB/pillars.txt"
 echo "HONO_TENANT_OK"

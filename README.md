@@ -41,7 +41,7 @@ ANTHROPIC_API_KEY=… .venv/bin/python engine/tenants/fastapi/demo.py      # or 
 
 Point any MCP client at the same server: Claude Code reads it from this repo's `.mcp.json`;
 anywhere else, `bash engine/tenants/fastapi/mcp.sh` on stdio, or `graphy mcp --tenant … --tenant-id …`
-over any eaten repo. Five tools: `hunt` · `descend` · `blast` · `walk` · `explain`.
+over any eaten repo. Five tools: `hunt` · `descend` · `blast` · `walk` · `draw` · `explain`.
 
 ## Install
 
@@ -145,8 +145,9 @@ literal it would need and the reason no node carries it. No name match is ever a
 | the seam between shards, and the resolver | `graphy converge --tenant … --tenant-id … [--resolve]` |
 | the parquet: fresh or stale, by digest | `graphy container --tenant … --tenant-id … [--emit]` |
 | the stored walks; the hops a new generation broke | `graphy traversals --tenant … --tenant-id … [--replay]` |
+| draw it for the human: the pillars, the module map, one arm, a symbol's neighbourhood — computed from the store, ASCII in the terminal or one self-contained HTML+SVG page, no drawing by hand | `graphy draw --tenant … --tenant-id … --pillars --partition <json> --lr` · `--symbol get_request_handler --radius 2 --emit html --interactive -o page.html` — the MCP server has `draw` too |
 | the doors: what a symbol calls down to the primitives, who depends on it, what explains it | `graphy descend\|blast\|explain <symbol> --tenant … --tenant-id …` — `descend get_request_handler` on the FastAPI tenant crosses fastapi → starlette → anyio |
-| the MCP server over an eaten repo, for Claude Code / Cursor / any client | `graphy mcp --tenant … --tenant-id …` on stdio — `hunt` · `descend` · `blast` · `walk` · `explain` |
+| the MCP server over an eaten repo, for Claude Code / Cursor / any client | `graphy mcp --tenant … --tenant-id …` on stdio — `hunt` · `descend` · `blast` · `walk` · `draw` · `explain` |
 | the hooks and the gate, bolted onto your repo | `graphy shell install --repo <abs>` — [`engine/graphy/shell/README.md`](engine/graphy/shell/README.md) |
 | the pillars proposed from the walk, with the evidence per unit; a partition file the fan-out takes | `graphy pillars --tenant <descriptor> --tenant-id <name> [--corpus <slug>] [--write <partition.json>] [--against <partition.json>]` |
 | the fan-out a cold agent reads; one package cut into named pillars | `graphy fanout --graph-dir <shard> --out <dir> [--depth N \| --partition <json>]` · `--verify` |

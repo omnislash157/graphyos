@@ -864,3 +864,372 @@ def from_dsl(text: str):
 
 
 
+
+
+# ── the html backend: the computed layout as one self-contained two-theme HTML+SVG page ────────
+# No brand, no external resource: system fonts, a neutral light palette on :root, the dark
+# palette under prefers-color-scheme and again under [data-theme="dark"], so the page reads in
+# either theme with nothing fetched. check_artifact() is the done-token over a written page.
+
+_HTML_CW = 7.0
+_HTML_CH = 14.0
+_HTML_PAD = 40.0
+
+_TOKEN_CSS = """    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --paper: #FAFAF7; --card: #FFFFFF; --ink: #1F2933; --muted: #52606D; --soft: #9AA5B1;
+      --accent: #2F6F4E; --link: #1F5FA8; --head-wash: rgba(31,41,51,0.05); --card-rule: rgba(31,41,51,0.22);
+      --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --paper: #1E2028; --card: #262A34; --ink: #E0E0E0; --muted: #94A3B8; --soft: #808080;
+        --accent: #7DD3A0; --link: #7CC4FA; --head-wash: rgba(224,224,224,0.05); --card-rule: rgba(224,224,224,0.22);
+      }
+    }
+    :root[data-theme="dark"] {
+      --paper: #1E2028; --card: #262A34; --ink: #E0E0E0; --muted: #94A3B8; --soft: #808080;
+      --accent: #7DD3A0; --link: #7CC4FA; --head-wash: rgba(224,224,224,0.05); --card-rule: rgba(224,224,224,0.22);
+    }
+"""
+
+_HTML_CSS = """
+    body { font-family: var(--font-sans); background: var(--paper); color: var(--ink); min-height: 100vh;
+           display: flex; align-items: flex-start; justify-content: center;
+           padding: clamp(1.25rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem); }
+    .frame { max-width: 1120px; width: 100%; }
+    .eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em;
+               text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; }
+    h1 { font-size: clamp(1.4rem, 2.2vw + 0.75rem, 1.9rem); font-weight: 500; letter-spacing: -0.02em;
+         line-height: 1.15; color: var(--ink); margin-bottom: 0.5rem; }
+    .plate { overflow-x: auto; padding-bottom: 0.5rem; }
+    svg { width: 100%; min-width: 640px; display: block; }
+    .bg { fill: var(--paper); }
+    .card { fill: var(--card); stroke: var(--ink); }
+    .t-ink { fill: var(--ink); }
+    .mk-muted { fill: var(--muted); }
+    .mk-link { fill: var(--link); }
+    .rel { stroke: var(--muted); fill: none; }
+    .rev { stroke: var(--link); stroke-dasharray: 5,4; fill: none; }
+    .up { stroke: var(--accent); stroke-width: 1.6; }
+    .down { stroke: var(--link); stroke-width: 1.6; }
+    .dim { opacity: 0.22; }
+    .node rect { fill: var(--card); stroke: var(--ink); }
+    .srcb rect { fill: var(--head-wash); stroke: var(--card-rule); }
+    .srcb text { fill: var(--muted); font-family: var(--font-mono); font-size: 8px; text-anchor: middle; }
+"""
+
+_SCRIPT_TEMPLATE = """<script>
+(function(){
+  var svg = document.querySelector('svg[data-interactive="1"]');
+  if (!svg) return;
+  var ADJ = __ADJ__;
+  var vb = {x: 0, y: 0, w: __VBW__, h: __VBH__};
+  function applyVB(){ svg.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h); }
+  svg.addEventListener('wheel', function(e){
+    e.preventDefault();
+    var r = svg.getBoundingClientRect();
+    var fx = (e.clientX - r.left) / r.width * vb.w + vb.x;
+    var fy = (e.clientY - r.top) / r.height * vb.h + vb.y;
+    var f = e.deltaY < 0 ? 0.85 : 1.18;
+    vb.w *= f; vb.h *= f; vb.x = fx - (fx - vb.x) * f; vb.y = fy - (fy - vb.y) * f;
+    applyVB();
+  }, {passive: false});
+  var drag = null;
+  svg.addEventListener('mousedown', function(e){ drag = {x: e.clientX, y: e.clientY, vx: vb.x, vy: vb.y}; });
+  window.addEventListener('mousemove', function(e){
+    if (!drag) return;
+    var r = svg.getBoundingClientRect();
+    vb.x = drag.vx - (e.clientX - drag.x) / r.width * vb.w;
+    vb.y = drag.vy - (e.clientY - drag.y) / r.height * vb.h;
+    applyVB();
+  });
+  window.addEventListener('mouseup', function(){ drag = null; });
+  function clearFocus(){
+    svg.removeAttribute('data-focus');
+    var all = svg.querySelectorAll('.up, .down, .dim');
+    for (var i = 0; i < all.length; i++) all[i].classList.remove('up', 'down', 'dim');
+  }
+  function reach(id, key){
+    var out = {}; out[id] = 1; var seen = {}; seen[id] = 1; var stack = [id];
+    while (stack.length) {
+      var cur = stack.pop(); var nb = (ADJ[cur] && ADJ[cur][key]) || [];
+      for (var i = 0; i < nb.length; i++) if (!seen[nb[i]]) { seen[nb[i]] = 1; out[nb[i]] = 1; stack.push(nb[i]); }
+    }
+    return out;
+  }
+  svg.addEventListener('click', function(e){
+    var g = e.target.closest ? e.target.closest('g.node') : null;
+    if (!g) return;
+    var id = g.getAttribute('data-id');
+    if (!id) return;
+    clearFocus();
+    svg.setAttribute('data-focus', id);
+    var up = reach(id, 'in'), down = reach(id, 'out');
+    var paths = svg.querySelectorAll('path[data-from]');
+    for (var k = 0; k < paths.length; k++) {
+      var p = paths[k]; var a = p.getAttribute('data-from'), b = p.getAttribute('data-to');
+      if (up[a] && up[b]) { p.classList.add('up'); continue; }
+      if (down[a] && down[b]) { p.classList.add('down'); }
+    }
+    var nodes = svg.querySelectorAll('g.node');
+    for (var m = 0; m < nodes.length; m++) {
+      var nid = nodes[m].getAttribute('data-id');
+      if (nid !== id && !up[nid] && !down[nid]) nodes[m].classList.add('dim');
+    }
+  });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') clearFocus(); });
+})();
+</script>
+"""
+
+
+def _esc(s) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _edge_from_to(lo: Layout) -> dict:
+    m = {}
+    eid = 0
+    for u in lo.adj:
+        if lo.is_dummy(u):
+            continue
+        for v in sorted(lo.adj[u], key=str):
+            cur = v
+            guard = 0
+            while lo.is_dummy(cur) and guard < 100_000:
+                cur = next(iter(lo.adj.get(cur, ())), None)
+                if cur is None:
+                    break
+                guard += 1
+            eid += 1
+            rev = (u, cur) in lo.reversed_edges or (cur, u) in lo.reversed_edges
+            m[eid] = (cur, u) if rev else (u, cur)
+    return m
+
+
+def _adj_json(lo: Layout) -> str:
+    adj = {}
+    for (u, v) in lo.edges:
+        adj.setdefault(u, {}).setdefault("out", []).append(v)
+        adj.setdefault(v, {}).setdefault("in", []).append(u)
+    return json.dumps(adj).replace("<", "\\u003c")
+
+
+def _beacon(n, node_meta, x, y, w, h) -> str:
+    """The file:line a node came from, as a small badge inside its card — from the record the
+    store carries, never a path resolved on this machine."""
+    m = node_meta.get(n)
+    if not m or not m.get("file"):
+        return ""
+    f = str(m["file"])
+    basename = f.rsplit("/", 1)[-1]
+    tip = f + (f":{m['line']}" if m.get("line") is not None else "")
+    max_chars = max(4, int((w - 14.0) / 6.0))
+    if len(basename) > max_chars:
+        basename = basename[: max_chars - 1] + "…"
+    bw = len(basename) * 6.0 + 10.0
+    bx = x + w - bw - 4.0
+    by = y + 3.0
+    return (f'        <g class="srcb src-beacon">'
+            f'<rect x="{bx:g}" y="{by:g}" width="{bw:g}" height="12" rx="2"/>'
+            f'<text x="{bx + bw / 2.0:g}" y="{by + 9:g}">{_esc(basename)}</text>'
+            f'<title>{_esc(tip)}</title></g>')
+
+
+def _dedupe(pts):
+    out = []
+    for p in pts:
+        if not out or out[-1] != p:
+            out.append(p)
+    return out
+
+
+def _edge_path(pts, rev, eid, from_to) -> str:
+    if len(pts) < 2:
+        return ""
+    d = "M " + " L ".join(f"{x:g},{y:g}" for (x, y) in pts)
+    cls = "rev" if rev else "rel"
+    mk = "url(#arrow-rev)" if rev else "url(#arrow)"
+    attrs = ""
+    if eid is not None and eid in from_to:
+        f, t = from_to[eid]
+        attrs = f' data-from="{_esc(f)}" data-to="{_esc(t)}"'
+    return (f'      <path d="{d}" class="{cls}" stroke-width="1" '
+            f'marker-end="{mk}"{attrs}/>')
+
+
+def emit_html(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bool = False,
+              node_meta: dict | None = None, eyebrow: str = "COMPUTED LAYOUT · graphy draw") -> str:
+    """The computed layout as one self-contained HTML+SVG page: the same routes the ASCII
+    renderer draws, as paths; every node a card with its file:line badge; `interactive` adds
+    click-focus reachability (up the callers, down the callees) with zoom and pan, no library."""
+    tb = orient.upper() != "LR"
+    node_meta = dict(node_meta or {})
+    pl = _placed(lo, orient)
+    cpos, layer_of = pl.cpos, lo.layer_of
+    layer_along, layer_thick = pl.layer_along, pl.layer_thick
+
+    def along_thick(n):
+        return 1 if lo.is_dummy(n) else (BOX_H if tb else lo.width[n])
+
+    def edge_pt(along, cross):
+        if tb:
+            return (_HTML_PAD + cross * _HTML_CW, _HTML_PAD + along * _HTML_CH)
+        return (_HTML_PAD + along * _HTML_CW, _HTML_PAD + cross * _HTML_CH)
+
+    def bus_pt(along, cross):
+        x, y = edge_pt(along, cross)
+        return (x, y + _HTML_CH / 2.0) if tb else (x + _HTML_CW / 2.0, y)
+
+    def exit_pt(n, cross_center):
+        L = layer_of[n]
+        return edge_pt(layer_along[L] + along_thick(n), cross_center)
+
+    def entry_pt(seg):
+        g = seg["gap"]
+        if seg["b_dummy"]:
+            return edge_pt(layer_along[g + 1] + layer_thick[g + 1] / 2.0, seg["cb"] + 0.5)
+        return edge_pt(layer_along[g + 1], seg["cb"] + 0.5)
+
+    from_to = _edge_from_to(lo)
+    edge_lines = []
+    for r in pl.routes:
+        g = r["gap"]
+        bus_along = layer_along[g] + layer_thick[g] + (r["chan"] or 0)
+        if r["kind"] == "straight":
+            s = r["segs"][0]
+            edge_lines.append(_edge_path([exit_pt(s["src"], s["ca"] + 0.5), entry_pt(s)], s["rev"], s["eid"], from_to))
+        elif r["kind"] == "jog":
+            s = r["segs"][0]
+            edge_lines.append(_edge_path(_dedupe([exit_pt(s["src"], s["ca"] + 0.5), bus_pt(bus_along, s["ca"] + 0.5),
+                                                  bus_pt(bus_along, s["cb"] + 0.5), entry_pt(s)]), s["rev"], s["eid"], from_to))
+        else:
+            segs = r["segs"]
+            cc = [s["cb"] + 0.5 for s in segs] + [segs[0]["ca"] + 0.5]
+            edge_lines.append(_edge_path([exit_pt(segs[0]["src"], segs[0]["ca"] + 0.5), bus_pt(bus_along, segs[0]["ca"] + 0.5)], False, None, from_to))
+            edge_lines.append(_edge_path([bus_pt(bus_along, min(cc)), bus_pt(bus_along, max(cc))], False, None, from_to))
+            for s in segs:
+                edge_lines.append(_edge_path([bus_pt(bus_along, s["cb"] + 0.5), entry_pt(s)], s["rev"], s["eid"], from_to))
+
+    def card(n, x, y, w, h, label):
+        return [f'      <g class="node" data-id="{_esc(n)}">',
+                f'        <rect x="{x}" y="{y}" width="{w}" height="{h}" class="card" rx="3" stroke-width="1"/>',
+                f'        <text x="{x + w / 2.0:g}" y="{y + h / 2.0 + 4.5:g}" class="t-ink" font-size="12" '
+                f'font-family="var(--font-sans)" text-anchor="middle">{_esc(label)}</text>']
+
+    node_lines = []
+    for n in sorted((m for m in layer_of if not lo.is_dummy(m)), key=str):
+        L = layer_of[n]
+        x = round(_HTML_PAD + (cpos[n] if tb else layer_along[L]) * _HTML_CW)
+        y = round(_HTML_PAD + (layer_along[L] if tb else cpos[n]) * _HTML_CH)
+        w = round(lo.width[n] * _HTML_CW)
+        h = round(BOX_H * _HTML_CH)
+        node_lines += card(n, x, y, w, h, lo.labels.get(n, str(n)))
+        beacon = _beacon(n, node_meta, x, y, w, h)
+        if beacon:
+            node_lines.append(beacon)
+        node_lines.append('      </g>')
+
+    iso_lines = []
+    iso_last_row = -1
+    if lo.isolated:
+        cur_col = cur_row = 0
+        for n in lo.isolated:
+            lbl = str(lo.labels.get(n, n))
+            wc = max(3, _disp_w(lbl) + 4)
+            if cur_col + wc > 100:
+                cur_row += 1
+                cur_col = 0
+            x = round(_HTML_PAD + cur_col * _HTML_CW)
+            y = round(_HTML_PAD + (pl.H + 1 + cur_row * (BOX_H + 1)) * _HTML_CH)
+            iso_lines += card(n, x, y, round(wc * _HTML_CW), round(BOX_H * _HTML_CH), lbl) + ['      </g>']
+            cur_col += wc + 1
+        iso_last_row = cur_row
+
+    content_h = pl.H * _HTML_CH
+    if iso_last_row >= 0:
+        content_h = max(content_h, (pl.H + 1 + iso_last_row * (BOX_H + 1) + BOX_H) * _HTML_CH)
+    vb_w = pl.W * _HTML_CW + 2 * _HTML_PAD
+    vb_h = content_h + 2 * _HTML_PAD
+    inter_attr = ' data-interactive="1"' if interactive else ""
+    out = ["<!DOCTYPE html>", '<html lang="en">', "<head>", '  <meta charset="UTF-8">',
+           '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+           f"  <title>{_esc(title)}</title>", "<style>", _TOKEN_CSS, _HTML_CSS, "</style>", "</head>", "<body>",
+           '<div class="frame">', f'  <p class="eyebrow">{_esc(eyebrow)}</p>', f"  <h1>{_esc(title)}</h1>",
+           '  <div class="plate">',
+           f'<svg viewBox="0 0 {vb_w:g} {vb_h:g}" role="img" aria-labelledby="svg-title svg-desc"{inter_attr}>',
+           f'  <title id="svg-title">{_esc(title)}</title>',
+           f'  <desc id="svg-desc">Computed layered layout of {_esc(title)}.</desc>',
+           "  <defs>",
+           '    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">',
+           '      <polygon points="0 0, 8 3, 0 6" class="mk-muted"/>', "    </marker>",
+           '    <marker id="arrow-rev" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">',
+           '      <polygon points="8 0, 0 3, 8 6" class="mk-link"/>', "    </marker>", "  </defs>",
+           f'  <rect class="bg" x="0" y="0" width="{vb_w:g}" height="{vb_h:g}"></rect>']
+    out += edge_lines + node_lines + iso_lines
+    out += ["</svg>", "  </div>", "</div>"]
+    if interactive:
+        out.append(_SCRIPT_TEMPLATE.replace("__ADJ__", _adj_json(lo)).replace("__VBW__", f"{vb_w:g}").replace("__VBH__", f"{vb_h:g}"))
+    out += ["</body>", "</html>"]
+    return "\n".join(out) + "\n"
+
+
+def check_artifact(path) -> list[str]:
+    """The done-token over a written page: one svg with a viewBox, both themes present, no
+    external resource at all, script only when interactive, no two node cards overlapping, no two
+    labels colliding. Returns the reasons it is red; empty means green."""
+    try:
+        html = open(path, encoding="utf-8", errors="replace").read()
+    except OSError as exc:
+        return [f"cannot read artifact: {exc}"]
+    red: list[str] = []
+    svgs = re.findall(r"<svg\b", html)
+    if len(svgs) != 1:
+        red.append(f"expected exactly one <svg, found {len(svgs)}")
+    elif not re.search(r"<svg\b[^>]*viewBox=", html):
+        red.append("svg root lacks a viewBox")
+    for token, name in (("prefers-color-scheme: dark", "dark theme block"), ('[data-theme="dark"]', "data-theme override"), (":root", ":root block")):
+        if token not in html:
+            red.append(f"missing {name}")
+    for m in re.finditer(r"(?:href|src)=[\"'](https?://[^\"']+)[\"']", html):
+        red.append(f"external resource: {m.group(1)}")
+    svg_root = re.search(r"<svg\b[^>]*>", html)
+    interactive = bool(svg_root and 'data-interactive="1"' in svg_root.group(0))
+    has_script = "<script" in html
+    if has_script and not interactive:
+        red.append('script present without data-interactive="1" on the svg root')
+    if interactive and not has_script:
+        red.append("data-interactive declared but no <script> present")
+    rects = []
+    for grp in re.findall(r'<g class="node"[^>]*>(.*?)</g>', html, re.S):
+        rm = re.search(r"<rect [^>]*/>", grp)
+        if not rm:
+            continue
+        nums = [re.search(a, rm.group(0)) for a in (r'x="([\d.]+)"', r'y="([\d.]+)"', r'width="([\d.]+)"', r'height="([\d.]+)"')]
+        if all(nums):
+            rects.append(tuple(float(m.group(1)) for m in nums))
+    for i in range(len(rects)):
+        x1, y1, w1, h1 = rects[i]
+        for j in range(i + 1, len(rects)):
+            x2, y2, w2, h2 = rects[j]
+            if x1 < x2 + w2 and x2 < x1 + w1 and y1 < y2 + h2 and y2 < y1 + h1:
+                red.append("node rects overlap")
+                break
+    no_beacon = re.sub(r'<g class="srcb src-beacon">.*?</g>', "", html, flags=re.S)
+    texts = []
+    for tm in re.finditer(r"<text\b[^>]*>([^<]*)</text>", no_beacon):
+        xm, ym = re.search(r'x="([\d.]+)"', tm.group(0)), re.search(r'y="([\d.]+)"', tm.group(0))
+        if xm and ym:
+            half = len(tm.group(1)) * 6.5 / 2.0 + 4.0
+            texts.append((float(xm.group(1)) - half, float(xm.group(1)) + half, float(ym.group(1))))
+    for i in range(len(texts)):
+        a1, a2, y1 = texts[i]
+        for j in range(i + 1, len(texts)):
+            b1, b2, y2 = texts[j]
+            if abs(y1 - y2) < 0.5 and a1 < b2 and b1 < a2:
+                red.append("text labels collide")
+                break
+    return sorted(set(red))

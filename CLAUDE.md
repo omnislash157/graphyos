@@ -46,7 +46,7 @@ lens : the whole world is traversable through our lens
   spawns a subsystem; a symbol no arm routes to means the fan-out is stale — re-walk and fold it in.
 - **Arm docs carry no numbers, no status, no history — only the tap.** Numbers live in `RECON.md`,
   each with the command that re-derives it.
-- **Nothing private travels.** This repo will be public. Tenant material built from a private codebase,
+- **Nothing private travels.** The public repo is `omnislash157/graphyos`, cut from this one (`RECON.md` §32, §39); this one is the private archive. Tenant material built from a private codebase,
   schema or data never reaches it; the gate's hashed scrub over `engine/` and every tracked file
   outside `staging/` is the tripwire, and `staging/` does not make the public cut (`RECON.md` §32).
 
@@ -104,8 +104,10 @@ session_tail.py         a transcript → its semantic tail: extract_turns · pai
 reseed.py               the continuity hooks: capture · inject · render — fail-open
 refresh.py              the refresh lane: PyPI (or --release) against the shard's PROVENANCE; a sibling substrate pinned to the newer release, minted · converged · built · checked beside the current one; born/died per shard stamped in the sibling's journal — never in place
 lightning/              rg discovers, the AST walk-out anchors: the doors · bloodhound · reseed_graph
-inventory.py · parity.py · sugiyama.py · _shared.py
-cli.py                  graphy eat | init | smash | push | pull | index | converge | build | container | estate | walk | bridge | arms | farm | descend | blast | explain | pillars | refresh | mcp | traversals | shell | check | fanout — exit 0 healthy · 1 audit verdict · 2 never ran
+draw.py                 units · pillars · arm · neighbourhood · atlas — the codebase drawn from the store, never a shard: a query, laid out by sugiyama, ASCII for the terminal and a checked HTML+SVG page for a human
+sugiyama.py             the layered layout (cycle removal · layering · crossing-min · coordinates) on a wcwidth canvas; emit_html the two-theme self-contained page; check_artifact the done-token
+inventory.py · parity.py · _shared.py
+cli.py                  graphy eat | init | smash | push | pull | index | converge | build | container | estate | walk | bridge | arms | farm | draw | descend | blast | explain | pillars | refresh | mcp | traversals | shell | check | fanout — exit 0 healthy · 1 audit verdict · 2 never ran
 ```
 
 ## THE TAPS — from `engine/`
@@ -127,6 +129,7 @@ cli.py                  graphy eat | init | smash | push | pull | index | conver
 | audit a tenant, read-only | `python3 -m graphy check --tenant <descriptor> --tenant-id <name>` |
 | does A reach B | `python3 -m graphy walk --tenant <descriptor> --tenant-id <name> --seed <id> --target <id>` |
 | does A in one tenant reach B in another — two tenants in one process, the crossing only on a declared join | `python3 -m graphy bridge --tenant <A> --tenant-id <a> --tenant <B> --tenant-id <b> --join <scheme> --seed <id> --target <id>` — `BRIDGE PATH … crossings=N` with the hops, each tagged with its side; the join receipt prints each side's release; no `--join` refuses, two releases of the joined scheme refuse unless `--allow-release-skew` |
+| draw it: the pillars, the unit map, one arm, a symbol's neighbourhood — from the store, ASCII in the terminal or a self-contained HTML+SVG page | `python3 -m graphy draw --tenant <descriptor> --tenant-id <name> [--corpus <slug>] [--pillars --partition <json> \| --arm NAME --partition <json> \| --symbol S --radius R] [--lr] [--emit html --interactive -o page.html]` · `--check page.html` · `--atlas <dir> --partition <json>` writes every picture with a receipt (the rebuilds land it at `substrate/atlas/`) |
 | the doors: what a symbol calls down to the primitives · who depends on it · what explains it | `python3 -m graphy descend\|blast\|explain <symbol> --tenant <descriptor> --tenant-id <name> [--depth N]` — a symbol is an exact id or its dotted tail; two matches refuse |
 | the MCP server for any client; the demo | `python3 -m graphy mcp --tenant <descriptor> --tenant-id <name>` · `bash tenants/fastapi/mcp.sh` (Claude Code: the repo's `.mcp.json`) · `../.venv/bin/python tenants/fastapi/demo.py --runner claude-code` → `DEMO OK` |
 | a seed's neighbourhood | `python3 -m graphy.query <id> --mesh-set <slugs> --tenant-id <name> --data-home <abs> --join-keys <path>` |
@@ -181,12 +184,12 @@ never tracked. A shard is producer output with a `PROVENANCE.json`, re-minted an
 
 ## THE BOARD — where work lands
 
-GitHub Issues on `omnislash157/graphyos`. Issue numbers are the sequence; `blocked` names a wait.
+GitHub Issues on `omnislash157/graphyos` (the public repo; `MARCH_REPO` points there — this repo's board is closed history). Issue numbers are the sequence; `blocked` names a wait.
 A finding mid-work becomes an issue, never a note in a doc.
 
 ```bash
-gh issue list --repo omnislash157/graphyos            # the board
-gh issue view <n> --repo omnislash157/graphyos        # an item: its evidence and its done check
+gh issue list --repo omnislash157/graphyos          # the board
+gh issue view <n> --repo omnislash157/graphyos      # an item: its evidence and its done check
 ```
 
 ## THE MARCH — the board loop

@@ -82,6 +82,9 @@ PY
 "$PY" -m graphy fanout --graph-dir "$SUB/express_graph" --out "$SUB/fanout" --partition "$HERE/partition.json"
 "$PY" -m graphy fanout --verify --out "$SUB/fanout"
 "$PY" -m graphy arms --tenant "$DESC" --tenant-id express --corpus express --partition "$HERE/partition.json" --dir "$HERE/arms" --verify
+# The atlas: the pillars, the unit map and one drawing per arm, ascii and html, computed from the
+# store — a build product under the substrate with a receipt.
+"$PY" -m graphy draw --tenant "$DESC" --tenant-id express --corpus express --partition "$HERE/partition.json" --atlas "$SUB/atlas" --lr --min-weight 2
 # The walk says express is one pillar (five modules, every one consumed more than it consumes):
 # the proposal is that sentence, and the curated partition cuts by module instead.
 "$PY" -m graphy pillars --tenant "$DESC" --tenant-id express --corpus express > "$SUB/pillars.txt" 2>&1 || true

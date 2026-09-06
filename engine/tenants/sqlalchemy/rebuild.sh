@@ -119,6 +119,9 @@ PY
 "$PY" -m graphy fanout --verify --out "$SUB/fanout"
 # The arms: the generated region in each arm file, verified against the store; drift refuses.
 "$PY" -m graphy arms --tenant "$DESC" --tenant-id sqlalchemy --corpus sqlalchemy --partition "$HERE/partition.json" --dir "$HERE/arms" --verify
+# The atlas: the pillars, the unit map and one drawing per arm, ascii and html, computed from the
+# store — a build product under the substrate with a receipt.
+"$PY" -m graphy draw --tenant "$DESC" --tenant-id sqlalchemy --corpus sqlalchemy --partition "$HERE/partition.json" --atlas "$SUB/atlas" --lr --min-weight 2
 "$PY" -m graphy pillars --tenant "$DESC" --tenant-id sqlalchemy --corpus sqlalchemy --write "$SUB/pillars.json" > "$SUB/pillars.txt"
 tail -n 2 "$SUB/pillars.txt"
 echo "SQLALCHEMY_TENANT_OK"

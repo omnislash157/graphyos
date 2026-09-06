@@ -39,6 +39,7 @@ is recorded as that sentence in `substrate/pillars.txt` on every rebuild.
 |---|---|
 | rebuild the tenant: pin the checkout, install the runtime ring, mint, converge, build, check, fan out, verify the arms | `PYTHON=../.venv/bin/python bash $T/rebuild.sh` → `EXPRESS_TENANT_OK` — `EXPRESS_RELEASE=<tag>` pins another tag; `EXPRESS_NODE_MODULES=<abs>` resolves the ring from elsewhere |
 | what the ring holds, and what node_modules could not carry | `python3 -c 'import json;r=json.load(open("$T/substrate/ring.json"));print(len(r["minted"]), sorted(r["minted"])[:10]);print(r["unresolved"])'` |
+| draw it: the pillars, the unit map, one arm, a symbol's neighbourhood — the rebuild lands the atlas at `$T/substrate/atlas/` | `python3 -m graphy draw --tenant $T/tenant.json --tenant-id express --corpus express --pillars --partition $T/partition.json --lr` · `--symbol app.handle --radius 2 --emit html --interactive -o page.html` · `--check page.html` |
 | the doors | `python3 -m graphy descend\|blast\|explain <symbol> --tenant $T/tenant.json --tenant-id express` — e.g. `descend app.handle`, `blast res.send`, `explain createApplication` |
 | does A reach B, across the ring | `python3 -m graphy walk --tenant $T/tenant.json --tenant-id express --seed express://func/express.application.app.handle --target router://module/router` |
 | eat a JavaScript repo in one verb | `../.venv/bin/graphy eat --repo <abs> --site-packages <abs>/node_modules`; `bash ../quickstart.sh https://github.com/expressjs/express.git` |

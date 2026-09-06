@@ -21,7 +21,7 @@ from graphy import doors, traversal
 from graphy import federated_store as fstore
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
-SERVER_INFO = {"name": "graphy", "version": "0.0.1"}
+SERVER_INFO = {"name": "graphy", "version": "0.1.0"}
 
 _SYMBOL = {"type": "string", "description": "an exact node id (fastapi://func/fastapi.routing.get_request_handler) or its dotted tail (get_request_handler, routing.get_request_handler)"}
 _DEPTH = lambda d: {"type": "integer", "default": d, "minimum": 1, "maximum": 12, "description": f"hops to walk (default {d})"}  # noqa: E731
@@ -46,6 +46,12 @@ TOOLS = [
                                                       "target": {"type": "string", "description": "the exact node id to walk TO"},
                                                       "max_depth": _DEPTH(6)},
                      "required": ["seed", "target"], "additionalProperties": False}},
+    {"name": "draw",
+     "description": "Draw it for the human: a symbol's neighbourhood (radius hops either way) or, with no symbol, the corpus's unit map — a computed layered layout as ASCII, ready to paste. Structure from the store, no drawing by hand.",
+     "inputSchema": {"type": "object", "properties": {"symbol": {"type": "string", "description": "an exact node id or its dotted tail; omit for the unit map"},
+                                                      "radius": _DEPTH(2), "corpus": {"type": "string", "description": "the corpus for the unit map (required when the tenant holds several)"},
+                                                      "lr": {"type": "boolean", "default": True}},
+                     "additionalProperties": False}},
     {"name": "explain",
      "description": "What explains a symbol: where it lives and its docstring, the docs bound to it, the test modules that reach it, and the journal page that birthed its shard. Each absence is named with its cause.",
      "inputSchema": {"type": "object", "properties": {"symbol": _SYMBOL, "depth": _DEPTH(3), "limit": _LIMIT},
@@ -127,6 +133,23 @@ class Doors:
         tail = (f"TRAVERSAL SKIPPED: {o.note}" if o.note
                 else f"TRAVERSAL: source={o.source} reads={o.reads}" + (" stored" if o.stored else ""))
         return f"{head}\n{tail}\ngeneration={self.generation}"
+
+    def draw(self, symbol: str | None = None, radius: int = 2, corpus: str | None = None, lr: bool = True) -> str:
+        from graphy import draw as draw_lane
+        c = self._counted()
+        c.owned, c.edges = self.store.owned, self.store.edges
+        try:
+            if symbol:
+                pic = draw_lane.neighbourhood(c, doors.resolve(c, symbol), radius=radius)
+            else:
+                owners = sorted({o for o in (self.store.membership(n) for n, _ in self.store.edges()) if o} - {"wire"}) if not corpus else [corpus]
+                if len(owners) != 1:
+                    raise ToolError(f"DRAW UNANSWERABLE: the tenant holds {len(owners)} corpora ({', '.join(owners)}) — name one with corpus")
+                pic = draw_lane.units(c, owners[0])
+            text = draw_lane.render(pic, emit="ascii", lr=lr)
+        except (draw_lane.DrawError, doors.DoorError) as exc:
+            raise ToolError(f"DRAW UNANSWERABLE: {exc}") from exc
+        return f"{text}\nDRAW: {pic.summary()} reads={c.reads} generation={self.generation}"
 
     def call(self, name: str, arguments: dict) -> str:
         fn: Callable[..., str] | None = {t["name"]: getattr(self, t["name"]) for t in TOOLS}.get(name)
