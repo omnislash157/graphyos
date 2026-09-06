@@ -37,7 +37,7 @@ def test_handshake_list_call_and_errors(tmp_path):
     init = by_id[1]["result"]
     assert init["protocolVersion"] == "2025-03-26" and init["capabilities"] == {"tools": {}}
     assert tools.generation in init["instructions"]
-    assert [t["name"] for t in by_id[2]["result"]["tools"]] == ["hunt", "descend", "blast", "walk", "explain"]
+    assert [t["name"] for t in by_id[2]["result"]["tools"]] == ["hunt", "descend", "blast", "walk", "draw", "explain"]
     assert by_id[3]["result"] == {}
     blast = by_id[4]["result"]
     assert blast["isError"] is False and blast["content"][0]["text"].startswith("BLAST seed=" + SEED)

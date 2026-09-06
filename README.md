@@ -41,7 +41,7 @@ ANTHROPIC_API_KEY=… .venv/bin/python engine/tenants/fastapi/demo.py      # or 
 
 Point any MCP client at the same server: Claude Code reads it from this repo's `.mcp.json`;
 anywhere else, `bash engine/tenants/fastapi/mcp.sh` on stdio, or `graphy mcp --tenant … --tenant-id …`
-over any eaten repo. Five tools: `hunt` · `descend` · `blast` · `walk` · `draw` · `explain`.
+over any eaten repo. Six tools: `hunt` · `descend` · `blast` · `walk` · `draw` · `explain`.
 
 ## Install
 

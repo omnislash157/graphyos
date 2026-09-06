@@ -64,7 +64,7 @@ class ToolError(RuntimeError):
 
 
 class Doors:
-    """The five tools over one opened store."""
+    """The six tools over one opened store."""
 
     def __init__(self, store, tenant, tenant_id: str):
         self.store, self.tenant, self.tenant_id = store, tenant, tenant_id
