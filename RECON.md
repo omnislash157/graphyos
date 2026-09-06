@@ -2328,3 +2328,25 @@ cd engine; time bash tenants/graphy/rebuild.sh
 | the tenant | GRAPHY_TENANT_OK in 2.3 s; 6 shards; 6 arms verified; 8 pictures |
 | the radius of the last three commits | 14 symbols, each with its dependents, its tests and its arm; two symbols with no test the store carries, named |
 | the PR workflow | https://github.com/omnislash157/graphyos/pull/9 — a one-line docstring on `draw._short`; the runner rebuilt the tenant and posted: 7 dependents in graphy, 2 in the ring, 2 tests that reach it, the CUT arm (run 34038018450, success) |
+
+## 46 · INBOUND IN THE BACKGROUND — the issue lane and the PR gate (2026-09-06 · graphyos issue 8)
+
+Two workflows on the public repo, no model in either. `showcase-on-issue.yml`: an opened issue
+that names exactly one https git url (github.com or gitlab.com) gets its repo showcased on the
+runner — clone, eat, propose, draw, capped at fifteen minutes — and `showcase.txt` posted back
+with the two-line recipe; a refusal posts the tool's line, never a stack; an issue with no url or
+two is left alone. `gate-on-pr.yml`: every pull request runs the burden invariants and the quick
+receipt on the head and on the base, measured on the same runner, and posts the verdict and the
+diff; a red burden or a regression past tolerance fails the check. With `blast-on-pr.yml` (§45)
+a pull request now arrives with its radius, its burden and its numbers before a human reads it.
+
+```text
+issue 10  "showcase test: httpx"            run 34038104838 success — the comment: httpx's pillars in ASCII (MODELS · CLIENT · EXCEPTIONS), the arms with evidence, the ring, the MCP block, three questions, the recipe
+pr 11     "dry run: the gate on a pull request"  run 34038105991 success — BURDEN OK · receipt base → head: floor.seconds 17.4 -> 19.6 ↑+13% (within tolerance) … wheel.seconds ↓-11% better · MEASURE DIFF OK: 6 number(s) moved, none the wrong way
+```
+
+| check | result |
+|---|---|
+| the issue lane | https://github.com/omnislash157/graphyos/issues/10 — the showcase posted from a fresh runner |
+| the PR gate | https://github.com/omnislash157/graphyos/pull/11 — burden and receipt posted; the check green |
+| what a PR carries now | the blast radius, the burden verdict, the receipt diff — three comments from the tool |
