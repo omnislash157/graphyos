@@ -32,3 +32,5 @@ staging/index/
 staging/farm/
 # machine-local: the host's own module names the departure gate probes for; never tracked
 .private_modules
+recon.json
+recon.*.json

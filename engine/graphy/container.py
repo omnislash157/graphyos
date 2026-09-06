@@ -167,6 +167,8 @@ def verify(graph_dir: str | Path) -> str:
     gd = Path(graph_dir)
     if not all((gd / name).is_file() for name in (ADJACENCY, NODES, RECEIPT)):
         return "absent"
+    if not all((gd / name).is_file() for name in ("nodes.json", "edges.json")):
+        return "absent"                  # no shard, no container to hold to it — the store lane names the missing file
     try:
         receipt = json.loads((gd / RECEIPT).read_text(encoding="utf-8"))
     except (OSError, ValueError):

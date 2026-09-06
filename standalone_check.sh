@@ -11,7 +11,7 @@ python3 -m venv "$VENV"
 PY="$VENV/bin/python"
 
 "$PY" -m pip install -q --upgrade pip
-( cd "$STAGE" && "$PY" -m pip install -q -e ".[dev,typescript]" )
+( cd "$STAGE" && "$PY" -m pip install -q -e ".[dev,typescript,estate]" )
 echo "install            OK"
 
 env -u PYTHONPATH "$PY" -I - "$HERE/.private_modules" <<'PY'

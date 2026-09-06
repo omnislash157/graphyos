@@ -92,7 +92,7 @@ def test_GREEN_the_rows_carry_the_shard_and_the_three_forms(tmp_path):
     rows = con.execute(f"SELECT id, kind, body, last, node_type, file, loc, attrs FROM read_parquet('{gd / 'nodes.parquet'}') "
                        "WHERE id = 'alpha://class/alpha.Root'").fetchall()
     assert rows == [("alpha://class/alpha.Root", "class", "alpha.Root", "Root", "class", "alpha/__init__.py", None,
-                     json.dumps({"docstring": "The root class.", "line": 9, "name": "Root"}, sort_keys=True))]
+                     json.dumps({"docstring": "The root class.", "line": 9, "module": "alpha", "name": "Root"}, sort_keys=True))]
     edge = con.execute(f"SELECT src, dst, edge_type, attrs, dst_repr FROM read_parquet('{gd / 'adjacency.parquet'}') "
                        "WHERE edge_type = 'imports' AND dst = 'beta://module/beta'").fetchall()
     assert edge == [("alpha://module/alpha", "beta://module/beta", "imports", json.dumps({"alias": None, "line": 4}), None)]

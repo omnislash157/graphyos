@@ -59,6 +59,7 @@ RECON.md              the cold-start record: measured, dated, every number with 
 standalone_check.sh   the departure gate. Run it after EVERY change to engine/. → GRAPHY_STANDALONE_OK
 scrub.py              the prose scrub that never names what it scrubs: tokens hashed against .private_markers.sha256; --tree engine · --tracked (everything outside staging/)
 census.sh             where the private language sits, per tracked directory → CENSUS OK is the public cut's tripwire
+measure.py            the receipt: every RECON number re-derived into recon.json by `run` (--quick for CI); `diff OLD NEW` names every number that moved and exits 1 on a regression — the improvement gate's before and after
 release.sh            the release made mechanical: wheel + sdist into dist/, twine check, CHANGELOG.md derived from RECON's section titles (--check in the gate); publishing is the operator's printed command
 CHANGELOG.md          derived from RECON.md by release.sh — a build product the gate verifies, the one generated doc in git besides the arm regions
 .private_markers.sha256  the hashes of the words that must not travel (the words live in no tracked file)

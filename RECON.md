@@ -2229,3 +2229,37 @@ bash quickstart.sh https://github.com/encode/httpx.git
 | what a stranger reads | the drawing, the arms with evidence, the ring, the MCP block, three questions, the two-line recipe |
 | the quickstart | ends at the page, 5.2 s for httpx |
 | the floor | `tests/test_showcase.py` 2 passed; `test_typescript.py` green with the checkout excludes |
+
+## 43 · THE RECEIPT — every number, one command, a before and an after (2026-09-06 · graphyos issue 5)
+
+`python3 measure.py run` re-derives what this file carries into `recon.json`: the floor (passed ·
+failed · skipped · seconds), the gate (verdict · seconds), the wheel and the sdist (bytes), every
+tenant's rebuild (verdict · seconds · shards · nodes · edges · arms · atlas), the two pinned
+quickstarts (verdict · seconds · ring), the index (names · broken · verify seconds). `--quick` is
+the floor, the gate and the wheel — what CI runs on every push to main and stores as an artifact.
+`measure.py diff OLD NEW` prints every number that moved with its direction, and exits 1 on a
+regression: a time past 15%, a count moved the wrong way, a verdict flipped to false. That is the
+improvement gate's before-and-after; the burden invariants are issue 6.
+
+Building it found two defects the gate had never run, because the gate's venv had no duckdb:
+`graphy check` crashed on an unreadable shard when a container stood beside it (now a
+COULD-NOT-TELL finding, and a missing shard is "no container"), and the container's row test
+predated the producer's `module` field. The gate now installs `[dev,typescript,estate]`, so the
+duckdb paths are on the floor.
+
+```bash
+time python3 measure.py run --out recon.json
+#   MEASURE OK: floor 449 passed / 0 failed in 14.7s · gate OK 20.4s · wheel 260270 B
+#     · tenants fastapi=OK/4.2s sqlalchemy=OK/8.7s hono=OK/3.0s express=OK/2.6s · quickstart httpx=OK/5.3s express=OK/9.3s · 73.8s -> recon.json
+python3 measure.py diff recon.first.json recon.json
+#   … wheel.seconds: 2.7 -> 3.1 ↑+15% · wheel.wheel_bytes: 260154 -> 260270 ↑+0%
+#   MEASURE DIFF OK: 13 number(s) moved, none the wrong way past tolerance
+#   (the run before the fixes said: MEASURE REGRESSION — floor.failed 0 -> 1; gate.ok flipped to false — the receipt named it before a human did)
+```
+
+| check | result |
+|---|---|
+| the receipt | 74 s for everything on this box; the floor 449 passed with duckdb on |
+| the diff | names movement and direction; a doctored regression exits 1 (`tests/test_measure.py`) |
+| CI | `measure.py run --quick` on every push, recon.json an artifact per commit |
+| what it found | two duckdb-path defects, fixed |

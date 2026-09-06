@@ -817,7 +817,14 @@ def _cmd_check(args: argparse.Namespace) -> int:
     states = {}
     for graph_class in sorted(tenant.build_lanes):
         _base, slug = journal._names(graph_class)
-        states[slug] = container.verify(Path(tenant.data_home) / f"{slug}_graph")
+        try:
+            states[slug] = container.verify(Path(tenant.data_home) / f"{slug}_graph")
+        except (OSError, ValueError) as exc:           # a shard the container cannot read is named, never a crash
+            states[slug] = "unreadable"
+            findings.append((
+                "COULD-NOT-TELL",
+                f"container lane: shard {slug}_graph unreadable ({type(exc).__name__}: {exc})",
+                "restore the shard, then graphy build"))
     stale = sorted(s for s, st in states.items() if st == "stale")
     if stale:
         findings.append((
