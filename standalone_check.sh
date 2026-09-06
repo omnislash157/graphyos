@@ -44,5 +44,6 @@ python3 "$HERE/scrub.py" --tree "$STAGE" || { echo "prose scrub        FAILED �
 python3 "$HERE/scrub.py" --tracked || { echo "prose scrub        FAILED — private language in a tracked file outside staging/"; exit 3; }
 echo "prose scrub        OK"
 bash "$HERE/release.sh" --check
+python3 "$HERE/burden.py" || { echo "burden            FAILED — a responsibility grew without burden.json saying so"; exit 3; }
 
 echo "GRAPHY_STANDALONE_OK"

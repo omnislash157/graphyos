@@ -2263,3 +2263,33 @@ python3 measure.py diff recon.first.json recon.json
 | the diff | names movement and direction; a doctored regression exits 1 (`tests/test_measure.py`) |
 | CI | `measure.py run --quick` on every push, recon.json an artifact per commit |
 | what it found | two duckdb-path defects, fixed |
+
+## 44 · THE BURDEN INVARIANTS — what the engine may lean on, refused by name when it grows (2026-09-06 · graphyos issue 6)
+
+`burden.json` is the list; `burden.py` is the refusal; the gate runs it. Runtime dependencies stay
+at zero and the extras carry only their declared names (`dev`: pytest · `estate`: duckdb ·
+`typescript`: tree-sitter, tree-sitter-typescript); the wheel stays under 400 KB; every network
+host the engine names is one of six (pypi.org, the two npm hosts, the top-packages list, raw
+github, github); every program the engine runs is one of six (git · npm · rg · python · pip ·
+venv) — a direct call names it, a local list is resolved to its head, a function whose command is
+a parameter is a runner and every call of it is checked, and the one function that runs a
+tenant's *declared* build lane as declared is named a delegate, the tenant's responsibility;
+every tracked document under `engine/` is an arm file carrying its generated region or on the
+list; the hashed scrub over everything tracked. A change that adds a responsibility adds it to
+`burden.json` in the same commit, where a human reads it. With the receipt (§43) this is the
+improvement gate the operator asked for: a change may not add a burden, and it must move a number.
+
+```bash
+python3 burden.py
+#   BURDEN OK: runtime deps 0 · extras 3 · wheel: 260270 B (cap 400000) · hosts 7 on the list of 6 · subprocess sites 24 over 6 program(s) · docs 27 tracked · scrub OK
+# a doctored growth (the floor, tests/test_burden.py):
+#   BURDEN RED graphy/a.py:3: host evil.example is not in burden.json
+#   BURDEN RED graphy/a.py:15: subprocess target 'curl' is not in burden.json
+#   BURDEN RED pyproject.toml: runtime dependency 'requests>=2' — the engine leans on nothing; burden.json says which
+```
+
+| check | result |
+|---|---|
+| on main | BURDEN OK: 0 runtime deps · 24 subprocess sites over 6 programs · 7 host literals on the list · 27 tracked docs declared |
+| the refusals | a dependency, an extra, a host, a program, an oversized wheel — each named with its file and line |
+| the gate | runs it after the changelog check; CI runs the gate |
