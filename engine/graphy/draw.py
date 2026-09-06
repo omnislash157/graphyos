@@ -43,6 +43,7 @@ class Picture:
 
 
 def _short(dotted: str, root: str) -> str:
+    """The dotted name without the corpus root — a label a human reads."""
     return dotted[len(root) + 1:] if dotted.startswith(root + ".") and len(dotted) > len(root) + 1 else dotted
 
 
