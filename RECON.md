@@ -2293,3 +2293,38 @@ python3 burden.py
 | on main | BURDEN OK: 0 runtime deps · 24 subprocess sites over 6 programs · 7 host literals on the list · 27 tracked docs declared |
 | the refusals | a dependency, an extra, a host, a program, an oversized wheel — each named with its file and line |
 | the gate | runs it after the changelog check; CI runs the gate |
+
+## 45 · GRAPHY EATS GRAPHY — the engine as its own tenant, a diff's blast radius from the walk (2026-09-06 · graphyos issue 7)
+
+`engine/tenants/graphy/`: the engine minted by its own producer from `engine/graphy/`, the ring
+followed into the interpreter's site-packages (duckdb, tree-sitter, tree-sitter-typescript,
+typing_extensions), and the floor minted beside it as a sibling shard (`tests_graph`) whose
+imports of graphy are wormholes into the package — so `explain` names the tests that reach a
+symbol. Six arms cut from the engine map; the walk crowns `cli` over everything (fan-out 106,
+every other unit its foundation) with the memory lane the one floor no arm consumes, and the
+router says so. `blast_pr.py <base> <head>` maps every changed line under `engine/graphy/` to the
+symbol the store places there, blasts each (what depends on it, transitively), names the tests
+that reach it and the arm it lands in, and prints one comment; `.github/workflows/blast-on-pr.yml`
+posts it on every pull request. The walk decides every line of it.
+
+```bash
+cd engine; time bash tenants/graphy/rebuild.sh
+#   MINT OK: graphy 922 nodes / 10063 edges · duckdb 792 · tree_sitter 3 · tree_sitter_typescript 3 · typing_extensions 241 · tests 610 nodes / 5001 edges
+#   RESOLVE OK: graphy 8535 label(s) -> 1573 edge(s) (import 363 · local 1197 · reexport 2 · self 11)
+#   CONVERGE: 6 shard(s) · 1149 wormhole edge(s) over 209 node(s)        (the floor's imports into the package)
+#   BUILD OK: compiled 2571 nodes / 6358 edges · CHECK OK · ARMS OK: 6 arm(s) · ATLAS OK: 8 picture(s)
+#   GRAPHY_TENANT_OK        real 0m2.3s
+../.venv/bin/python tenants/graphy/blast_pr.py HEAD~3 HEAD --limit 3
+#   BLAST RADIUS of HEAD~3..HEAD — 254 changed line(s) in 5 file(s) land in 14 symbol(s)
+#     graphy://func/graphy.sugiyama.emit_svg   [CUT]   lines graphy/sugiyama.py:1064, …
+#       depends on it: 8 in graphy (depth 3)   hop1 sugiyama.emit_html · hop1 showcase.compose · hop2 draw.render …
+#       tests that reach it: tests.test_showcase.test_GREEN_compose_writes_a_checked_page_and_text, tests.test_draw.test_GREEN_html_page_checks_green_and_a_doctored_one_red, …
+#     graphy://func/graphy.cli._cmd_showcase   [CLI]   depends on it: 0 in graphy   tests that reach it: none the store carries      ← a gap the radius names
+#   in all: N symbol(s) of graphy depend on what changed; the arms touched: CLI, CUT
+```
+
+| check | result |
+|---|---|
+| the tenant | GRAPHY_TENANT_OK in 2.3 s; 6 shards; 6 arms verified; 8 pictures |
+| the radius of the last three commits | 14 symbols, each with its dependents, its tests and its arm; two symbols with no test the store carries, named |
+| the PR workflow | posts the radius on a pull request (the dry-run below) |

@@ -1,0 +1,12 @@
+{
+  "_meta": "the graphy tenant's arm partition — the engine map in CLAUDE.md as prefixes; the walk crowns cli over everything (RECON §45), the curated cut names the lanes",
+  "groups": {
+    "PRODUCE": ["graphy.adapters", "graphy.smash", "graphy.ir", "graphy.native_json_graph_ir", "graphy.parity", "graphy.refresh", "graphy.farm", "graphy.index", "graphy.provision", "graphy.release"],
+    "SEAM": ["graphy.converge", "graphy.cross_substrate", "graphy.federated_store", "graphy.journal", "graphy.tenant", "graphy.cartograph", "graphy.container", "graphy.augment_registry", "graphy.mesh_federation_gate", "graphy.inventory", "graphy._shared", "graphy._portable_flock", "graphy.index_estate"],
+    "DOORS": ["graphy.doors", "graphy.traversal", "graphy.query", "graphy.bridge", "graphy.mcp"],
+    "CUT": ["graphy.fanout", "graphy.pillars", "graphy.arms", "graphy.draw", "graphy.sugiyama", "graphy.showcase"],
+    "MEMORY": ["graphy.session_tail", "graphy.reseed", "graphy.lightning"],
+    "CLI": ["graphy.cli", "graphy.shell"]
+  },
+  "rest": "EDGE"
+}

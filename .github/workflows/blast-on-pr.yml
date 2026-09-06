@@ -1,0 +1,40 @@
+name: blast radius
+
+# Every pull request: the engine as its own tenant, the changed lines mapped to the symbols the
+# store places there, each blasted — what depends on it, the tests that reach it, the arm it
+# lands in — posted as one comment. The walk decides every line of it; no model does.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  blast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install graphyos with every extra (the ring is what the interpreter holds)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "engine[dev,typescript,estate]"
+      - name: graphy eats graphy
+        run: cd engine && PYTHON=$(which python) bash tenants/graphy/rebuild.sh
+      - name: the blast radius of this PR
+        id: radius
+        run: |
+          cd engine
+          python tenants/graphy/blast_pr.py ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} > ../radius.txt
+          cat ../radius.txt
+      - name: post it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          { echo '### Blast radius, from the walk'; echo; echo '```text'; cat radius.txt; echo '```'; } > comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md

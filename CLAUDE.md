@@ -66,11 +66,11 @@ CHANGELOG.md          derived from RECON.md by release.sh — a build product th
 .private_markers.sha256  the hashes of the words that must not travel (the words live in no tracked file)
 .mcp.json             Claude Code's pointer at the FastAPI tenant's MCP server (engine/tenants/fastapi/mcp.sh)
 quickstart.sh         the production proof: clone a repo, eat it, query it, walk it → GRAPHY_QUICKSTART_OK
-.github/workflows/    CI: the floor on 3.10 and 3.12 with the typescript extra, then the gate and the census — the same commands, on a runner
+.github/workflows/    CI: the floor on 3.10 and 3.12, the gate, the census and the quick receipt on every push; the blast radius of every PR, posted from the walk
 .venv/                gitignored — the project's own interpreter: graphyos[estate] and nothing else
 engine/               THE PRODUCT. pip-installable (`graphyos`), imports and runs as `graphy`, zero host reach
   graphy/             the package — see the map below
-  tenants/            each compiled codebase is a tenant: a descriptor, a substrate, a fan-out — fastapi, sqlalchemy, hono, express
+  tenants/            each compiled codebase is a tenant: a descriptor, a substrate, a fan-out — fastapi, sqlalchemy, hono, express, graphy
   tests/              the floor; tests/fixtures/fastapi_graph is the minted FastAPI shard (PROVENANCE.json)
 staging/              gitignored — the corpora, the indexes and the farm work this box minted from; never tracked
 ```
@@ -180,6 +180,7 @@ binary that is not on PATH.
 | **SQLAlchemy** | [`engine/tenants/sqlalchemy/SQLALCHEMY.md`](engine/tenants/sqlalchemy/SQLALCHEMY.md) | the second tenant: a heavy package eaten cold from a venv the rebuild provisions, and the bridge — a walk from a FastAPI symbol into a SQLAlchemy one on a declared literal, neither tenant reading the other's data |
 | **Hono** | [`engine/tenants/hono/HONO.md`](engine/tenants/hono/HONO.md) | the second language: TypeScript minted by the tree-sitter producer onto the same nine words, its ring followed into zod, resolved · built · armed by the same verbs — no consumer knows the language |
 | **Express** | [`engine/tenants/express/EXPRESS.md`](engine/tenants/express/EXPRESS.md) | JavaScript through the same producer: CommonJS `require` bound as imports, member-assigned functions as definitions, the runtime ring minted from node_modules — every dependency ships JavaScript and every one mints |
+| **Graphy** | [`engine/tenants/graphy/GRAPHY.md`](engine/tenants/graphy/GRAPHY.md) | graphy eats graphy: the engine and its floor as one tenant, six arms from the engine map, and `blast_pr.py` — a diff's blast radius from the walk, posted on every PR |
 
 A tenant is a directory under `engine/tenants/<name>/`: `rebuild.sh` (wipe → mint or place → init →
 build → check, every path derived from the file's own location), `<NAME>.md` (the router), `arms/`

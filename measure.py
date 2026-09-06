@@ -28,7 +28,7 @@ HERE = Path(__file__).resolve().parent
 ENGINE = HERE / "engine"
 VENV_PY = HERE / ".venv" / "bin" / "python"
 QUICKSTARTS = ("https://github.com/encode/httpx.git", "https://github.com/expressjs/express.git")
-TENANTS = ("fastapi", "sqlalchemy", "hono", "express")
+TENANTS = ("fastapi", "sqlalchemy", "hono", "express", "graphy")
 
 # direction: which way is better for a number; a number not listed is informational
 BETTER = {"floor.seconds": "down", "floor.failed": "down", "gate.seconds": "down", "wheel.bytes": "down", "sdist.bytes": "down",
