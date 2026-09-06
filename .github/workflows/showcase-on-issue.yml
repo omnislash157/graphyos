@@ -1,0 +1,62 @@
+name: showcase on issue
+
+# An opened issue that names one https git url (github.com or gitlab.com) gets its repo showcased
+# on the runner — clone, eat, propose, draw — and showcase.txt posted back as a comment, with the
+# recipe. A failure posts the tool's refusal line, never a stack. No model in the lane.
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  showcase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: the url, if the issue names exactly one
+        id: url
+        env:
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          urls=$(printf '%s' "$BODY" | grep -oE 'https://(github\.com|gitlab\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?' | sed 's/\.git$//' | sort -u)
+          n=$(printf '%s\n' "$urls" | grep -c . || true)
+          if [ "$n" -ne 1 ]; then echo "none=1" >> "$GITHUB_OUTPUT"; echo "no single repo url in the issue ($n found) — nothing to showcase"; else echo "url=$urls" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-python@v5
+        if: steps.url.outputs.url != ''
+        with:
+          python-version: "3.12"
+      - name: install graphyos with every extra
+        if: steps.url.outputs.url != ''
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "engine[dev,typescript,estate]"
+      - name: showcase it, capped
+        if: steps.url.outputs.url != ''
+        env:
+          URL: ${{ steps.url.outputs.url }}
+        run: |
+          set +e
+          timeout 900 graphy showcase "$URL.git" --work "$RUNNER_TEMP/showcase" > showcase.log 2>&1
+          rc=$?
+          echo "rc=$rc"
+          page=$(grep -oE 'the text:  .*' showcase.log | sed 's/the text:  //')
+          {
+            echo "### Your codebase, drawn by graphy in one command"
+            echo
+            echo "\`pip install graphyos && cd <repo> && graphy eat . && graphy showcase .\` — on $URL, on this runner, no model involved."
+            echo
+            if [ "$rc" -eq 0 ] && [ -n "$page" ] && [ -f "$page" ]; then
+              echo '```text'; head -c 60000 "$page"; echo '```'
+            else
+              echo "It refused, and this is what it said:"; echo; echo '```text'; grep -E 'REFUSED|FAILED|RED|timeout' showcase.log | head -20 || tail -20 showcase.log; echo '```'
+            fi
+          } > comment.md
+      - name: post it
+        if: steps.url.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue comment ${{ github.event.issue.number }} --body-file comment.md

@@ -1,0 +1,61 @@
+name: gate on pr
+
+# Every pull request: the floor, the departure gate, the burden invariants, and the receipt's
+# diff against the base measured on the same runner — posted as one comment. A red burden or a
+# regression past tolerance fails the check. The tool's own output; no model in the lane.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install graphyos with every extra, build and twine
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "engine[dev,typescript,estate]" build twine
+      - name: the receipt on the base, same runner
+        run: |
+          git worktree add "$RUNNER_TEMP/base" ${{ github.event.pull_request.base.sha }}
+          ( cd "$RUNNER_TEMP/base" && python3 -m venv .venv && .venv/bin/pip install -q -e "engine[dev,typescript,estate]" build twine && python3 measure.py run --quick --out "$RUNNER_TEMP/base.json" )
+      - name: the receipt on the head
+        run: |
+          python3 -m venv .venv && .venv/bin/pip install -q -e "engine[dev,typescript,estate]" build twine
+          python3 measure.py run --quick --out "$RUNNER_TEMP/head.json"
+      - name: the burden
+        id: burden
+        run: |
+          set +e
+          python3 burden.py > burden.txt 2>&1; echo "rc=$?" >> "$GITHUB_OUTPUT"; cat burden.txt
+      - name: the diff
+        id: diff
+        run: |
+          set +e
+          python3 measure.py diff "$RUNNER_TEMP/base.json" "$RUNNER_TEMP/head.json" > diff.txt 2>&1; echo "rc=$?" >> "$GITHUB_OUTPUT"; cat diff.txt
+      - name: post it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### The gate, from the tool"
+            echo
+            echo "**Burden** — $( [ "${{ steps.burden.outputs.rc }}" = "0" ] && echo OK || echo RED )"; echo '```text'; cat burden.txt; echo '```'
+            echo "**Receipt, base → head on this runner** — $( [ "${{ steps.diff.outputs.rc }}" = "0" ] && echo OK || echo REGRESSION )"; echo '```text'; cat diff.txt; echo '```'
+          } > comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md
+      - name: the verdict
+        run: |
+          [ "${{ steps.burden.outputs.rc }}" = "0" ] || { echo "burden RED"; exit 1; }
+          [ "${{ steps.diff.outputs.rc }}" = "0" ] || { echo "receipt regression"; exit 1; }
+          echo "gate on pr: green"

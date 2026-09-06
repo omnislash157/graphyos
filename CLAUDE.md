@@ -66,7 +66,7 @@ CHANGELOG.md          derived from RECON.md by release.sh — a build product th
 .private_markers.sha256  the hashes of the words that must not travel (the words live in no tracked file)
 .mcp.json             Claude Code's pointer at the FastAPI tenant's MCP server (engine/tenants/fastapi/mcp.sh)
 quickstart.sh         the production proof: clone a repo, eat it, query it, walk it → GRAPHY_QUICKSTART_OK
-.github/workflows/    CI: the floor on 3.10 and 3.12, the gate, the census and the quick receipt on every push; the blast radius of every PR, posted from the walk
+.github/workflows/    CI: the floor on 3.10 and 3.12, the gate, the census and the quick receipt on every push; on every PR the blast radius from the walk and the gate (burden + the receipt diffed against the base on the same runner); an opened issue naming a repo url gets its showcase posted back
 .venv/                gitignored — the project's own interpreter: graphyos[estate] and nothing else
 engine/               THE PRODUCT. pip-installable (`graphyos`), imports and runs as `graphy`, zero host reach
   graphy/             the package — see the map below
