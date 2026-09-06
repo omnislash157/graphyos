@@ -1061,10 +1061,10 @@ def _edge_path(pts, rev, eid, from_to) -> str:
             f'marker-end="{mk}"{attrs}/>')
 
 
-def emit_html(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bool = False,
-              node_meta: dict | None = None, eyebrow: str = "COMPUTED LAYOUT · graphy draw") -> str:
-    """The computed layout as one self-contained HTML+SVG page: the same routes the ASCII
-    renderer draws, as paths; every node a card with its file:line badge; `interactive` adds
+def emit_svg(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bool = False,
+             node_meta: dict | None = None) -> tuple[str, str]:
+    """The computed layout as an <svg> and, when interactive, the script that focuses it: the same
+    routes the ASCII renderer draws, as paths; every node a card with its file:line badge;
     click-focus reachability (up the callers, down the callees) with zoom and pan, no library."""
     tb = orient.upper() != "LR"
     node_meta = dict(node_meta or {})
@@ -1155,12 +1155,7 @@ def emit_html(lo: Layout, *, title: str = "", orient: str = "TB", interactive: b
     vb_w = pl.W * _HTML_CW + 2 * _HTML_PAD
     vb_h = content_h + 2 * _HTML_PAD
     inter_attr = ' data-interactive="1"' if interactive else ""
-    out = ["<!DOCTYPE html>", '<html lang="en">', "<head>", '  <meta charset="UTF-8">',
-           '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
-           f"  <title>{_esc(title)}</title>", "<style>", _TOKEN_CSS, _HTML_CSS, "</style>", "</head>", "<body>",
-           '<div class="frame">', f'  <p class="eyebrow">{_esc(eyebrow)}</p>', f"  <h1>{_esc(title)}</h1>",
-           '  <div class="plate">',
-           f'<svg viewBox="0 0 {vb_w:g} {vb_h:g}" role="img" aria-labelledby="svg-title svg-desc"{inter_attr}>',
+    svg = [f'<svg viewBox="0 0 {vb_w:g} {vb_h:g}" role="img" aria-labelledby="svg-title svg-desc"{inter_attr}>',
            f'  <title id="svg-title">{_esc(title)}</title>',
            f'  <desc id="svg-desc">Computed layered layout of {_esc(title)}.</desc>',
            "  <defs>",
@@ -1169,10 +1164,23 @@ def emit_html(lo: Layout, *, title: str = "", orient: str = "TB", interactive: b
            '    <marker id="arrow-rev" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">',
            '      <polygon points="8 0, 0 3, 8 6" class="mk-link"/>', "    </marker>", "  </defs>",
            f'  <rect class="bg" x="0" y="0" width="{vb_w:g}" height="{vb_h:g}"></rect>']
-    out += edge_lines + node_lines + iso_lines
-    out += ["</svg>", "  </div>", "</div>"]
-    if interactive:
-        out.append(_SCRIPT_TEMPLATE.replace("__ADJ__", _adj_json(lo)).replace("__VBW__", f"{vb_w:g}").replace("__VBH__", f"{vb_h:g}"))
+    svg += edge_lines + node_lines + iso_lines + ["</svg>"]
+    script = (_SCRIPT_TEMPLATE.replace("__ADJ__", _adj_json(lo)).replace("__VBW__", f"{vb_w:g}").replace("__VBH__", f"{vb_h:g}")
+              if interactive else "")
+    return "\n".join(svg), script
+
+
+def emit_html(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bool = False,
+              node_meta: dict | None = None, eyebrow: str = "COMPUTED LAYOUT · graphy draw") -> str:
+    """The computed layout as one self-contained HTML+SVG page (see emit_svg for the parts)."""
+    svg, script = emit_svg(lo, title=title, orient=orient, interactive=interactive, node_meta=node_meta)
+    out = ["<!DOCTYPE html>", '<html lang="en">', "<head>", '  <meta charset="UTF-8">',
+           '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+           f"  <title>{_esc(title)}</title>", "<style>", _TOKEN_CSS, _HTML_CSS, "</style>", "</head>", "<body>",
+           '<div class="frame">', f'  <p class="eyebrow">{_esc(eyebrow)}</p>', f"  <h1>{_esc(title)}</h1>",
+           '  <div class="plate">', svg, "  </div>", "</div>"]
+    if script:
+        out.append(script)
     out += ["</body>", "</html>"]
     return "\n".join(out) + "\n"
 

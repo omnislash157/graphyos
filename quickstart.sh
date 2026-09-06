@@ -28,9 +28,9 @@ else
     [ -d "$REPO/.git" ] || git clone -q --depth 1 "$SRC" "$REPO"
 fi
 
-# line 2: graphy eat .
-( cd "$REPO" && "$HERE/.venv/bin/graphy" eat . )
+# line 2: graphy eat .   — and the page: graphy showcase .
+( cd "$REPO" && "$HERE/.venv/bin/graphy" eat . && "$HERE/.venv/bin/graphy" showcase . )
 
 # the done token, timed
 SECS="$(python3 -c "import time; print(f'{time.time() - $T0:.1f}')")"
-echo "GRAPHY_QUICKSTART_OK: $(basename "$REPO") eaten in ${SECS}s -> $REPO/.graphy"
+echo "GRAPHY_QUICKSTART_OK: $(basename "$REPO") eaten in ${SECS}s -> $REPO/.graphy  (the page: $REPO/.graphy/showcase/index.html)"

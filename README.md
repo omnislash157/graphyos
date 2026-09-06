@@ -47,7 +47,7 @@ over any eaten repo. Six tools: `hunt` · `descend` · `blast` · `walk` · `dra
 
 ```bash
 pip install 'graphyos[estate,typescript]'     # after publish; until then: git clone https://github.com/omnislash157/graphyos.git && pip install -e 'graphyos/engine[estate,typescript]'
-cd /path/to/your/repo && graphy eat .
+cd /path/to/your/repo && graphy eat .        # then, for the page: graphy showcase .
 ```
 
 The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+.
@@ -140,6 +140,7 @@ literal it would need and the reason no node carries it. No name match is ever a
 | the seam between shards, and the resolver | `graphy converge --tenant … --tenant-id … [--resolve]` |
 | the parquet: fresh or stale, by digest | `graphy container --tenant … --tenant-id … [--emit]` |
 | the stored walks; the hops a new generation broke | `graphy traversals --tenant … --tenant-id … [--replay]` |
+| the showcase: one page of your codebase, made by one command — the modules drawn (click to light what reaches what), the pillars the walk proposes, the ring, the MCP block, three questions, how to add a model | `graphy showcase .` · `graphy showcase https://github.com/encode/httpx.git` → `.graphy/showcase/index.html` + `showcase.txt` |
 | draw it for the human: the pillars, the module map, one arm, a symbol's neighbourhood — computed from the store, ASCII in the terminal or one self-contained HTML+SVG page, no drawing by hand | `graphy draw --tenant … --tenant-id … --pillars --partition <json> --lr` · `--symbol get_request_handler --radius 2 --emit html --interactive -o page.html` — the MCP server has `draw` too |
 | the doors: what a symbol calls down to the primitives, who depends on it, what explains it | `graphy descend\|blast\|explain <symbol> --tenant … --tenant-id …` — `descend get_request_handler` on the FastAPI tenant crosses fastapi → starlette → anyio |
 | the MCP server over an eaten repo, for Claude Code / Cursor / any client | `graphy mcp --tenant … --tenant-id …` on stdio — `hunt` · `descend` · `blast` · `walk` · `draw` · `explain` |

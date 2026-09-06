@@ -463,6 +463,24 @@ def _cmd_draw(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_showcase(args: argparse.Namespace) -> int:
+    from graphy import showcase as showcase_lane
+    if not args.target:
+        print("SHOWCASE REFUSED: name a git url or a repo path (`.` for the one you stand in)", file=sys.stderr)
+        return 2
+    try:
+        r = showcase_lane.showcase(args.target, out=args.out, work=args.work, log=print)
+    except (showcase_lane.ShowcaseError, TenantError, fstore.StoreError, OSError) as exc:
+        print(f"SHOWCASE REFUSED: {exc}", file=sys.stderr)
+        return 2
+    if r["check"]:
+        print(f"SHOWCASE RED: the page failed its check — {'; '.join(r['check'])} ({r['page']})", file=sys.stderr)
+        return 1
+    print(f"SHOWCASE OK: {r['package']} · {len(r['arms'])} arm(s) ({', '.join(r['arms'])}) · {r['ring']} ring shard(s) · "
+          f"CHECK GREEN · {r['seconds']}s\n  the page:  {r['page']}\n  the text:  {r['text']}")
+    return 0
+
+
 def _cmd_door(args: argparse.Namespace) -> int:
     verb = args.door.upper()
     if not args.tenant or not args.tenant_id:
@@ -1326,7 +1344,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     "The exit code is the contract: 0 healthy, 1 an audit verdict "
                     "that cannot prove health, 2 the command never ran.",
     )
-    sub = parser.add_subparsers(dest="verb", metavar="{eat,init,smash,push,pull,index,converge,build,container,estate,walk,bridge,arms,farm,draw,descend,blast,explain,pillars,mcp,traversals,shell,check,fanout}")
+    sub = parser.add_subparsers(dest="verb", metavar="{eat,init,smash,push,pull,index,converge,build,container,estate,walk,bridge,arms,farm,draw,showcase,descend,blast,explain,pillars,mcp,traversals,shell,check,fanout}")
 
     p_eat = sub.add_parser(
         "eat", help="the bolt-on: mint a repo's package and its import ring into <repo>/.graphy, "
@@ -1500,6 +1518,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_draw.add_argument("--check", default=None, metavar="FILE", help="verify a written html page and exit")
     p_draw.add_argument("--on-stale", default="refuse")
     p_draw.set_defaults(handler=_cmd_draw)
+
+    p_show = sub.add_parser("showcase", help="one page that shows a stranger their own codebase: clone when a url, eat, propose the "
+                                             "pillars, draw, and write index.html + showcase.txt (the MCP block, three questions, how to add a model)")
+    p_show.add_argument("target", nargs="?", default=None, help="a git url, or a repo path (`.`)")
+    p_show.add_argument("--out", default=None, help="where the page lands (default <repo>/.graphy/showcase/)")
+    p_show.add_argument("--work", default=None, help="where a url is cloned (default ./showcase/<name>)")
+    p_show.set_defaults(handler=_cmd_showcase)
 
     p_trav = sub.add_parser(
         "traversals", help="the traversal store: list the stored walks, or --replay past generations against the live store")

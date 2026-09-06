@@ -2190,3 +2190,42 @@ bash quickstart.sh https://github.com/expressjs/express.git     # the two lines 
 | what eat prints last | the MCP block, three SEE IT commands, three ASK IT commands |
 | the quickstart | two lines, GRAPHY_QUICKSTART_OK in 8.4 s |
 | the floor | `tests/test_provision.py` 3 passed |
+
+## 42 · THE SHOWCASE — one page of a stranger's codebase, made by one command (2026-09-06 · graphyos issue 4)
+
+`graphy showcase <git url | path>` is the marketing asset generated per repo, and it is computed:
+clone shallow when a url, eat when no `.graphy/` stands (the one-liner's path), propose the
+pillars from the walk (a stranger's repo has no curated partition, so the proposal is the cut,
+written to `.graphy/partition.json`), draw the module map and the pillars, and write
+`.graphy/showcase/index.html` — the interactive modules drawing (click a module, what reaches it
+and what it reaches light up), the pillars in ASCII with each arm's crown and the evidence that
+placed it, the ring and what it could not carry, the MCP block to paste into Claude Code or
+Cursor, three questions chosen from the crowns, and how it was made — plus `showcase.txt`, the
+same as plain text for a README or a post. The page passes the draw check and fetches nothing.
+A package the walk rules one pillar gets a page that says so. For a TypeScript or JavaScript
+checkout, the producer now skips `examples/`, `benchmarks/` and `docs/` (a checkout is read from
+its source; a shipped package from what it ships), which is what put express's examples at the
+top of its first page. `quickstart.sh` runs it as its last line. The rule is the docstring of
+`engine/graphy/showcase.py`; the floor is `tests/test_showcase.py`.
+
+```bash
+cd cold/httpx && graphy showcase .
+#   SHOWCASE OK: httpx · 3 arm(s) (MODELS, CLIENT, EXCEPTIONS) · 6 ring shard(s) · CHECK GREEN · 0.1s
+#     the page:  …/httpx/.graphy/showcase/index.html      33 KB, self-contained
+#     the text:  …/httpx/.graphy/showcase/showcase.txt    12 KB
+#   THE ARMS
+#     MODELS       crown httpx._models       5 unit(s) — crown — fan-out at least half the leader's (56)
+#     CLIENT       crown httpx._client       8 unit(s) — crown — fan-out at least half the leader's (56)
+#     EXCEPTIONS   crown httpx._exceptions   3 unit(s) — the floor's crown — the greatest fan-in (50) no arm owns (MODELS 33, CLIENT 16)
+cd ../hono && graphy showcase .        # SHOWCASE OK: hono · 6 arm(s) (MIDDLEWARE, HELPER, ADAPTER, PRESET, VALIDATOR, UTILS) · CHECK GREEN · 0.0s
+cd ../express && graphy showcase .     # SHOWCASE OK: express · 1 arm(s) (EXPRESS) · 85 ring shard(s) · CHECK GREEN — "one pillar", said on the page
+bash quickstart.sh https://github.com/encode/httpx.git
+#   GRAPHY_QUICKSTART_OK: httpx eaten in 5.2s -> …/httpx/.graphy  (the page: …/httpx/.graphy/showcase/index.html)
+```
+
+| check | result |
+|---|---|
+| three showcases, cold | httpx 3 arms · hono 6 arms · express one pillar; every page CHECK GREEN in ~0.1 s after the eat |
+| what a stranger reads | the drawing, the arms with evidence, the ring, the MCP block, three questions, the two-line recipe |
+| the quickstart | ends at the page, 5.2 s for httpx |
+| the floor | `tests/test_showcase.py` 2 passed; `test_typescript.py` green with the checkout excludes |

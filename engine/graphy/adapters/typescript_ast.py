@@ -83,13 +83,19 @@ def is_package_dir(path: Path) -> bool:
     return path.is_dir() and next((f for f in path.rglob("*") if f.suffix in _SOURCE_SUFFIXES), None) is not None
 
 
+_CHECKOUT_NOISE = ("examples", "example", "benchmarks", "benchmark", "docs", "doc", "scripts", "fixtures", "__mocks__")
+
+
 def excludes_for(root: Path) -> tuple[str, ...]:
-    """A checkout is read from its source and its build output is skipped; a shipped package (no
-    ``src/`` with sources — what node_modules holds) is read from what it ships, ``dist/`` and
-    ``lib/`` included, because that is the package."""
+    """A checkout (a ``src/`` with sources, or a ``.git``) is read from its source: build output
+    and the folders that are not the package — examples, benchmarks, docs — are skipped, and its
+    tests are read but marked. A shipped package (what node_modules holds) is read from what it
+    ships, ``dist/`` and ``lib/`` included, because that is the package."""
     src = root / "src"
     if src.is_dir() and any(f.suffix in _SOURCE_SUFFIXES for f in src.rglob("*") if f.is_file()):
-        return _CHECKOUT_EXCLUDES
+        return _CHECKOUT_EXCLUDES + _CHECKOUT_NOISE
+    if (root / ".git").exists():
+        return _CHECKOUT_EXCLUDES + _CHECKOUT_NOISE
     return _SHIPPED_EXCLUDES
 
 

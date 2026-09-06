@@ -105,9 +105,11 @@ reseed.py               the continuity hooks: capture · inject · render — fa
 refresh.py              the refresh lane: PyPI (or --release) against the shard's PROVENANCE; a sibling substrate pinned to the newer release, minted · converged · built · checked beside the current one; born/died per shard stamped in the sibling's journal — never in place
 lightning/              rg discovers, the AST walk-out anchors: the doors · bloodhound · reseed_graph
 draw.py                 units · pillars · arm · neighbourhood · atlas — the codebase drawn from the store, never a shard: a query, laid out by sugiyama, ASCII for the terminal and a checked HTML+SVG page for a human
+showcase.py             compose · showcase — one page of a stranger's codebase: clone when a url, eat, propose the pillars, draw, write index.html + showcase.txt (the MCP block, three questions, how to add a model), checked
+provision.py            the repo's own dependencies provisioned by eat: a venv and pip install, or npm; a repo that will not install is minted alone and the reason named
 sugiyama.py             the layered layout (cycle removal · layering · crossing-min · coordinates) on a wcwidth canvas; emit_html the two-theme self-contained page; check_artifact the done-token
 inventory.py · parity.py · _shared.py
-cli.py                  graphy eat | init | smash | push | pull | index | converge | build | container | estate | walk | bridge | arms | farm | draw | descend | blast | explain | pillars | refresh | mcp | traversals | shell | check | fanout — exit 0 healthy · 1 audit verdict · 2 never ran
+cli.py                  graphy eat | init | smash | push | pull | index | converge | build | container | estate | walk | bridge | arms | farm | draw | showcase | descend | blast | explain | pillars | refresh | mcp | traversals | shell | check | fanout — exit 0 healthy · 1 audit verdict · 2 never ran
 ```
 
 ## THE TAPS — from `engine/`
@@ -117,6 +119,7 @@ cli.py                  graphy eat | init | smash | push | pull | index | conver
 | prove the product stands alone | `bash ../standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
 | prove it works in production | `bash ../quickstart.sh <git-url-or-path> [package]` → `GRAPHY_QUICKSTART_OK` — the done token that matters |
 | the floor | `python3 -m pytest -q` |
+| the showcase page: one command, one page of the codebase — the drawing, the pillars, the ring, the MCP block, three questions | `python3 -m graphy showcase <git url \| path> [--out DIR]` → `SHOWCASE OK` · `index.html` checked + `showcase.txt` |
 | eat a repo — the bolt-on in one verb | `../.venv/bin/graphy eat --repo <abs> --site-packages <its venv's site-packages \| its node_modules> [--package <name>] [--producer typescript_ast]` → `<repo>/.graphy/` — a repo with a `package.json` and no importable Python package is eaten as TypeScript |
 | scaffold a tenant | `python3 -m graphy init --tenant <descriptor> --root <abs> --data-home <abs> --join-keys <path> --journal <path> --cursor <str> --policy refuse --lane <slug>_graph:<kind>` |
 | when the package moves upstream: re-mint the ring at the newest release into a sibling substrate, prove it, and read what was born and died per shard | `python3 -m graphy refresh --tenant <descriptor> --tenant-id <name> --package <name> [--check \| --release <v> \| --site-packages <abs>] [--fixture <golden shard>] [--force]` → `substrate.<release>/` + `tenant.<release>.json` beside the current, `refresh.json` the receipt; exit 0 current or proven · 1 the sibling's check is red · 2 refused |
