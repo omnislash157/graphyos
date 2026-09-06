@@ -47,3 +47,5 @@ def _ast_edge_salience(relation: str) -> float:
 
 def _shim_adj_for_activate(unified_adj: dict) -> dict:
     return {k: [(n, s, w) for (n, s, w, _r) in vs] for k, vs in unified_adj.items()}
+
+# the gate dry run: a comment line, no burden, no number moved
