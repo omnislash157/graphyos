@@ -1,0 +1,10 @@
+{
+  "_meta": "the fastapi tenant's arm partition — the one curated input; walk.py pillars and graphy fanout --partition both read it, every weight is recomputed",
+  "groups": {
+    "ROUTING": ["fastapi.routing", "fastapi.applications", "fastapi.sse"],
+    "DEPENDENCIES": ["fastapi.dependencies", "fastapi.security", "fastapi.params", "fastapi.param_functions"],
+    "COMPAT": ["fastapi._compat", "fastapi.encoders", "fastapi.utils", "fastapi.types", "fastapi.exceptions", "fastapi.exception_handlers", "fastapi.datastructures"],
+    "OPENAPI": ["fastapi.openapi"]
+  },
+  "rest": "EDGE"
+}

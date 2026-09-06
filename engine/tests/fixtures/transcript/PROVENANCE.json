@@ -1,0 +1,26 @@
+{
+  "fixture": "transcript",
+  "purpose": "A synthetic Claude Code transcript in the row grammar observed 2026-09-05 (Claude Code 2.1.261): user rows with string or block content, assistant rows with thinking/tool_use/text blocks, tool_result rows carrying toolUseResult, command echoes, sidechain rows, and the noise row types. Two real exchanges. Marker-clean by construction.",
+  "row_types_observed": [
+    "mode",
+    "permission-mode",
+    "atis-latch",
+    "bridge-session",
+    "file-history-snapshot",
+    "user",
+    "attachment",
+    "ai-title",
+    "assistant",
+    "last-prompt",
+    "file-history-delta",
+    "system",
+    "cost-state",
+    "queue-operation"
+  ],
+  "expected": {
+    "exchanges": 2,
+    "first_user_excludes": "system-reminder",
+    "tool_result_rows_are_not_turns": true
+  },
+  "authored": "2026-09-05"
+}

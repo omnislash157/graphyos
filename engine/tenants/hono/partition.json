@@ -1,0 +1,11 @@
+{
+  "_meta": "the hono tenant's arm partition — the one curated input; graphy fanout --partition cuts by it, graphy arms renders the regions by it, graphy pillars --against diffs the walk's proposal against it",
+  "groups": {
+    "CORE": ["hono.hono", "hono.hono_base", "hono.context", "hono.request", "hono.router", "hono.compose", "hono.http_exception", "hono.types"],
+    "UTILS": ["hono.utils"],
+    "MIDDLEWARE": ["hono.middleware", "hono.validator"],
+    "HELPER": ["hono.helper", "hono.client", "hono.jsx"],
+    "ADAPTER": ["hono.adapter", "hono.preset"]
+  },
+  "rest": "EDGE"
+}

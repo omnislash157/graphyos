@@ -1,0 +1,28 @@
+# This file transplants to the graphy-os repo root ALONGSIDE its existing rules.
+# Keep it to what the engine product needs; the tenant entries live over there.
+
+# ── python build + test artifacts ──
+# Without these, every pytest run offers __pycache__ and egg-info up for staging,
+# and artifact noise is the cheapest way to make a public history unreadable.
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── local environments ──
+.venv/
+venv/
+
+# ── tenants ──
+# A tenant's compiled substrate is rebuilt by its rebuild.sh, and its descriptor
+# carries absolute paths for this machine. Neither is ever tracked.
+tenants/*/substrate/
+tenants/*/tenant.json
+# A refresh's sibling substrate and descriptor (`graphy refresh`): the newer release, proven
+# beside the current one until the operator promotes it. Rebuilt, never tracked.
+tenants/*/substrate.*/
+tenants/*/tenant.*.json

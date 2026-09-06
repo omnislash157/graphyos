@@ -1,0 +1,591 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+import graphy.cli as cli
+import graphy.federated_store as fs
+
+CURSOR = "sha256:" + "0" * 64
+
+_WALK_STATES = (
+    "WALK PATH:",
+    "WALK NO-PATH:",
+    "WALK BUDGET-EXHAUSTED:",
+    "WALK UNANSWERABLE:",
+    "WALK REFUSED:",
+)
+
+
+
+
+def _write_graph(dirpath: Path, nodes: dict, edges: list) -> None:
+    dirpath.mkdir(parents=True, exist_ok=True)
+    (dirpath / "nodes.json").write_text(json.dumps(nodes), encoding="utf-8")
+    (dirpath / "edges.json").write_text(json.dumps(edges), encoding="utf-8")
+
+
+def _write_registry(join_keys: Path) -> None:
+    join_keys.write_text(json.dumps({
+        "_meta": {"description": "synthetic cli registry"},
+        "registered_joins": {"literal_joins": {}},
+    }), encoding="utf-8")
+
+
+def _write_scheme_index(data_home: Path) -> None:
+    (data_home / ".federation_scheme_index.json").write_text(json.dumps({
+        "_meta": {},
+        "widgets": {"own": ["widgets"], "out": []},
+    }), encoding="utf-8")
+
+
+def _descriptor(root: Path) -> Path:
+    data_home = root / "data"
+    descriptor = root / "tenant.json"
+    descriptor.write_text(json.dumps({
+        "root": str(root),
+        "data_home": str(data_home),
+        "adapters": [],
+        "build_lanes": {"widgets_graph": [None, "static-dep"]},
+        "join_keys": str(root / "registry.json"),
+        "cursor": CURSOR,
+        "policy": "refuse",
+        "journal": str(root / "journal"),
+    }), encoding="utf-8")
+    return descriptor
+
+
+def _single_node_fixture(root: Path) -> Path:
+    _write_graph(root / "data/widgets_graph", {
+        "widgets://module/widgets": {
+            "kind": "node", "node_type": "module", "id": "widgets://module/widgets",
+            "dotted": "widgets", "file": "widgets/__init__.py", "loc": 3,
+            "docstring": "",
+        },
+    }, [])
+    _write_registry(root / "registry.json")
+    _write_scheme_index(root / "data")
+    return _descriptor(root)
+
+
+def _walk_fixture(root: Path) -> Path:
+    _write_graph(root / "data/widgets_graph", {
+        "widgets://module/widgets": {
+            "kind": "node", "node_type": "module", "id": "widgets://module/widgets",
+            "dotted": "widgets", "file": "widgets/__init__.py", "loc": 3, "docstring": "",
+        },
+        "widgets://func/widgets.gadget": {
+            "kind": "node", "node_type": "func", "id": "widgets://func/widgets.gadget",
+            "name": "gadget", "dotted": "widgets.gadget", "file": "widgets/gadget.py",
+            "line": 1,
+        },
+        "widgets://func/widgets.sprocket": {
+            "kind": "node", "node_type": "func", "id": "widgets://func/widgets.sprocket",
+            "name": "sprocket", "dotted": "widgets.sprocket", "file": "widgets/sprocket.py",
+            "line": 1,
+        },
+        "widgets://func/widgets.island": {
+            "kind": "node", "node_type": "func", "id": "widgets://func/widgets.island",
+            "name": "island", "dotted": "widgets.island", "file": "widgets/island.py",
+            "line": 1,
+        },
+    }, [
+        {"kind": "edge", "edge_type": "imports", "src": "widgets://module/widgets",
+         "dst": "widgets://func/widgets.gadget", "name": "gadget", "alias": "gadget",
+         "line": 1},
+        {"kind": "edge", "edge_type": "imports", "src": "widgets://func/widgets.gadget",
+         "dst": "widgets://func/widgets.sprocket", "name": "sprocket", "alias": "sprocket",
+         "line": 2},
+    ])
+    _write_registry(root / "registry.json")
+    _write_scheme_index(root / "data")
+    return _descriptor(root)
+
+
+def _mutate_nodes(nodes_path: Path) -> None:
+    nodes = json.loads(nodes_path.read_text(encoding="utf-8"))
+    nodes["widgets://func/widgets.mutated"] = {
+        "kind": "node", "node_type": "func", "id": "widgets://func/widgets.mutated",
+        "name": "mutated", "dotted": "widgets.mutated", "file": "widgets/mutated.py",
+        "line": 1,
+    }
+    nodes_path.write_text(json.dumps(nodes), encoding="utf-8")
+
+
+def _digest_tree(root: Path) -> str:
+    hasher = hashlib.sha256()
+    for p in sorted(root.rglob("*")):
+        if p.is_file():
+            hasher.update(str(p.relative_to(root)).encode("utf-8"))
+            hasher.update(p.read_bytes())
+    return hasher.hexdigest()
+
+
+def _assert_walk_state(combined: str, want: str) -> None:
+    for other in _WALK_STATES:
+        if want.startswith(other):
+            continue
+        assert other not in combined, (
+            f"state collapse: expected {want!r} but sibling state {other} is present")
+    assert want in combined
+
+
+
+
+def test_bare_graphy_prints_usage_exit_2(capsys):
+    rc = cli.main([])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "usage" in (out.out + out.err).lower()
+
+
+@pytest.mark.parametrize("verb,prefix", [
+    ("init", "INIT REFUSED:"),
+    ("build", "BUILD REFUSED:"),
+    ("walk", "WALK REFUSED:"),
+    ("check", "CHECK REFUSED:"),
+])
+def test_verb_refuses_absent_tenant_with_prefix_and_exit_2(verb, prefix, capsys):
+    rc = cli.main([verb])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert prefix in (out.out + out.err)
+
+
+def test_build_refuses_malformed_descriptor_carrying_tenant_error(tmp_path, capsys):
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({
+        "root": "relative/root", "data_home": str(tmp_path / "data"),
+        "adapters": [], "build_lanes": {},
+        "join_keys": str(tmp_path / "registry.json"),
+        "cursor": "c", "policy": "refuse", "journal": str(tmp_path / "journal"),
+    }), encoding="utf-8")
+    rc = cli.main(["build", "--tenant", str(bad), "--tenant-id", "cli-build"])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "BUILD REFUSED:" in out.err
+    assert "root must be absolute" in out.err
+
+
+
+
+def test_init_lstat_first_refusal_leaves_target_byte_untouched(tmp_path, capsys):
+    target = tmp_path / "tenant.json"
+    original = b'{"sentinel": true}'
+    target.write_bytes(original)
+    rc = cli.main(["init", "--tenant", str(target), "--root", str(tmp_path),
+                   "--data-home", str(tmp_path / "data"),
+                   "--join-keys", str(tmp_path / "registry.json"),
+                   "--journal", str(tmp_path / "journal"), "--cursor", "c",
+                   "--policy", "refuse"])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "INIT REFUSED:" in out.err
+    assert target.read_bytes() == original
+
+
+def test_init_write_only_what_validates_creates_nothing(tmp_path, capsys):
+    target = tmp_path / "never.json"
+    rc = cli.main(["init", "--tenant", str(target), "--root", "relative/root",
+                   "--data-home", str(tmp_path / "data"),
+                   "--join-keys", str(tmp_path / "registry.json"),
+                   "--journal", str(tmp_path / "journal"), "--cursor", "c",
+                   "--policy", "refuse"])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "INIT REFUSED:" in out.err
+    assert "root must be absolute" in out.err
+    assert not target.exists()
+    assert not (tmp_path / "data").exists()
+    assert not (tmp_path / "registry.json").exists()
+    assert not (tmp_path / "journal").exists()
+
+
+def test_init_build_check_lifecycle_green(tmp_path, capsys):
+    descriptor = tmp_path / "tenant.json"
+    data_home = tmp_path / "data"
+    rc = cli.main(["init", "--tenant", str(descriptor), "--root", str(tmp_path),
+                   "--data-home", str(data_home),
+                   "--join-keys", str(tmp_path / "registry.json"),
+                   "--journal", str(tmp_path / "journal"), "--cursor", CURSOR,
+                   "--policy", "refuse", "--lane", "widgets_graph:static-dep"])
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "INIT OK:" in out.out
+    assert descriptor.is_file()
+    assert (tmp_path / "registry.json").is_file()
+    assert data_home.is_dir()
+
+    _write_graph(data_home / "widgets_graph", {
+        "widgets://module/widgets": {
+            "kind": "node", "node_type": "module", "id": "widgets://module/widgets",
+            "dotted": "widgets", "file": "widgets/__init__.py", "loc": 3,
+            "docstring": "",
+        },
+    }, [])
+    _write_scheme_index(data_home)
+    capsys.readouterr()
+    rc = cli.main(["build", "--tenant", str(descriptor), "--tenant-id", "cli-init"])
+    out = capsys.readouterr()
+    assert rc == 0
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-init"])
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "CHECK OK:" in out.out
+
+
+
+
+def test_check_red_stale_generation(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    _mutate_nodes(tmp_path / "data/widgets_graph/nodes.json")
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "CHECK RED:" in out.err
+    assert "STALE" in out.err
+
+
+def test_check_could_not_tell_missing_override_registry(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    (tmp_path / "registry.json").unlink()
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "CHECK COULD-NOT-TELL:" in out.err
+    assert "registry" in out.err
+
+
+def test_check_could_not_tell_absent_roster_dir(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    graph_dir = tmp_path / "data/widgets_graph"
+    for p in sorted(graph_dir.rglob("*"), reverse=True):
+        if p.is_file():
+            p.unlink()
+    graph_dir.rmdir()
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "CHECK COULD-NOT-TELL:" in out.err
+
+
+def test_check_could_not_tell_missing_nodes_json(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    (tmp_path / "data/widgets_graph/nodes.json").unlink()
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "CHECK COULD-NOT-TELL:" in out.err
+
+
+def test_check_edges_shard_missing_is_could_not_tell(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    (tmp_path / "data/widgets_graph/edges.json").unlink()
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    assert rc == 1
+    assert "Traceback" not in combined
+    lines = out.err.rstrip("\n").splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith("CHECK COULD-NOT-TELL:")
+    assert "edges" in lines[0]
+
+
+def test_check_edges_shard_malformed_is_could_not_tell(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    (tmp_path / "data/widgets_graph/edges.json").write_text("not json", encoding="utf-8")
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    assert rc == 1
+    assert "Traceback" not in combined
+    lines = out.err.rstrip("\n").splitlines()
+    findings = [line for line in lines if line.startswith("CHECK ")]
+    assert len(findings) >= 1
+    store_line = next(line for line in findings if "store lane" in line)
+    assert store_line.startswith("CHECK COULD-NOT-TELL:")
+    assert "shard" in store_line
+
+
+def test_check_shard_unreadable_is_could_not_tell(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    nodes = tmp_path / "data/widgets_graph/nodes.json"
+    nodes.chmod(0)
+    try:
+        rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    finally:
+        nodes.chmod(0o644)
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    assert rc == 1
+    assert "Traceback" not in combined
+    lines = out.err.rstrip("\n").splitlines()
+    findings = [line for line in lines if line.startswith("CHECK ")]
+    assert len(findings) >= 1
+    store_line = next(line for line in findings if "store lane" in line)
+    assert store_line.startswith("CHECK COULD-NOT-TELL:")
+    assert "nodes" in store_line
+
+
+def test_check_red_missing_input_digest_meta_row(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    tenant = cli._load_tenant(str(descriptor))
+    store_path = fs.store_path_for(["widgets"], tenant=tenant)
+    db = sqlite3.connect(store_path)
+    db.execute("DELETE FROM meta WHERE k='input_digest'")
+    db.commit()
+    db.close()
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "CHECK RED:" in out.err
+    assert "input_digest" in out.err
+
+
+def test_check_could_not_tell_unreadable_scheme_index(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    index = tmp_path / "data/.federation_scheme_index.json"
+    index.write_text("{not json", encoding="utf-8")
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "CHECK COULD-NOT-TELL:" in out.err
+    assert "scheme index" in out.err
+
+
+
+
+def test_check_names_the_registry_as_the_offending_member(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    (tmp_path / "registry.json").write_text("[]", encoding="utf-8")
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    assert rc == 1
+    assert "Traceback" not in combined
+    lines = out.err.rstrip("\n").splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith("CHECK COULD-NOT-TELL:")
+    assert "registry" in lines[0]
+    assert "scheme index" not in lines[0]
+    assert "registry, scheme index, or shard" not in lines[0]
+
+
+def test_check_names_the_scheme_index_as_the_offending_member(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    (tmp_path / "data/.federation_scheme_index.json").write_text("[]", encoding="utf-8")
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    assert rc == 1
+    assert "Traceback" not in combined
+    lines = out.err.rstrip("\n").splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith("CHECK COULD-NOT-TELL:")
+    assert "scheme index" in lines[0]
+    assert "registry" not in lines[0]
+    assert "registry, scheme index, or shard" not in lines[0]
+
+
+def test_check_names_the_offending_shard_by_graph_name(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    nodes = tmp_path / "data/widgets_graph/nodes.json"
+    nodes.chmod(0)
+    try:
+        rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    finally:
+        nodes.chmod(0o644)
+    out = capsys.readouterr()
+    combined = out.out + out.err
+    assert rc == 1
+    assert "Traceback" not in combined
+    findings = [line for line in out.err.splitlines() if line.startswith("CHECK ")]
+    store_line = next(line for line in findings if "store lane" in line)
+    assert store_line.startswith("CHECK COULD-NOT-TELL:")
+    assert "shard" in store_line
+    assert "widgets_graph" in store_line
+
+
+def test_check_wrong_shape_findings_are_not_interchangeable(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+
+    (tmp_path / "registry.json").write_text("[]", encoding="utf-8")
+    assert cli.main(["check", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-check"]) == 1
+    reg_err = capsys.readouterr().err
+    _write_registry(tmp_path / "registry.json")
+
+    (tmp_path / "data/.federation_scheme_index.json").write_text("[]", encoding="utf-8")
+    assert cli.main(["check", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-check"]) == 1
+    idx_err = capsys.readouterr().err
+    _write_scheme_index(tmp_path / "data")
+
+    nodes = tmp_path / "data/widgets_graph/nodes.json"
+    nodes.chmod(0)
+    try:
+        assert cli.main(["check", "--tenant", str(descriptor),
+                         "--tenant-id", "cli-check"]) == 1
+    finally:
+        nodes.chmod(0o644)
+    shard_err = capsys.readouterr().err
+
+    reg_store = next(line for line in reg_err.splitlines() if "store lane" in line)
+    idx_store = next(line for line in idx_err.splitlines() if "store lane" in line)
+    shard_store = next(line for line in shard_err.splitlines() if "store lane" in line)
+    assert reg_store != idx_store
+    assert reg_store != shard_store
+    assert idx_store != shard_store
+
+
+def test_check_preserves_repeated_whitespace_in_dynamic_values(tmp_path, capsys):
+    root = tmp_path / "root  with  runs"
+    descriptor = _single_node_fixture(root)
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
+    out = capsys.readouterr()
+    assert rc == 1
+    lines = out.err.rstrip("\n").splitlines()
+    assert len(lines) == 1
+    assert str(root) in out.err
+
+
+def test_check_is_read_only_on_healthy_and_broken_tenants(tmp_path, capsys):
+    descriptor = _single_node_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    before = _digest_tree(tmp_path)
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "ro-test"])
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "CHECK OK:" in out.out
+    assert before == _digest_tree(tmp_path)
+    _mutate_nodes(tmp_path / "data/widgets_graph/nodes.json")
+    before = _digest_tree(tmp_path)
+    rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "ro-test"])
+    out = capsys.readouterr()
+    assert rc == 1
+    assert "CHECK RED:" in out.err
+    assert before == _digest_tree(tmp_path)
+
+
+
+
+def test_walk_refuses_stale_store_and_opens_with_warning_on_opt_in(tmp_path, capsys):
+    descriptor = _walk_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    _mutate_nodes(tmp_path / "data/widgets_graph/nodes.json")
+    rc = cli.main(["walk", "--tenant", str(descriptor), "--tenant-id", "cli-walk",
+                   "--seed", "widgets://module/widgets",
+                   "--target", "widgets://func/widgets.sprocket"])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "WALK REFUSED:" in out.err
+    rc = cli.main(["walk", "--tenant", str(descriptor), "--tenant-id", "cli-walk",
+                   "--seed", "widgets://module/widgets",
+                   "--target", "widgets://func/widgets.sprocket",
+                   "--on-stale", "warn"])
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "WALK PATH:" in out.out
+    assert "STALE" in out.err
+    assert "serving generation" in out.err
+
+
+def test_walk_on_stale_heal_raises_value_error(tmp_path):
+    descriptor = _walk_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    with pytest.raises(ValueError):
+        cli.main(["walk", "--tenant", str(descriptor), "--tenant-id", "cli-walk",
+                  "--seed", "widgets://module/widgets",
+                  "--target", "widgets://func/widgets.sprocket",
+                  "--on-stale", "heal"])
+
+
+
+
+@pytest.mark.parametrize("seed,target,extra,want_rc,want", [
+    ("widgets://module/widgets", "widgets://func/widgets.sprocket", [],
+     0, "WALK PATH:"),
+    ("widgets://module/widgets", "widgets://func/widgets.island", [],
+     1, "WALK NO-PATH: search exhausted"),
+    ("widgets://module/widgets", "widgets://func/widgets.sprocket",
+     ["--max-depth", "0"], 1, "WALK BUDGET-EXHAUSTED: max_depth"),
+    ("widgets://module/widgets", "widgets://func/widgets.sprocket",
+     ["--max-nodes", "1"], 1, "WALK BUDGET-EXHAUSTED: max_nodes"),
+    ("widgets://module/nope", "widgets://func/widgets.sprocket", [],
+     1, "WALK UNANSWERABLE: seed"),
+    ("widgets://module/widgets", "widgets://func/nope", [],
+     1, "WALK UNANSWERABLE: target"),
+])
+def test_walk_partition_state_bound_to_exit_code(
+        tmp_path, capsys, seed, target, extra, want_rc, want):
+    descriptor = _walk_fixture(tmp_path)
+    assert cli.main(["build", "--tenant", str(descriptor),
+                     "--tenant-id", "cli-build"]) == 0
+    capsys.readouterr()
+    rc = cli.main(["walk", "--tenant", str(descriptor), "--tenant-id", "cli-walk",
+                   "--seed", seed, "--target", target] + extra)
+    out = capsys.readouterr()
+    assert rc == want_rc
+    _assert_walk_state(out.out + out.err, want)
+
+
+
+
+def test_python_m_graphy_wire_subprocess():
+    graphy_os = Path(__file__).parent.parent
+    proc = subprocess.run(
+        [sys.executable, "-m", "graphy", "--help"],
+        cwd=str(graphy_os), capture_output=True, text=True)
+    assert proc.returncode == 0
+    assert "usage" in proc.stdout.lower()

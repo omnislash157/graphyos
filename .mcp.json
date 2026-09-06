@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "graphy": {
+      "command": "bash",
+      "args": ["engine/tenants/fastapi/mcp.sh"]
+    }
+  }
+}

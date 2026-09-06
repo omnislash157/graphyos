@@ -1,0 +1,42 @@
+name: ci
+
+# The floor on two interpreters, then the departure gate — the same two commands the
+# constitution names, run on a machine that has never seen the host.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  floor:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: install graphyos with the dev and typescript extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "engine[dev,typescript]"
+      - name: the package imports, no host reachable
+        run: python -c "import graphy; print(graphy.__version__)"
+      - name: the floor
+        run: cd engine && pytest -q
+
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: the departure gate
+        run: bash standalone_check.sh
+      - name: the census
+        run: bash census.sh

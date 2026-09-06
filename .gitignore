@@ -1,0 +1,34 @@
+# generated data — large, rebuildable, and tenant material. Never tracked.
+staging/containers/
+staging/brains/
+
+# machine-local Claude Code settings — absolute paths and permission mode, never tracked.
+.claude/settings.local.json
+.claude/settings.local.json.*
+
+# the session archive and the reseed tail — the operator's conversations, never tracked.
+.claude/recovery/
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# checkouts and venvs the minting lane reads — upstream source, never tracked.
+staging/corpora/
+
+# quickstart clones — a stranger's repo eaten on this box, never tracked.
+staging/quickstart/
+
+# the local shard index — content-addressed shards pushed from this box, rebuildable, never tracked.
+staging/index/
+
+# the farm's work directory — one job per package, venvs deleted after the mint, farm.json the receipt.
+staging/farm/
+# machine-local: the host's own module names the departure gate probes for; never tracked
+.private_modules

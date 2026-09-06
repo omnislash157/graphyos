@@ -1,0 +1,54 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONPATH=\"$CLAUDE_PROJECT_DIR/engine\" python3 -m graphy.reseed capture",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONPATH=\"$CLAUDE_PROJECT_DIR/engine\" python3 -m graphy.reseed capture",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PYTHONPATH=\"$CLAUDE_PROJECT_DIR/engine\" python3 -m graphy.reseed inject",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/march.py\" inject",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/march.py\" stop-hook",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

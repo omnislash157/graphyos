@@ -1,0 +1,14 @@
+{"type": "mode", "mode": "x", "sessionId": "fx-session-0001"}
+{"type": "permission-mode", "permissionMode": "default", "sessionId": "fx-session-0001"}
+{"type": "user", "sessionId": "fx-session-0001", "uuid": "u1", "timestamp": "2026-09-05T18:00:00Z", "message": {"role": "user", "content": "How do I resolve a widget by id from the store? <system-reminder>never render this</system-reminder>"}}
+{"type": "assistant", "sessionId": "fx-session-0001", "uuid": "a1", "timestamp": "2026-09-05T18:00:01Z", "message": {"role": "assistant", "content": [{"type": "thinking", "thinking": "private", "signature": "x"}]}}
+{"type": "assistant", "sessionId": "fx-session-0001", "uuid": "a2", "timestamp": "2026-09-05T18:00:02Z", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "cat alpha.py"}}]}}
+{"type": "user", "sessionId": "fx-session-0001", "uuid": "u2", "timestamp": "2026-09-05T18:00:03Z", "toolUseResult": "...", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "def resolve_widget(...)"}]}}
+{"type": "assistant", "sessionId": "fx-session-0001", "uuid": "a3", "timestamp": "2026-09-05T18:00:04Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Call the store's resolver with the id; it returns the marker and caches the row."}]}}
+{"type": "attachment", "sessionId": "fx-session-0001", "attachment": {"kind": "x"}}
+{"type": "user", "sessionId": "fx-session-0001", "uuid": "u3", "timestamp": "2026-09-05T18:00:05Z", "message": {"role": "user", "content": "<command-name>/status</command-name><command-message>status</command-message>"}}
+{"type": "assistant", "sessionId": "fx-session-0001", "uuid": "a4", "isSidechain": true, "message": {"role": "assistant", "content": [{"type": "text", "text": "a subagent said this; never in the tail"}]}}
+{"type": "user", "sessionId": "fx-session-0001", "uuid": "u4", "timestamp": "2026-09-05T18:00:06Z", "message": {"role": "user", "content": "And if the id is unknown?"}}
+{"type": "assistant", "sessionId": "fx-session-0001", "uuid": "a5", "timestamp": "2026-09-05T18:00:07Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "The resolver still mints a marker; unknown ids surface at read time, not at resolution."}]}}
+{"type": "system", "sessionId": "fx-session-0001", "isMeta": true, "subtype": "x"}
+{"type": "last-prompt", "lastPrompt": "And if the id is unknown?", "sessionId": "fx-session-0001"}

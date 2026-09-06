@@ -1,0 +1,490 @@
+"""The minting lane. ``smash`` turns one installed or checked-out package into a
+``<scheme>_graph`` shard (nodes.json + edges.json + PROVENANCE.json) with the python_ast
+producer, then follows the shard's resolved ``imports`` edges into every package they name until
+the ring closes: a dependency found under ``--site-packages`` is minted beside the root as a
+sibling shard, the standard library is skipped by name, and what cannot be found is reported,
+never guessed. ``ring.json`` is the receipt. ``parity`` proves a minted shard against a golden
+one record for record."""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import platform
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from email.parser import HeaderParser
+from pathlib import Path
+
+from graphy.adapters import python_ast
+from graphy.adapters import typescript_ast
+from graphy.ir import IRError, validate_graph
+from graphy.parity import Golden, Harness, ParityError, json_equal
+
+__all__ = ["SmashError", "smash", "mint", "parity", "locate", "distributions", "portable",
+           "stdlib_names", "RING_NAME", "PROVENANCE_NAME", "PRODUCERS", "Producer"]
+
+RING_NAME = "ring.json"
+PROVENANCE_NAME = "PROVENANCE.json"
+_SLUG_RE = re.compile(r"^[a-z0-9_]+$")
+_NOTE = ("Verbatim producer output. Re-mint, never hand-edit — a shard edited to fit a schema "
+         "proves the schema, not the engine.")
+
+
+class SmashError(RuntimeError):
+    pass
+
+
+class Producer:
+    """One ecosystem's door: how a corpus becomes records, where a scheme's corpus lives beside
+    its dependencies, what the ecosystem's standard library is. The minting loop is the same for
+    every producer; only this table differs."""
+
+    def __init__(self, name: str, build_ir, vocabulary, is_package_dir, locate, distributions, standard,
+                 corpus_arg: str, missing_site_packages_ok: bool = False):
+        self.name = name
+        self.build_ir = build_ir
+        self.vocabulary = vocabulary
+        self.is_package_dir = is_package_dir
+        self.locate = locate
+        self.distributions = distributions
+        self.standard = standard
+        self.corpus_arg = corpus_arg
+        self.missing_site_packages_ok = missing_site_packages_ok
+
+
+def stdlib_names() -> frozenset[str]:
+    return frozenset(getattr(sys, "stdlib_module_names", ())) | {"__future__", "builtins", "__main__"}
+
+
+def slug_for(scheme: str) -> str | None:
+    """A shard is ``<slug>_graph`` and the grammar is ``[a-z0-9_]+``; a scheme that cannot be a
+    slug cannot be a shard."""
+    slug = scheme.lower()
+    return slug if _SLUG_RE.match(slug) else None
+
+
+def locate(scheme: str, site_packages: Path) -> Path | None:
+    """A scheme's corpus under site-packages: its package directory, else its one-file module."""
+    d = site_packages / scheme
+    if d.is_dir() and next(d.rglob("*.py"), None) is not None:
+        return d
+    f = site_packages / f"{scheme}.py"
+    return f if f.is_file() else None
+
+
+def node_dir_for(scheme: str, node_modules: Path) -> Path | None:
+    """The package directory under node_modules whose name slugs to ``scheme``, TypeScript or not."""
+    if not node_modules.is_dir():
+        return None
+    for d in sorted(node_modules.glob("*")) + sorted(node_modules.glob("@*/*")):
+        if d.is_dir() and not d.name.startswith(".") and slug_for_specifier(d.relative_to(node_modules).as_posix()) == scheme:
+            return d
+    return None
+
+
+def locate_node(scheme: str, node_modules: Path) -> Path | None:
+    """A scheme's TypeScript source under node_modules: the package's ``source`` entry or a ``src/``
+    that carries ``.ts`` files, else the package directory itself when it ships JavaScript (``lib/``,
+    ``dist/`` — what the package is). A package with neither is reported unresolved, never guessed."""
+    d = node_dir_for(scheme, node_modules)
+    if d is not None:
+        pj = d / "package.json"
+        src = None
+        try:
+            meta = json.loads(pj.read_text(encoding="utf-8"))
+            if isinstance(meta.get("source"), str):
+                cand = d / meta["source"]
+                src = cand.parent if cand.is_file() else cand
+        except (OSError, ValueError):
+            pass
+        for cand in ([src] if src else []) + [d / "src", d]:
+            if cand is not None and cand.is_dir() and typescript_ast.is_package_dir(cand):
+                return cand          # the package dir itself: what it ships, dist/ and lib/ included
+    return None
+
+
+def slug_for_specifier(spec: str) -> str | None:
+    return typescript_ast.slug_of_specifier(spec)
+
+
+def distributions_node(node_modules: Path) -> dict[str, dict]:
+    """scheme → the package.json that installed it (name, version, license), one per package dir."""
+    out: dict[str, dict] = {}
+    if not node_modules.is_dir():
+        return out
+    for pj in sorted(node_modules.glob("*/package.json")) + sorted(node_modules.glob("@*/*/package.json")):
+        try:
+            meta = json.loads(pj.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        name = meta.get("name")
+        if not isinstance(name, str):
+            continue
+        slug = slug_for_specifier(name)
+        if slug:
+            lic = meta.get("license")
+            out.setdefault(slug, {"distribution": name, "version": str(meta.get("version") or "") or None,
+                                  "license": lic if isinstance(lic, str) else None})
+    return out
+
+
+def _license_of(msg) -> str | None:
+    expr = msg.get("License-Expression")
+    if expr:
+        return expr.strip()
+    for cls in msg.get_all("Classifier") or ():
+        if cls.startswith("License ::"):
+            return cls.split("::")[-1].strip()
+    raw = msg.get("License")
+    if raw:
+        return raw.strip().splitlines()[0][:80]
+    return None
+
+
+def distributions(site_packages: Path) -> dict[str, dict]:
+    """Top-level import name → the distribution that installed it, read from every
+    ``*.dist-info`` on disk (RECORD names the files, METADATA the name, version and license)."""
+    out: dict[str, dict] = {}
+    for info in sorted(site_packages.glob("*.dist-info")):
+        try:
+            msg = HeaderParser().parsestr((info / "METADATA").read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        meta = {"distribution": (msg.get("Name") or "").strip() or None,
+                "version": (msg.get("Version") or "").strip() or None,
+                "license": _license_of(msg)}
+        names: set[str] = set()
+        record = info / "RECORD"
+        if record.is_file():
+            for line in record.read_text(encoding="utf-8", errors="replace").splitlines():
+                path = line.split(",", 1)[0]
+                if not path or path.startswith(("..", "/")) or path.split("/", 1)[0].endswith((".dist-info", ".data")):
+                    continue
+                if "/" in path:
+                    if "__pycache__" not in path:
+                        names.add(path.split("/", 1)[0])
+                elif path.endswith(".py"):
+                    names.add(path[:-3])
+        top = info / "top_level.txt"
+        if top.is_file():
+            names |= {ln.strip() for ln in top.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()}
+        for name in names:
+            out.setdefault(name, meta)
+    return out
+
+
+PRODUCERS: dict[str, Producer] = {
+    "python_ast": Producer("python_ast", python_ast.build_ir, python_ast.PYTHON_AST_VOCABULARY,
+                           python_ast.is_package_dir, locate, distributions, stdlib_names, "--site-packages"),
+    "typescript_ast": Producer("typescript_ast", typescript_ast.build_ir, typescript_ast.TYPESCRIPT_AST_VOCABULARY,
+                               typescript_ast.is_package_dir, locate_node, distributions_node,
+                               lambda: typescript_ast.NODE_STANDARD, "--site-packages (node_modules)",
+                               missing_site_packages_ok=True),
+}
+
+
+def corpus_digest(corpus: Path, walk=None) -> tuple[str, int]:
+    """Content address of exactly the files the producer reads: sha256 over sorted
+    ``<relpath>\\0<sha256(file)>\\n`` lines."""
+    files = list((walk or python_ast.walk_files)(corpus))
+    base = corpus.parent
+    h = hashlib.sha256()
+    for f in files:
+        h.update(str(f.relative_to(base)).encode())
+        h.update(b"\0")
+        h.update(hashlib.sha256(f.read_bytes()).hexdigest().encode())
+        h.update(b"\n")
+    return h.hexdigest(), len(files)
+
+
+def git_head(corpus: Path) -> str | None:
+    """The commit a checkout is at, or None. A corpus that git ignores (a venv inside a repo) has
+    no commit: the enclosing repo's HEAD says nothing about the wheel."""
+    cwd = corpus if corpus.is_dir() else corpus.parent
+
+    def run(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=10)
+
+    try:
+        if run("check-ignore", "-q", str(corpus)).returncode != 1:
+            return None
+        head = run("rev-parse", "HEAD")
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return head.stdout.strip() if head.returncode == 0 and head.stdout.strip() else None
+
+
+def _write_json(path: Path, obj) -> None:
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _file_receipt(path: Path) -> dict:
+    data = path.read_bytes()
+    return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def _counts(nodes: dict, edges: list) -> dict:
+    node_types: dict[str, int] = {}
+    edge_types: dict[str, int] = {}
+    for rec in nodes.values():
+        node_types[rec.get("node_type", "?")] = node_types.get(rec.get("node_type", "?"), 0) + 1
+    for rec in edges:
+        edge_types[rec.get("edge_type", "?")] = edge_types.get(rec.get("edge_type", "?"), 0) + 1
+    return {"node_count": len(nodes), "edge_count": len(edges),
+            "node_types": dict(sorted(node_types.items())), "edge_types": dict(sorted(edge_types.items()))}
+
+
+def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
+         distribution: dict | None = None, producer: Producer | str = "python_ast",
+         package: str | None = None) -> dict:
+    """Mint one corpus into ``shard_dir``: nodes.json (keyed by id), edges.json, PROVENANCE.json.
+    Returns the provenance. Raises IRError when the producer's output fails its own vocabulary."""
+    corpus = Path(corpus).resolve()
+    shard_dir = Path(shard_dir).resolve()
+    prod = PRODUCERS[producer] if isinstance(producer, str) else producer
+    nodes, edges = prod.build_ir(corpus, package) if prod.name != "python_ast" else prod.build_ir(corpus)
+    validate_graph(nodes, edges, prod.vocabulary)
+    node_map = {k: v for k, v in nodes.items()}
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(shard_dir / "nodes.json", node_map)
+    _write_json(shard_dir / "edges.json", edges)
+    digest, n_files = corpus_digest(corpus, walk=python_ast.walk_files if prod.name == "python_ast" else typescript_ast.walk_files)
+    head = git_head(corpus)
+    kind = "file" if corpus.is_file() else ("package" if prod.is_package_dir(corpus) else "tree")
+    prov = {
+        "surface": f"{shard_dir.name}.records",
+        "oracle_commit": head or f"sha256:{digest}",
+        "mint_command": mint_command,
+        "producer": {"adapter": prod.name, "graphy": _graphy_version(), "python": platform.python_version()},
+        "minted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "corpus": {"scheme": package or (corpus.stem if corpus.is_file() else corpus.name), "kind": kind,
+                   "path": portable(corpus), "files": n_files, "sha256": digest, "git_head": head,
+                   **(distribution or {})},
+        "counts": _counts(node_map, edges),
+        "files": {name: _file_receipt(shard_dir / name) for name in ("nodes.json", "edges.json")},
+        "note": _NOTE,
+    }
+    _write_json(shard_dir / PROVENANCE_NAME, prov)
+    return prov
+
+
+def _graphy_version() -> str:
+    from graphy import __version__
+    return __version__
+
+
+def _schemes(edges: list) -> tuple[set[str], set[str]]:
+    src: set[str] = set()
+    dst: set[str] = set()
+    for e in edges:
+        s, d = e.get("src"), e.get("dst")
+        if isinstance(s, str) and "://" in s:
+            src.add(s.split("://", 1)[0])
+        if isinstance(d, str) and "://" in d:
+            dst.add(d.split("://", 1)[0])
+    return src, dst
+
+
+def _import_schemes(edges: list) -> set[str]:
+    return {e["dst"].split("://", 1)[0] for e in edges
+            if e.get("edge_type") == "imports" and isinstance(e.get("dst"), str) and "://" in e["dst"]}
+
+
+def portable(path: Path) -> str:
+    """A path as a shard records it: relative to the directory the mint ran from when it lies
+    under that directory or its parent (the repo and its siblings), absolute otherwise. A shard
+    is tracked and travels; the box it was minted on does not."""
+    path = Path(path).resolve()
+    cwd = Path.cwd().resolve()
+    for base in (cwd, cwd.parent):
+        try:
+            path.relative_to(base)
+        except ValueError:
+            continue
+        return os.path.relpath(path, cwd)
+    return str(path)
+
+
+def mint_command_for(package: str, site_packages: Path, out: Path, *, corpus: Path | None,
+                     ring: bool, producer: str = "python_ast") -> str:
+    cmd = (f"python3 -m graphy smash --package {package} --site-packages {portable(site_packages)} "
+           f"--out {portable(out)}")
+    if corpus is not None:
+        cmd += f" --corpus {portable(corpus)}"
+    if not ring:
+        cmd += " --no-ring"
+    if producer != "python_ast":
+        cmd += f" --producer {producer}"
+    return cmd
+
+
+def smash(package: str, *, site_packages: str | Path, out: str | Path,
+          corpus: str | Path | None = None, ring: bool = True,
+          log=None, producer: str = "python_ast") -> dict:
+    """Mint ``package`` (from ``corpus`` when given, else from site-packages) and, unless
+    ``ring`` is off, every package its resolved imports name that site-packages holds, until no
+    new scheme appears. Writes ``<out>/<slug>_graph/`` per package and ``<out>/ring.json``."""
+    if producer not in PRODUCERS:
+        raise SmashError(f"unknown producer {producer!r} — one of {', '.join(PRODUCERS)}")
+    prod = PRODUCERS[producer]
+    sp = Path(site_packages).resolve()
+    out_dir = Path(out).resolve()
+    if not sp.is_dir() and not (prod.missing_site_packages_ok and corpus):
+        raise SmashError(f"{prod.corpus_arg} is not a directory: {sp}")
+    root_corpus = Path(corpus).resolve() if corpus else prod.locate(package, sp)
+    if root_corpus is None or not root_corpus.exists():
+        raise SmashError(f"package {package!r} not found: no {sp / package}/ with .py files and no "
+                         f"{sp / (package + '.py')}" if corpus is None
+                         else f"--corpus does not exist: {root_corpus}")
+    if slug_for(package) is None:
+        raise SmashError(f"package {package!r} cannot name a shard: the slug grammar is [a-z0-9_]+")
+    command = mint_command_for(package, sp, out_dir, corpus=Path(corpus).resolve() if corpus else None, ring=ring,
+                               producer=producer)
+    dists = prod.distributions(sp)
+    if producer != "python_ast" and package not in dists and corpus:
+        pj = Path(corpus).resolve() / "package.json"
+        if not pj.is_file():
+            pj = Path(corpus).resolve().parent / "package.json"
+        try:
+            meta = json.loads(pj.read_text(encoding="utf-8"))
+            dists[package] = {"distribution": meta.get("name"), "version": str(meta.get("version") or "") or None,
+                              "license": meta.get("license") if isinstance(meta.get("license"), str) else None}
+        except (OSError, ValueError):
+            pass
+    stdlib = prod.standard()
+    minted: dict[str, dict] = {}
+    scheme_index: dict[str, dict] = {}
+    imports: dict[str, list[str]] = {}
+    skipped_stdlib: set[str] = set()
+    unresolved: dict[str, str] = {}
+    queue: list[tuple[str, Path]] = [(package, root_corpus)]
+    while queue:
+        scheme, c = queue.pop(0)
+        if scheme in minted:
+            continue
+        slug = slug_for(scheme)
+        shard = out_dir / f"{slug}_graph"
+        try:
+            prov = mint(c, shard, mint_command=command, distribution=dists.get(scheme), producer=prod,
+                        package=scheme)
+        except IRError as exc:
+            raise SmashError(f"{scheme}: producer output failed its own vocabulary — {exc}") from exc
+        edges = json.loads((shard / "edges.json").read_text(encoding="utf-8"))
+        own, dst = _schemes(edges)
+        outs = _import_schemes(edges) - {scheme}
+        imports[scheme] = sorted(outs)
+        scheme_index[slug] = {"own": sorted(own), "out": sorted(dst - own)}
+        minted[scheme] = {"slug": slug, "shard": str(shard), "corpus": str(c),
+                          "kind": prov["corpus"]["kind"],
+                          "distribution": prov["corpus"].get("distribution"),
+                          "version": prov["corpus"].get("version"),
+                          "nodes": prov["counts"]["node_count"], "edges": prov["counts"]["edge_count"]}
+        if log:
+            log(f"MINT OK: {scheme} {prov['counts']['node_count']} nodes / {prov['counts']['edge_count']} edges -> {shard}")
+        if not ring:
+            break
+        for s in sorted(outs):
+            if s in minted or s in unresolved or any(q[0] == s for q in queue):
+                continue
+            if s in stdlib:
+                skipped_stdlib.add(s)
+                continue
+            if slug_for(s) is None:
+                unresolved[s] = "not a slug: the shard grammar is [a-z0-9_]+"
+                continue
+            loc = prod.locate(s, sp) if sp.is_dir() else None
+            if loc is None:
+                shipped = node_dir_for(s, sp) if producer != "python_ast" else None
+                unresolved[s] = (f"{shipped} ships no TypeScript or JavaScript source" if shipped
+                                 else f"not under {sp}")
+            else:
+                queue.append((s, loc))
+    receipt = {
+        "root": package, "producer": producer, "site_packages": str(sp), "out": str(out_dir), "mint_command": command,
+        "minted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "minted": minted, "imports": imports, "scheme_index": scheme_index,
+        "stdlib": sorted(skipped_stdlib), "standard": sorted(stdlib),
+        "unresolved": dict(sorted(unresolved.items())),
+    }
+    _write_json(out_dir / RING_NAME, receipt)
+    return receipt
+
+
+def shard_payload(shard_dir: str | Path) -> dict:
+    d = Path(shard_dir)
+    return {"nodes": json.loads((d / "nodes.json").read_text(encoding="utf-8")),
+            "edges": json.loads((d / "edges.json").read_text(encoding="utf-8"))}
+
+
+def golden_from_shard(golden_dir: str | Path) -> Golden:
+    """A shard directory with a PROVENANCE.json is a golden: its provenance is the pin, its
+    nodes and edges the payload."""
+    d = Path(golden_dir)
+    try:
+        prov = json.loads((d / PROVENANCE_NAME).read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ParityError(f"golden shard has no {PROVENANCE_NAME}: {d}") from exc
+    except json.JSONDecodeError as exc:
+        raise ParityError(f"golden {d / PROVENANCE_NAME} is not valid JSON: {exc}") from exc
+    if not isinstance(prov, dict):
+        raise ParityError(f"golden {d / PROVENANCE_NAME} must be a JSON object")
+    fields = {k: prov.get(k) for k in ("surface", "oracle_commit", "mint_command")}
+    for k, v in fields.items():
+        if not isinstance(v, str):
+            raise ParityError(f"golden {d / PROVENANCE_NAME} field {k!r} must be a string, got {type(v).__name__}")
+    try:
+        payload = shard_payload(d)
+    except FileNotFoundError as exc:
+        raise ParityError(f"golden shard is missing a record file: {exc}") from exc
+    return Golden(surface=fields["surface"], oracle_commit=fields["oracle_commit"],
+                  mint_command=fields["mint_command"], payload=payload)
+
+
+def divergence(produced: dict, golden: dict) -> list[str]:
+    """A bounded, human-sized account of how two payloads differ; empty when they do not."""
+    lines: list[str] = []
+    pn, gn = produced.get("nodes") or {}, golden.get("nodes") or {}
+    pe, ge = produced.get("edges") or [], golden.get("edges") or []
+    missing = sorted(set(gn) - set(pn))
+    extra = sorted(set(pn) - set(gn))
+    changed = [k for k in gn if k in pn and not json_equal(gn[k], pn[k])]
+    if missing or extra or changed:
+        lines.append(f"nodes: {len(pn)} produced vs {len(gn)} golden · missing {len(missing)} · "
+                     f"extra {len(extra)} · changed {len(changed)}")
+        for k in missing[:3]:
+            lines.append(f"  missing  {k}")
+        for k in extra[:3]:
+            lines.append(f"  extra    {k}")
+        for k in changed[:3]:
+            fields = sorted(f for f in set(gn[k]) | set(pn[k]) if not json_equal(gn[k].get(f), pn[k].get(f)))
+            lines.append(f"  changed  {k}  fields {fields}")
+    if not json_equal(pe, ge):
+        lines.append(f"edges: {len(pe)} produced vs {len(ge)} golden")
+        for i, (a, b) in enumerate(zip(pe, ge)):
+            if not json_equal(a, b):
+                lines.append(f"  first divergence at edge {i}:")
+                lines.append(f"    golden   {json.dumps(b, sort_keys=True)}")
+                lines.append(f"    produced {json.dumps(a, sort_keys=True)}")
+                break
+    return lines
+
+
+def parity(shard_dir: str | Path, golden_dir: str | Path) -> Golden:
+    """Prove the minted shard equals the golden record for record. Raises ParityError naming
+    the divergence and the re-mint command."""
+    golden = golden_from_shard(golden_dir)
+    produced = shard_payload(shard_dir)
+    diff = divergence(produced, golden.payload)
+    if diff:
+        raise ParityError(f"parity FAILED on surface {golden.surface!r} (oracle {golden.oracle_commit}).\n"
+                          + "\n".join(f"  {ln}" for ln in diff)
+                          + f"\n  re-mint with: {golden.mint_command}")
+    harness = Harness()
+    harness.register(golden.surface, lambda: produced)
+    harness.check(golden)
+    return golden

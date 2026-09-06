@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "graphyos"
+version = "0.1.0"
+description = "GraphyOS — compile any codebase into a walkable substrate, and generate the fan-out that makes an agent competent in it"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.scripts]
+graphy = "graphy.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+estate = ["duckdb>=1.0"]
+typescript = ["tree-sitter>=0.23", "tree-sitter-typescript>=0.23"]
+
+[tool.setuptools.packages.find]
+include = ["graphy*"]
+exclude = ["tenants*", "tests*"]
+
+[tool.setuptools.package-data]
+"graphy.shell" = ["README.md", "claude/*", "hooks/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

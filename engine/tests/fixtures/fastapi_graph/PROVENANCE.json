@@ -1,0 +1,50 @@
+{
+  "surface": "fastapi_graph.records",
+  "oracle_commit": "sha256:21ed3ce1ca24e531f68f036679f69134d1aa8ae6132bdf822aa86b207fb84427",
+  "mint_command": "python3 -m graphy smash --package fastapi --site-packages ../staging/corpora/venv/lib/python3.12/site-packages --out tests/fixtures --no-ring",
+  "producer": {
+    "adapter": "python_ast",
+    "graphy": "0.0.1",
+    "python": "3.12.3"
+  },
+  "minted_at": "2026-09-06T01:39:02+00:00",
+  "corpus": {
+    "scheme": "fastapi",
+    "kind": "package",
+    "path": "../staging/corpora/venv/lib/python3.12/site-packages/fastapi",
+    "files": 48,
+    "sha256": "21ed3ce1ca24e531f68f036679f69134d1aa8ae6132bdf822aa86b207fb84427",
+    "git_head": null,
+    "distribution": "fastapi",
+    "version": "0.139.0",
+    "license": "MIT"
+  },
+  "counts": {
+    "node_count": 507,
+    "edge_count": 3715,
+    "node_types": {
+      "class": 113,
+      "func": 135,
+      "method": 211,
+      "module": 48
+    },
+    "edge_types": {
+      "calls": 2460,
+      "contains": 459,
+      "decorates": 50,
+      "imports": 649,
+      "inherits": 97
+    }
+  },
+  "files": {
+    "nodes.json": {
+      "bytes": 257150,
+      "sha256": "fbce338b55980d6efda37d9507e456bbf7091d117f2f3d840c5ba3fd4662f930"
+    },
+    "edges.json": {
+      "bytes": 681346,
+      "sha256": "60f04430718046636f1e49afca9e61d6ecffa0704162201f9e5042d334d3f024"
+    }
+  },
+  "note": "Verbatim producer output. Re-mint, never hand-edit \u2014 a shard edited to fit a schema proves the schema, not the engine."
+}

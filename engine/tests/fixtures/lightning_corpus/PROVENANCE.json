@@ -1,0 +1,14 @@
+{
+  "fixture": "lightning_corpus",
+  "purpose": "Synthetic multi-grammar corpus for the graphy.lightning parity goldens and grammar tests (P4 pass 1). Every byte is marker-clean by construction.",
+  "authored": "2026-08-04",
+  "term_under_test": "resolve_widget",
+  "files": {
+    "alpha.py": "python grammar - nested named blocks (module fn, class, method) for the innermost-named anchor rule; three resolve_widget occurrences",
+    "beta.js": "brace-language grammar (pseudo_ast lane) - function/object-method nesting; resolve_widget + camelCase sibling for fuzzy splinter",
+    "gamma.svelte": "svelte grammar - script block function + reactive statement",
+    "server.log": "uvicorn access-line grammar - log_route blocks incl. a query-string line for the route_query_pattern case",
+    "transcript.md": "session-prose grammar - the '--- [N] USER/ASSISTANT' delimiter blocks"
+  },
+  "notes": "The goldens are minted over this corpus by scripts/mint_lightning_goldens.sh (host-side lane); see each golden's oracle_commit and mint_command for re-derivation."
+}

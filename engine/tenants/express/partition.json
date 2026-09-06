@@ -1,0 +1,10 @@
+{
+  "_meta": "the express tenant's arm partition — cut by module, because the walk rules the package one pillar (RECON §36); the one curated input",
+  "groups": {
+    "APPLICATION": ["express.express", "express.application"],
+    "REQUEST": ["express.request"],
+    "RESPONSE": ["express.response"],
+    "UTILS": ["express.utils", "express.view"]
+  },
+  "rest": "EDGE"
+}

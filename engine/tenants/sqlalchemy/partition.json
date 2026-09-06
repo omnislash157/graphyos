@@ -1,0 +1,11 @@
+{
+  "_meta": "the sqlalchemy tenant's arm partition — the one curated input; graphy fanout --partition cuts by it and graphy pillars --against diffs the walk's own proposal against it",
+  "groups": {
+    "SQL": ["sqlalchemy.sql", "sqlalchemy.schema", "sqlalchemy.types", "sqlalchemy.inspection"],
+    "ENGINE": ["sqlalchemy.engine", "sqlalchemy.pool", "sqlalchemy.connectors", "sqlalchemy.event", "sqlalchemy.events", "sqlalchemy.exc", "sqlalchemy.util", "sqlalchemy.log"],
+    "ORM": ["sqlalchemy.orm", "sqlalchemy.ext"],
+    "DIALECTS": ["sqlalchemy.dialects"],
+    "TESTING": ["sqlalchemy.testing"]
+  },
+  "rest": "EDGE"
+}
