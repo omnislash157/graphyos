@@ -2327,4 +2327,4 @@ cd engine; time bash tenants/graphy/rebuild.sh
 |---|---|
 | the tenant | GRAPHY_TENANT_OK in 2.3 s; 6 shards; 6 arms verified; 8 pictures |
 | the radius of the last three commits | 14 symbols, each with its dependents, its tests and its arm; two symbols with no test the store carries, named |
-| the PR workflow | posts the radius on a pull request (the dry-run below) |
+| the PR workflow | https://github.com/omnislash157/graphyos/pull/9 — a one-line docstring on `draw._short`; the runner rebuilt the tenant and posted: 7 dependents in graphy, 2 in the ring, 2 tests that reach it, the CUT arm (run 34038018450, success) |
