@@ -1,4 +1,4 @@
-"""The MCP server: the protocol over a pipe, the five tools over the fixture store. A floor —
+"""The MCP server: the protocol over a pipe, the six tools over the fixture store. A floor —
 the proof is the demo and the Claude Code client run in RECON."""
 from __future__ import annotations
 

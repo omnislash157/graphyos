@@ -3,7 +3,7 @@ speaks the Model Context Protocol (Claude Code, Cursor, Claude Desktop, …).
 
     graphy mcp --tenant <descriptor> --tenant-id <name>
 
-Five tools — hunt · descend · blast · walk · explain — each the same walk the CLI verb runs,
+Six tools — hunt · descend · blast · walk · draw · explain — each the same walk the CLI verb runs,
 returning the same text. The store is opened once at startup and its generation is pinned for
 the session; every answer carries it. Zero dependencies: the protocol is newline-delimited
 JSON-RPC 2.0 over stdin/stdout, and this module speaks the three methods a tool server needs
