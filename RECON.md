@@ -1875,7 +1875,7 @@ two commands the constitution names, on a runner with no `.private_modules` (the
 SKIPPED there, by design) and no host to reach.
 
 ```text
-https://github.com/omnislash157/graphy/actions/runs/34007625366   commit 07206ff   success
+https://github.com/omnislash157/graphyos/actions/runs/34007625366   commit 07206ff   success
   floor (3.12)  success   23 s
   floor (3.10)  success   27 s
   gate          success   32 s   (the venv, the install, the floor again, the hashed scrub, the census)
@@ -2078,3 +2078,21 @@ call; the receipt names it.
 |---|---|
 | `is_final` | dev · a · b · rc refused, post admitted; the floor pins it (`tests/test_refresh.py`) |
 | litellm re-farmed | 1.100.0 minted and pushed; 718 names |
+
+## 39 · THE SPLIT RAN — graphyos is public; PyPI waits on a token (2026-09-06 · operator's word)
+
+The operator said the word, and §32's split ran as written: every tracked file outside
+`staging/` (and the skills) copied into a fresh tree, the repo URLs repointed to `graphyos`,
+the scrub swept every file of the cut, the departure gate ran inside it, one commit, and
+`gh repo create omnislash157/graphyos --public --push`. The public repo's first CI run was green
+on all three jobs. This repository stays private as the archive; its board is closed and the
+march points at the public one (`MARCH_REPO`).
+
+```text
+https://github.com/omnislash157/graphyos            PUBLIC · 176 files · SCRUB OK · GRAPHY_STANDALONE_OK inside the cut
+first CI run: floor (3.10) · floor (3.12) · gate — success
+```
+
+PyPI did not run: no token on this box (no `~/.pypirc`, no `TWINE_*`, no keyring backend). The
+wheel and the sdist are built and checked; the publish is one command with a credential, and it
+is issue 1 on the public board.
