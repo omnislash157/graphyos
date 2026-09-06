@@ -43,35 +43,30 @@ Point any MCP client at the same server: Claude Code reads it from this repo's `
 anywhere else, `bash engine/tenants/fastapi/mcp.sh` on stdio, or `graphy mcp --tenant … --tenant-id …`
 over any eaten repo. Six tools: `hunt` · `descend` · `blast` · `walk` · `draw` · `explain`.
 
-## Install
+## Install, then eat — two lines
 
 ```bash
-git clone https://github.com/omnislash157/graphyos.git && cd graphyos
-python3 -m venv .venv && .venv/bin/pip install -e 'engine[estate]'   # graphyos + duckdb, nothing else
-# after publish:  pip install 'graphyos[estate]'                      # not on PyPI yet — the release is built and checked by release.sh, published on the operator's word
+pip install 'graphyos[estate,typescript]'     # after publish; until then: git clone https://github.com/omnislash157/graphyos.git && pip install -e 'graphyos/engine[estate,typescript]'
+cd /path/to/your/repo && graphy eat .
 ```
 
 The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+.
-`[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the
-build says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the
-TypeScript producer.
+`[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build
+says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the TypeScript
+and JavaScript producer.
+
+`eat` provisions the repo's own dependencies beside it (a venv with `pip install <repo>`, or
+`npm install` for a `package.json` repo — printed, and a repo that will not install is minted
+alone and the line says so), mints the package and every package it imports, resolves the labels
+through scope, compiles the store, audits it, and ends with the three things you do next: the
+MCP block to paste into Claude Code or Cursor, the drawing, three questions. `--site-packages`
+names an install you already have and skips the provisioning.
 
 **What it reads today.** Python, through the standard library's own parser; TypeScript (with
 TSX) and JavaScript (ESM and CommonJS), through tree-sitter. Nothing else yet: a language is a
 producer, a resolver and a locator, and those are the ones that exist.
 
-## Five commands
-
-```bash
-# 1. the repo's dependencies, in a venv of their own — the import ring is resolved from here
-python3 -m venv /path/to/repo/.graphy/venv && /path/to/repo/.graphy/venv/bin/pip install /path/to/repo
-
-# 2. eat it
-.venv/bin/graphy eat --repo /path/to/repo \
-    --site-packages /path/to/repo/.graphy/venv/lib/python3.12/site-packages
-```
-
-`eat` prints every step as it lands and ends with the two lines you need next:
+`eat` prints every step as it lands and ends with what you do next:
 
 ```text
 MINT OK: httpx 538 nodes / 2548 edges -> …/.graphy/substrate/httpx_graph

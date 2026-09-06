@@ -2151,3 +2151,42 @@ bash $T/rebuild.sh   # … ATLAS OK: 6 picture(s) × ascii+html -> $T/substrate/
 | the atlas in every rebuild | fastapi 6 · sqlalchemy 6 · hono 7 · express 6 pictures, ascii+html, receipted |
 | the MCP tool | `draw` answers with the ASCII and its read count |
 | the floor | `tests/test_draw.py` 3 passed; `test_sugiyama.py` and `test_mcp.py` green |
+
+## 41 · THE ONE-LINER — pip install graphyos, then graphy eat . (2026-09-06 · graphyos issue 3)
+
+`graphy eat .` is the whole of the stranger's second line. With no `--site-packages`, eat
+provisions the repo's own dependencies beside it and says what it did: a Python repo gets
+`<repo>/.graphy/venv` with `pip install <repo>` — the repo's own metadata is the declaration of
+its ring; a `package.json` repo gets `npm install --ignore-scripts` into its node_modules. A repo
+that will not install is minted alone and the line names why (`PROVISION PARTIAL: …`), never
+silently. `--site-packages` still wins when named. The repo is a positional (`.` for the one you
+stand in), resolved and printed. Eat ends with what a stranger does next: the MCP block for
+Claude Code or Cursor (the model is theirs, the walk is graphy's), the drawing, three questions.
+`quickstart.sh` is now the two lines. The rule is the docstring of `engine/graphy/provision.py`;
+the floor is `tests/test_provision.py` with pip and npm injected.
+
+### The cold run — a fresh venv, the wheel, three fresh clones, on this box
+
+```bash
+python3 -m venv cold/venv && cold/venv/bin/pip install dist/graphyos-0.1.0-py3-none-any.whl tree-sitter tree-sitter-typescript
+git clone --depth 1 https://github.com/encode/httpx.git cold/httpx && cd cold/httpx && graphy eat .
+#   EAT: repo …/cold/httpx
+#   PROVISION: …/cold/venv/bin/python3 -m venv …/httpx/.graphy/venv · PROVISION: …/.graphy/venv/bin/python -m pip install … …/cold/httpx
+#   PROVISION OK: pip install httpx into …/httpx/.graphy/venv
+#   RING: 7 shard(s) · stdlib skipped 62 · unresolved _pytest, brotli, click, …          EAT OK: httpx + 6 ring shard(s)
+#   ADD YOUR MODEL — paste this into .mcp.json … {"mcpServers": {"graphy": {"command": "…/venv/bin/graphy", "args": ["mcp", "--tenant", "…/.graphy/tenant.json", "--tenant-id", "httpx"]}}}
+#   SEE IT   graphy pillars … --write .graphy/partition.json · graphy draw … --pillars … --lr · graphy draw … --emit html --interactive -o .graphy/map.html
+#   ASK IT   graphy blast <symbol> … · graphy descend <symbol> … · graphy walk … --seed httpx://module/httpx --target certifi://module/certifi
+#   4.3 s
+… hono:    PROVISION PARTIAL: npm install failed (npm error Cannot read properties of null (reading 'edgesOut') …) — the ring is whatever node_modules already holds
+#          EAT OK: hono + 0 ring shard(s)        12.6 s   (an npm defect on this box against hono's lockfile, named, not hidden)
+… express: PROVISION OK: npm install into …/express/node_modules · RING: 103 shard(s) · EAT OK: express + 102 ring shard(s)        6.6 s
+bash quickstart.sh https://github.com/expressjs/express.git     # the two lines → GRAPHY_QUICKSTART_OK: express eaten in 8.4s
+```
+
+| check | result |
+|---|---|
+| the wheel in a fresh venv, `graphy eat .` in fresh clones | httpx 4.3 s · express 6.6 s (103 shards) · hono 12.6 s with the npm failure named |
+| what eat prints last | the MCP block, three SEE IT commands, three ASK IT commands |
+| the quickstart | two lines, GRAPHY_QUICKSTART_OK in 8.4 s |
+| the floor | `tests/test_provision.py` 3 passed |

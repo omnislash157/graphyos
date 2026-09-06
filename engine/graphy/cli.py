@@ -1115,22 +1115,30 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
 def _cmd_eat(args: argparse.Namespace) -> int:
     """The bolt-on in one verb: mint the repo's package and its import ring into <repo>/.graphy,
     declare the tenant, resolve the labels, compile the store, emit the container, audit."""
-    if not args.repo:
-        print("EAT REFUSED: --repo is required — graphy never guesses which codebase to eat", file=sys.stderr)
+    target = args.repo or args.repo_pos
+    if not target:
+        print("EAT REFUSED: name the codebase to eat — `graphy eat .` for the one you stand in", file=sys.stderr)
         return 2
-    repo = Path(args.repo).expanduser().resolve()
+    repo = Path(target).expanduser().resolve()
     if not repo.is_dir():
-        print(f"EAT REFUSED: --repo is not a directory: {repo}", file=sys.stderr)
+        print(f"EAT REFUSED: not a directory: {repo}", file=sys.stderr)
         return 2
-    if not args.site_packages:
-        print("EAT REFUSED: --site-packages is required — the import ring is resolved from where the "
-              "repo's dependencies are installed (its venv's site-packages); graphy never guesses",
-              file=sys.stderr)
-        return 2
+    print(f"EAT: repo {repo}")
     candidates = _package_candidates(repo)
     producer = args.producer
     if producer is None:
         producer = "typescript_ast" if not candidates and (repo / "package.json").is_file() else "python_ast"
+    if not args.site_packages:
+        from graphy import provision as provision_lane
+        try:
+            pv = provision_lane.provision(repo, producer, log=print)
+        except RuntimeError as exc:
+            print(f"EAT REFUSED: {exc}", file=sys.stderr)
+            return 2
+        print(f"PROVISION {'OK' if pv.installed else 'PARTIAL'}: {pv.how}")
+        args.site_packages = str(pv.site)
+        if producer == "typescript_ast" and not pv.site.is_dir():
+            pv.site.mkdir(parents=True, exist_ok=True)
     if producer == "typescript_ast":
         return _eat_typescript(args, repo)
     if args.package:
@@ -1198,11 +1206,37 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     seed = f"{package}://module/{package}"
     target = f"{deps[0]}://module/{deps[0]}" if deps else seed
     print(f"EAT OK: {package} + {len(deps)} ring shard(s) -> {home}")
-    print(f"  the tenant:  --tenant {desc} --tenant-id {package}")
-    print(f"  a walk:      graphy walk --tenant {desc} --tenant-id {package} --seed {seed} --target {target}")
-    print(f"  the estate:  graphy estate --tenant {desc} --tenant-id {package}")
-    print(f"  the walks:   graphy traversals --tenant {desc} --tenant-id {package} [--replay]")
+    print(_next_steps(desc, package, seed, target, home))
     return 0
+
+
+def _graphy_command() -> list[str]:
+    """How this box runs graphy: the console script when it is on PATH, else this interpreter."""
+    exe = shutil.which("graphy")
+    return [exe] if exe else [sys.executable, "-m", "graphy"]
+
+
+def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path) -> str:
+    """What a stranger does next, printed once at the end of eat: the MCP block for the client
+    they already use, the drawing, three questions. Any model; the walk is graphy's."""
+    cmd = _graphy_command()
+    mcp = json.dumps({"mcpServers": {"graphy": {"command": cmd[0], "args": cmd[1:] + ["mcp", "--tenant", str(desc), "--tenant-id", package]}}}, indent=2)
+    g = " ".join(cmd)
+    tenant = f"--tenant {desc} --tenant-id {package}"
+    return "\n".join([
+        "",
+        "  ADD YOUR MODEL — paste this into .mcp.json (Claude Code) or your client's MCP settings; the model is yours, the walk is graphy's:",
+        *("  " + ln for ln in mcp.splitlines()),
+        "",
+        "  SEE IT",
+        f"    {g} pillars {tenant} --write {home / 'partition.json'}        # the arms the walk proposes",
+        f"    {g} draw {tenant} --pillars --partition {home / 'partition.json'} --lr",
+        f"    {g} draw {tenant} --corpus {package} --lr --min-weight 2 --emit html --interactive -o {home / 'map.html'}",
+        "  ASK IT",
+        f"    {g} blast <symbol> {tenant}          # if this changes, what breaks",
+        f"    {g} descend <symbol> {tenant}        # what it reaches, across packages",
+        f"    {g} walk {tenant} --seed {seed} --target {target}",
+    ])
 
 
 def _cmd_push(args: argparse.Namespace) -> int:
@@ -1297,7 +1331,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_eat = sub.add_parser(
         "eat", help="the bolt-on: mint a repo's package and its import ring into <repo>/.graphy, "
                     "resolve, build, emit the container, audit — one verb")
-    p_eat.add_argument("--repo", default=None, help="absolute path to the codebase to eat")
+    p_eat.add_argument("repo_pos", nargs="?", default=None, metavar="REPO", help="the codebase to eat (`.` for the one you stand in)")
+    p_eat.add_argument("--repo", default=None, help="the codebase to eat (the same as the positional)")
     p_eat.add_argument("--site-packages", default=None,
                        help="where the repo's dependencies are installed (its venv's site-packages)")
     p_eat.add_argument("--package", default=None,
