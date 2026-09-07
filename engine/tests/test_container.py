@@ -163,6 +163,30 @@ def test_GREEN_emit_all_opens_one_connection_over_n_shards(tmp_path, monkeypatch
         assert r["files"]["nodes.parquet"]["rows"] == len(json.loads((gd / "nodes.json").read_text()))
 
 
+def test_GREEN_build_container_none_leaves_every_shard_pending_and_needs_no_duckdb(tmp_path, capsys, monkeypatch):
+    """What eat does: no parquet at all, a pending receipt beside every shard, and duckdb never
+    imported — the build runs with duckdb made unimportable. The estate writes them all on the
+    first ask (graphyos #25)."""
+    import sys
+    home, slugs = _ring(tmp_path)                       # alpha · beta · gamma
+    desc = _tenant(tmp_path, home, slugs)
+    monkeypatch.setitem(sys.modules, "duckdb", None)    # `import duckdb` raises ImportError from here on
+    assert cli.main(["build", "--tenant", str(desc), "--tenant-id", "t", "--container", "none"]) == 0
+    out = capsys.readouterr().out
+    assert "CONTAINER PENDING: 3 shard(s)" in out and "graphy estate emits them on the first ask" in out
+    for s in slugs:
+        assert container.verify(home / f"{s}_graph") == "pending"
+        assert not (home / f"{s}_graph" / "adjacency.parquet").exists()
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "t"]) == 0
+    assert "3 pending until the estate asks" in capsys.readouterr().out
+    monkeypatch.delitem(sys.modules, "duckdb")
+    pytest.importorskip("duckdb")
+    con = container.estate([home / f"{s}_graph" for s in slugs])
+    assert con.execute("SELECT count(DISTINCT corpus) FROM adj").fetchone()[0] == 3
+    con.close()
+    assert all(container.verify(home / f"{s}_graph") == "fresh" for s in slugs)
+
+
 @needs_duckdb
 def test_GREEN_build_container_for_one_shard_leaves_the_rest_pending_until_the_estate_asks(tmp_path, capsys, monkeypatch):
     import duckdb

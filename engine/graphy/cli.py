@@ -199,6 +199,13 @@ def _cmd_build(args: argparse.Namespace) -> int:
           f"-> {info['db']}")
     dirs = [Path(tenant.data_home) / f"{s}_graph" for s in substrates]
     now = getattr(args, "container", "all") or "all"
+    if now == "none":
+        # Every shard pending, no parquet, no duckdb imported: eat's choice — the estate writes them
+        # all on the first ask, on one connection, and nobody pays for a file nobody asked for (§61).
+        deferred = [container.defer(d) for d in dirs]
+        print(f"CONTAINER PENDING: {len(deferred)} shard(s) — graphy estate emits them on the first ask, "
+              f"graphy container --emit writes them now")
+        return 0
     if now != "all" and now not in {d.name for d in dirs}:
         print(f"BUILD REFUSED: --container {now} names no shard in the roster "
               f"({', '.join(d.name for d in dirs)})", file=sys.stderr)
@@ -1313,7 +1320,7 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         return rc
     _scheme_index_from_ring(sub, f"{package} scheme index — derived from ring.json by graphy eat")
     for step in (["converge", "--tenant", str(desc), "--tenant-id", package, "--resolve"],
-                 ["build", "--tenant", str(desc), "--tenant-id", package, "--container", f"{package}_graph"],
+                 ["build", "--tenant", str(desc), "--tenant-id", package, "--container", "none"],
                  ["check", "--tenant", str(desc), "--tenant-id", package]):
         rc = main(step)
         if rc != 0:
@@ -1512,9 +1519,10 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="path to the tenant descriptor JSON")
     p_build.add_argument("--tenant-id", default=None,
                          help="the receipt name written into every OverrideRecord")
-    p_build.add_argument("--container", default="all", metavar="all|<slug>_graph",
-                         help="the parquet beside every shard now (all, the default), or beside one shard now "
-                              "with the rest pending until graphy estate asks (what eat does for the ring)")
+    p_build.add_argument("--container", default="all", metavar="all|none|<slug>_graph",
+                         help="the parquet beside every shard now (all, the default), beside one shard now "
+                              "with the rest pending until graphy estate asks, or none — every shard pending "
+                              "and no duckdb imported (what eat does)")
     p_build.set_defaults(handler=_cmd_build)
 
     p_container = sub.add_parser(

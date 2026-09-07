@@ -3189,3 +3189,49 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before24.json r
 | the same answer | 113 of 113 graphy files identical old vs new in one process; 26 `nodes.json` · `edges.json` over fastapi and sqlalchemy the same sha256 after a rebuild; parity against the golden fixture green |
 | the gate | `GRAPHY_STANDALONE_OK`; the receipt's gate 18.0 → 15.7 s; the graphy tenant's six arm regions re-rendered (`_class_info` moved the walk: 2627 → 2628 nodes) |
 | the receipt | `measure.py run` then `diff recon.before24.json recon.json`: **`pass.engine_hot_lanes` 5 → 2** — `tenants.fastapi` · `tenants.graphy` · `tenants.sqlalchemy` off the count, their hottest frame now `compile`; `floor.seconds` 11.0 → 8.2, `gate.seconds` 18.0 → 15.7, `tenants.fastapi.seconds` 3.4 → 3.0, `quickstart.httpx.seconds` 5.9 → 5.3; three numbers the wrong way and none the engine's — `quickstart.express.seconds` 5.1 → 8.4 (the cold quickstart's `npm install` over the network: the lane read 8.2 · 8.1 · 7.7 · 5.5 · 5.1 · 8.4 across the last six receipts), `wheel.seconds` 2.9 → 3.9 (pip and build), `tenants.fastapi.doors.seconds` 0.079 → 0.091 (12 ms on a 60–120 ms door). `MEASURE DIFF` exits 1 on those three; closed on the engine lines by the operator's standing ruling (§59) |
+
+## 61 · EAT WRITES NO PARQUET — every shard pending until the first ask, duckdb off eat's import surface, the httpx eat 0.53 → 0.41 s (2026-09-07 · graphyos issue 25)
+
+**What it was.** §57 deferred the ring's parquet to the first ask and kept the package's own,
+written at eat through `build --container <slug>_graph`. That one write was the only reason eat
+imported duckdb: on the httpx clone the container's own clock read `0.03 s beside httpx_graph`,
+`import duckdb` 41–48 ms and `connect` 6–7 ms in a fresh process — about 55 ms of a 550 ms eat —
+for a file nobody had asked for (`showcase` never opens the estate; the six ring receipts still read
+pending after it). The receipt read the lane engine-hot on `_write_parquet`, 0.30 s self of a
+1.06 s profiled eat with no duckdb frame beneath it: the pybind11 attribution of §57, a frame that
+costs 30 ms on the wall clock.
+
+**What it is.** `build --container none`: a pending receipt beside every shard, no parquet, no
+duckdb imported — `container.defer` needs none, and the branch returns before `have_duckdb` is
+asked. `eat` passes it. `graphy estate` writes every pending shard on the first ask, on the
+connection it queries with, and says how many; `graphy container --emit` writes them now; `check`
+reads `container fresh for 0/7 shard(s), 7 pending until the estate asks` and is green. The one
+shard written at eat cost 30 ms; the first ask writes it beside the ring's in the same 0.28 s
+(httpx, 7 shards) or 0.55 s (express, 86).
+
+```bash
+# in an eaten clone (staging/quickstart/httpx)
+for i in 1 2 3; do /usr/bin/time -f "eat %e s" ../../../.venv/bin/graphy eat . 2>&1 | grep -E '^eat |CONTAINER'; done
+../../../.venv/bin/python -X importtime -m graphy eat . 2>&1 >/dev/null | grep -c ' duckdb'          # 0 (was 6 lines, duckdb 30.5 ms cumulative)
+grep -c '"pending": true' .graphy/substrate/*/container.json | grep -c ':1'                        # 7
+/usr/bin/time -f "estate first ask %e s" ../../../.venv/bin/graphy estate --tenant .graphy/tenant.json --tenant-id httpx --sql "SELECT count(DISTINCT corpus) FROM adj"
+../../../.venv/bin/graphy container --tenant .graphy/tenant.json --tenant-id httpx | tail -1        # CONTAINER OK: 7/7 fresh
+cd ../../../engine && python3 -m pytest -q tests/test_container.py -k container_none
+# the RED proof (reverted after): the none branch removed — `none` names no shard, build exits 2
+cd .. && python3 measure.py run && python3 measure.py diff recon.before25.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `graphy eat .` on the httpx clone (7 shards), three runs | 0.52 · 0.54 · 0.52 s | 0.42 · 0.40 · 0.42 s |
+| `graphy eat .` on the express clone (86 shards), three runs, old code vs new in the same minute | 2.29 · 2.28 · 2.35 s | 2.24 · 2.25 · 2.21 s |
+| `import duckdb` on eat's import surface (`-X importtime`) | 6 lines, 30.5 ms cumulative | none |
+| the container at eat | `1 shard(s) … 0.03 s beside httpx_graph; 6 pending` | `CONTAINER PENDING: 7 shard(s)` |
+| the estate's first ask | writes 6 | writes 7 in 0.28 s (httpx) · 86 in 0.55 s (express), answers over all |
+
+| check | result |
+|---|---|
+| the floor | 485 passed · 3 skipped (484 + 1: `--container none` with duckdb made unimportable exits 0 naming three pending, `check` green naming them, the estate's first ask writes and answers over three, all fresh after) |
+| the RED proof | the branch removed → `assert 2 == 0` — `none` names no shard in the roster |
+| the gate | `GRAPHY_STANDALONE_OK` |
+| the receipt | `measure.py run` then `diff recon.before25.json recon.json`: **`pass.engine_hot_lanes` 2 → 1** — `quickstart.httpx` off the count (`stdlib_hot` False → True), the floor the one lane left; `quickstart.httpx.rss_kb` 121,732 → 54,384 (−55 %) and `quickstart.express.rss_kb` 109,756 → 45,844 (−58 %) — duckdb no longer lives in the eat process; `quickstart.httpx.eat_seconds` 4.3 → 4.0, `eat_again_seconds` 0.5 → 0.4 (httpx) · 2.5 → 2.3 (express), `gate.seconds` 15.7 → 14.5, every tenant's doors faster; two numbers the wrong way and neither the engine's — `tenants.fastapi.seconds` 3.0 → 3.5 (the same rebuild timed by hand right after: 2.85 · 3.32 · 6.89 s, the box's noise), `wheel.seconds` 3.9 → 8.9 (pip, build and twine). `MEASURE DIFF` exits 1 on those two; closed on the engine lines by the standing ruling (§59) |
