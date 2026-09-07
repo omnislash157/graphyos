@@ -17,13 +17,15 @@ without it this producer refuses by name and the core is untouched.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Any, Iterator
 
+from graphy.adapters._receipt import Receipt
 from graphy.ir import EDGE_TYPES, NODE_TYPES, Vocabulary
 
-__all__ = ["build_ir", "walk_files", "is_package_dir", "TYPESCRIPT_AST_VOCABULARY", "NODE_STANDARD",
+__all__ = ["build_ir", "mint_records", "walk_files", "is_package_dir", "TYPESCRIPT_AST_VOCABULARY", "NODE_STANDARD",
            "ProducerUnavailable", "slug_of_specifier"]
 
 TYPESCRIPT_AST_VOCABULARY = Vocabulary(node_types=NODE_TYPES, edge_types=EDGE_TYPES, producer="typescript_ast")
@@ -523,39 +525,62 @@ def _module_for_specifier(spec: str, file: Path, root: Path, package: str, modul
 
 
 def build_ir(corpus_root: str | Path, package: str | None = None) -> tuple[dict, list]:
+    nodes, edges, _ = mint_records(corpus_root, package)
+    return nodes, edges
+
+
+def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=None) -> tuple[dict, list, dict]:
+    """``build_ir`` with the per-file receipt (see ``python_ast.mint_records``). A file's records
+    are a function of its bytes, its path, the package name and the corpus's file list — a
+    relative specifier resolves against the files that exist — so the ``pin`` carries the sorted
+    file list's digest; ``reuse(pin, relpath, sha256)`` hands back a file's records or None."""
     root = Path(corpus_root).resolve()
     package = package or root.name.replace("-", "_")
     ts, tsx = _parsers()
     files = list(walk_files(root))
     modules: dict[str, str] = {}
     dotted_of: dict[Path, str] = {}
+    rels: dict[Path, str] = {}
     for f in files:
         d = _dotted_for(f, root, package)
         dotted_of[f] = d
         modules[str(f.resolve())] = _node_id("module", d)
+        rels[f] = str(f.relative_to(root)).replace("\\", "/")
+    listing = hashlib.sha256("\n".join(sorted(rels.values())).encode("utf-8")).hexdigest()
+    pin = f"typescript_ast:{package}:{listing}"
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
+    receipt = Receipt("first")
     for f in files:
         try:
             src = f.read_bytes()
         except OSError:
             continue
-        tree = (ts if f.suffix in (".ts", ".mts", ".cts") else tsx).parse(src)   # JSX-safe for everything else
-        module_dotted = dotted_of[f]
-        module_id = modules[str(f.resolve())]
-        file_rel = str(f.relative_to(root.parent))
-        role = "test" if TEST_FILE.search(str(f.relative_to(root)).replace("\\", "/")) else None
-        mod_rec = {"kind": "node", "node_type": "module", "id": module_id, "dotted": module_dotted, "file": file_rel,
-                   "loc": src.count(b"\n") + 1, "docstring": ""}
-        records = [mod_rec] + list(_walk_module(
-            tree, module_id, module_dotted, file_rel, src,
-            lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules)))
-        for rec in records:
-            if rec["kind"] == "node":
-                rec["module"] = module_dotted
-                if role:
-                    rec["role"] = role
-                nodes.setdefault(rec["id"], rec)
-            else:
-                edges.append(rec)
-    return nodes, edges
+        rel = rels[f]
+        sha = hashlib.sha256(src).hexdigest()
+        cached = reuse(pin, rel, sha) if reuse is not None else None
+        if cached is None:
+            tree = (ts if f.suffix in (".ts", ".mts", ".cts") else tsx).parse(src)   # JSX-safe for everything else
+            module_dotted = dotted_of[f]
+            module_id = modules[str(f.resolve())]
+            file_rel = str(f.relative_to(root.parent))
+            role = "test" if TEST_FILE.search(str(f.relative_to(root)).replace("\\", "/")) else None
+            mod_rec = {"kind": "node", "node_type": "module", "id": module_id, "dotted": module_dotted, "file": file_rel,
+                       "loc": src.count(b"\n") + 1, "docstring": ""}
+            records = [mod_rec] + list(_walk_module(
+                tree, module_id, module_dotted, file_rel, src,
+                lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules)))
+            n_recs, e_recs = [], []
+            for rec in records:
+                if rec["kind"] == "node":
+                    rec["module"] = module_dotted
+                    if role:
+                        rec["role"] = role
+                    n_recs.append(rec)
+                else:
+                    e_recs.append(rec)
+        else:
+            n_recs, e_recs = cached
+        receipt.file(rel, sha, n_recs, e_recs, nodes, parsed=cached is None)
+        edges.extend(e_recs)
+    return nodes, edges, receipt.finish(pin)

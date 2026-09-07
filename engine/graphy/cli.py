@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from graphy import fanout
@@ -1150,6 +1151,7 @@ def _cmd_eat(args: argparse.Namespace) -> int:
     if not repo.is_dir():
         print(f"EAT REFUSED: not a directory: {repo}", file=sys.stderr)
         return 2
+    args._t0 = time.perf_counter()
     print(f"EAT: repo {repo}")
     candidates = _package_candidates(repo)
     producer = args.producer
@@ -1185,6 +1187,32 @@ def _cmd_eat(args: argparse.Namespace) -> int:
     return _eat_run(args, repo, corpus.name, corpus, "python_ast")
 
 
+def _clear_substrate(sub: Path) -> None:
+    """A re-eat starts from the previous substrate's shards, never from nothing: each
+    ``<slug>_graph/`` keeps exactly nodes.json · edges.json · PROVENANCE.json — the splice the
+    re-mint reads (``smash.mint``), so only the files whose bytes moved are parsed — and the
+    stored walks keep their directory, so they diff against the new generation. Everything
+    else under the substrate (the registry, the journal, the resolver's sidecars, the store,
+    the parquet, the atlas) is a build product and is rebuilt."""
+    kept = sub.parent / f".{traversal.DIRNAME}.keep"
+    shutil.rmtree(kept, ignore_errors=True)
+    if (sub / traversal.DIRNAME).is_dir():
+        shutil.move(str(sub / traversal.DIRNAME), str(kept))     # walks survive a re-eat: they diff against it
+    if sub.is_dir():
+        for entry in list(sub.iterdir()):
+            if entry.is_dir() and entry.name.endswith("_graph") and (entry / smash_lane.PROVENANCE_NAME).is_file():
+                for f in list(entry.iterdir()):
+                    if f.name not in ("nodes.json", "edges.json", smash_lane.PROVENANCE_NAME):
+                        shutil.rmtree(f, ignore_errors=True) if f.is_dir() else f.unlink(missing_ok=True)
+            elif entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+    if kept.is_dir():
+        sub.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(kept), str(sub / traversal.DIRNAME))
+
+
 def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, producer: str) -> int:
     home = Path(args.home).expanduser().resolve() if args.home else repo / ".graphy"
     sub = home / "substrate"
@@ -1192,16 +1220,10 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     home.mkdir(parents=True, exist_ok=True)
     if not args.home:
         (home / ".gitignore").write_text("*\n", encoding="utf-8")   # rebuilt, never tracked by the eaten repo
-    kept = home / f".{traversal.DIRNAME}.keep"
-    shutil.rmtree(kept, ignore_errors=True)
-    if (sub / traversal.DIRNAME).is_dir():
-        shutil.move(str(sub / traversal.DIRNAME), str(kept))     # walks survive a re-eat: they diff against it
-    shutil.rmtree(sub, ignore_errors=True)
+    t0 = getattr(args, "_t0", None) or time.perf_counter()
+    _clear_substrate(sub)
     if desc.exists():
         desc.unlink()
-    if kept.is_dir():
-        sub.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(kept), str(sub / traversal.DIRNAME))
 
     print(f"EAT: {package} at {corpus} -> {home}")
     rc = main(["smash", "--package", package, "--site-packages", args.site_packages,
@@ -1210,6 +1232,10 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         print("EAT FAILED at smash", file=sys.stderr)
         return rc
     ring = json.loads((sub / smash_lane.RING_NAME).read_text(encoding="utf-8"))
+    live = {f"{m['slug']}_graph" for m in ring["minted"].values()}
+    for d in sub.glob("*_graph"):
+        if d.is_dir() and d.name not in live:
+            shutil.rmtree(d, ignore_errors=True)                 # a shard the ring no longer names
     lanes = [f"--lane={m['slug']}_graph:static-dep" for m in ring["minted"].values()]
     from graphy.cartograph import repo_head_sha
     head = repo_head_sha(repo)
@@ -1232,7 +1258,10 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     deps = [s for s in ring["minted"] if s != package]
     seed = f"{package}://module/{package}"
     target = f"{deps[0]}://module/{deps[0]}" if deps else seed
-    print(f"EAT OK: {package} + {len(deps)} ring shard(s) -> {home}")
+    parsed = sum(m.get("parsed", 0) for m in ring["minted"].values())
+    files = sum(m.get("parsed", 0) + m.get("reused", 0) for m in ring["minted"].values())
+    print(f"EAT OK: {package} + {len(deps)} ring shard(s) -> {home}  "
+          f"({parsed} of {files} files parsed, {time.perf_counter() - t0:.1f}s)")
     print(_next_steps(desc, package, seed, target, home))
     return 0
 

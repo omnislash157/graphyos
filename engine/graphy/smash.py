@@ -18,13 +18,13 @@ from datetime import datetime, timezone
 from email.parser import HeaderParser
 from pathlib import Path
 
-from graphy.adapters import python_ast
+from graphy.adapters import _receipt, python_ast
 from graphy.adapters import typescript_ast
 from graphy.ir import IRError, validate_graph
 from graphy.parity import Golden, Harness, ParityError, json_equal
 
 __all__ = ["SmashError", "smash", "mint", "parity", "locate", "distributions", "portable",
-           "stdlib_names", "RING_NAME", "PROVENANCE_NAME", "PRODUCERS", "Producer"]
+           "stdlib_names", "RING_NAME", "PROVENANCE_NAME", "SOURCES_KEY", "PRODUCERS", "Producer"]
 
 RING_NAME = "ring.json"
 PROVENANCE_NAME = "PROVENANCE.json"
@@ -186,16 +186,19 @@ PRODUCERS: dict[str, Producer] = {
 }
 
 
-def corpus_digest(corpus: Path, walk=None) -> tuple[str, int]:
+def corpus_digest(corpus: Path, walk=None, hashes: dict[str, str] | None = None) -> tuple[str, int]:
     """Content address of exactly the files the producer reads: sha256 over sorted
-    ``<relpath>\\0<sha256(file)>\\n`` lines."""
+    ``<relpath>\\0<sha256(file)>\\n`` lines. ``hashes`` (relpath under the corpus → sha256, the
+    producer's receipt) spares the second read of every file."""
     files = list((walk or python_ast.walk_files)(corpus))
     base = corpus.parent
+    root = corpus if corpus.is_dir() else corpus.parent
     h = hashlib.sha256()
     for f in files:
         h.update(str(f.relative_to(base)).encode())
         h.update(b"\0")
-        h.update(hashlib.sha256(f.read_bytes()).hexdigest().encode())
+        sha = (hashes or {}).get(str(f.relative_to(root))) or hashlib.sha256(f.read_bytes()).hexdigest()
+        h.update(sha.encode())
         h.update(b"\n")
     return h.hexdigest(), len(files)
 
@@ -252,34 +255,101 @@ def _counts(nodes: dict, edges: list) -> dict:
             "node_types": dict(sorted(node_types.items())), "edge_types": dict(sorted(edge_types.items()))}
 
 
+SOURCES_KEY = "sources"
+
+
+def _reuse_from(shard_dir: Path, producer_block: dict):
+    """The splice over the shard already at ``shard_dir``: a callable the producer asks per file,
+    ``(pin, relpath, sha256) -> (node_records, edge_records) | None``, and the receipt it reads.
+    None when the shard has no receipt, the receipt is not spliceable, or the producer that wrote
+    it (adapter · graphy · python) is not this one — a record minted by another producer version
+    is not this producer's output, and a full mint runs. The previous records are read once, on
+    the first file that matches; a file whose bytes moved, or a pin that moved, returns None."""
+    try:
+        prov = json.loads((shard_dir / PROVENANCE_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    src = prov.get(SOURCES_KEY) if isinstance(prov, dict) else None
+    if (not isinstance(src, dict) or not src.get("spliceable") or not isinstance(src.get("files"), dict)
+            or prov.get("producer") != producer_block):
+        return None
+    spans: dict[str, tuple[str, int, int, int, int]] = {}
+    n_off = e_off = 0
+    for rel, f in src["files"].items():
+        if not isinstance(f, dict):
+            return None
+        spans[rel] = (f.get("sha256"), n_off, f.get("nodes", 0), e_off, f.get("edges", 0))
+        n_off += f.get("nodes", 0)
+        e_off += f.get("edges", 0)
+    loaded: list = []
+
+    def reuse(pin: str, rel: str, sha: str):
+        if pin != src.get("pin"):
+            return None
+        span = spans.get(rel)
+        if span is None or span[0] != sha:
+            return None
+        if not loaded:
+            try:
+                nodes = json.loads((shard_dir / "nodes.json").read_text(encoding="utf-8"))
+                edges = json.loads((shard_dir / "edges.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                nodes, edges = None, None
+            if not isinstance(nodes, dict) or not isinstance(edges, list) or len(nodes) != n_off or len(edges) != e_off:
+                loaded.append(None)          # the records disagree with the receipt: the receipt is discarded
+            else:
+                loaded.append((list(nodes.values()), edges))
+        if loaded[0] is None:
+            return None
+        node_list, edge_list = loaded[0]
+        _, n0, nn, e0, ne = span
+        return _receipt.splice(node_list[n0:n0 + nn], edge_list[e0:e0 + ne], src["files"][rel])
+
+    return reuse
+
+
 def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
          distribution: dict | None = None, producer: Producer | str = "python_ast",
          package: str | None = None) -> dict:
     """Mint one corpus into ``shard_dir``: nodes.json (keyed by id), edges.json, PROVENANCE.json.
-    Returns the provenance. Raises IRError when the producer's output fails its own vocabulary."""
+    Returns the provenance. Raises IRError when the producer's output fails its own vocabulary.
+
+    A shard already at ``shard_dir`` is the splice: its PROVENANCE carries the per-file receipt
+    (``sources``: file → sha256 of bytes → the records it produced), and a re-mint hashes every
+    file, parses only the ones whose bytes moved, and takes the rest's records from the previous
+    nodes.json and edges.json. The shard written is byte-identical to a full mint of the same
+    tree; a receipt that does not fit the tree, the producer or the records is discarded and the
+    full mint runs. No cache lives outside the shard's own directory."""
     corpus = Path(corpus).resolve()
     shard_dir = Path(shard_dir).resolve()
     prod = PRODUCERS[producer] if isinstance(producer, str) else producer
-    nodes, edges = prod.build_ir(corpus, package) if prod.name != "python_ast" else prod.build_ir(corpus)
+    producer_block = {"adapter": prod.name, "graphy": _graphy_version(), "python": platform.python_version()}
+    reuse = _reuse_from(shard_dir, producer_block) if shard_dir.is_dir() else None
+    if prod.name == "python_ast":
+        nodes, edges, sources = python_ast.mint_records(corpus, reuse=reuse)
+    else:
+        nodes, edges, sources = typescript_ast.mint_records(corpus, package, reuse=reuse)
     validate_graph(nodes, edges, prod.vocabulary)
     node_map = {k: v for k, v in nodes.items()}
     shard_dir.mkdir(parents=True, exist_ok=True)
     _write_records(shard_dir / "nodes.json", node_map)
     _write_records(shard_dir / "edges.json", edges)
-    digest, n_files = corpus_digest(corpus, walk=python_ast.walk_files if prod.name == "python_ast" else typescript_ast.walk_files)
+    digest, n_files = corpus_digest(corpus, walk=python_ast.walk_files if prod.name == "python_ast" else typescript_ast.walk_files,
+                                    hashes={rel: f["sha256"] for rel, f in sources["files"].items()})
     head = git_head(corpus)
     kind = "file" if corpus.is_file() else ("package" if prod.is_package_dir(corpus) else "tree")
     prov = {
         "surface": f"{shard_dir.name}.records",
         "oracle_commit": head or f"sha256:{digest}",
         "mint_command": mint_command,
-        "producer": {"adapter": prod.name, "graphy": _graphy_version(), "python": platform.python_version()},
+        "producer": producer_block,
         "minted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "corpus": {"scheme": package or (corpus.stem if corpus.is_file() else corpus.name), "kind": kind,
                    "path": portable(corpus), "files": n_files, "sha256": digest, "git_head": head,
                    **(distribution or {})},
         "counts": _counts(node_map, edges),
         "files": {name: _file_receipt(shard_dir / name) for name in ("nodes.json", "edges.json")},
+        SOURCES_KEY: sources,
         "note": _NOTE,
     }
     _write_json(shard_dir / PROVENANCE_NAME, prov)
@@ -396,9 +466,12 @@ def smash(package: str, *, site_packages: str | Path, out: str | Path,
                           "kind": prov["corpus"]["kind"],
                           "distribution": prov["corpus"].get("distribution"),
                           "version": prov["corpus"].get("version"),
-                          "nodes": prov["counts"]["node_count"], "edges": prov["counts"]["edge_count"]}
+                          "nodes": prov["counts"]["node_count"], "edges": prov["counts"]["edge_count"],
+                          "parsed": prov[SOURCES_KEY]["parsed"], "reused": prov[SOURCES_KEY]["reused"]}
         if log:
-            log(f"MINT OK: {scheme} {prov['counts']['node_count']} nodes / {prov['counts']['edge_count']} edges -> {shard}")
+            src = prov[SOURCES_KEY]
+            log(f"MINT OK: {scheme} {prov['counts']['node_count']} nodes / {prov['counts']['edge_count']} edges -> {shard}"
+                f"  (parsed {src['parsed']} of {src['parsed'] + src['reused']} files)")
         if not ring:
             break
         for s in sorted(outs):

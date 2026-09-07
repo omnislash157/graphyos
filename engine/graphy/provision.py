@@ -10,13 +10,15 @@ guessed — the interpreter is this one, the repo is the one named, and every co
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-__all__ = ["Provisioned", "provision"]
+__all__ = ["Provisioned", "provision", "RECEIPT_NAME"]
 
 
 @dataclass
@@ -67,9 +69,33 @@ def provision(repo: str | Path, producer: str, *, python: str | None = None, tim
         raise RuntimeError(f"the venv at {venv} has no site-packages")
     if not any((repo / f).is_file() for f in ("pyproject.toml", "setup.py", "setup.cfg")):
         return Provisioned(site, "no pyproject.toml or setup.py — the package is minted alone, its imports named unresolved", False)
+    declared = _declaration(repo)
+    receipt = venv / RECEIPT_NAME
+    try:
+        if json.loads(receipt.read_text(encoding="utf-8")).get("declaration") == declared:
+            return Provisioned(site, f"pip install skipped — {venv} was provisioned from this declaration "
+                                     f"(pyproject.toml · setup.py · setup.cfg unchanged; delete {receipt} to force)", True)
+    except (OSError, ValueError, AttributeError):
+        pass
     cmd = [str(py), "-m", "pip", "install", "--quiet", "--disable-pip-version-check", str(repo)]
     log(f"PROVISION: {' '.join(cmd)}")
     rc, tail = run(cmd, timeout=timeout)
     if rc != 0:
         return Provisioned(site, f"the repo did not pip-install ({tail or 'no output'}) — the package is minted alone, its imports named unresolved", False)
+    receipt.write_text(json.dumps({"declaration": declared, "command": cmd}, indent=2) + "\n", encoding="utf-8")
     return Provisioned(site, f"pip install {repo.name} into {venv}", True)
+
+
+RECEIPT_NAME = "provision.json"
+_DECLARATION_FILES = ("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt")
+
+
+def _declaration(repo: Path) -> dict[str, str]:
+    """What the pip install read: the sha256 of each declaration file the repo carries. The
+    receipt beside the venv pins it; a re-eat under the same declaration skips the install."""
+    out: dict[str, str] = {}
+    for name in _DECLARATION_FILES:
+        f = repo / name
+        if f.is_file():
+            out[name] = hashlib.sha256(f.read_bytes()).hexdigest()
+    return out

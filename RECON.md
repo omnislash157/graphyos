@@ -895,6 +895,8 @@ SP="$(.graphy/venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()[
 .graphy/venv/bin/graphy eat --repo "$PWD" --site-packages "$SP"          # EAT OK: httpx + 6 ring shard(s)
 .graphy/venv/bin/graphy shell install --repo "$PWD"                      # SHELL OK: hooks for tenant httpx … run on …/.graphy/venv/bin/python3
 echo 'Read GRAPHY.md first.' >> CLAUDE.md                                # 8.6 s from the clone to here, the pip install included
+# the edit loop the gate lives on (§53): after an edit, `graphy eat .` again splices the previous shards — parses the one
+# file whose bytes moved, skips the pip install — re-derive: `time .graphy/venv/bin/graphy eat .` twice, the second line's EAT OK
 
 printf 'def _same_origin(' | .graphy/hooks/before_edit.sh httpx/_client.py
 #   GATE BLOCKED: httpx/_client.py edits 1 symbol(s) the store knows with no walk cited under generation bae62afa213c. Walk first, read the path, then edit:
@@ -2643,3 +2645,63 @@ cd .. && python3 measure.py run --out recon.json && python3 measure.py diff reco
 | the floor tests | `test_GREEN_owned_reads_the_columns_and_decodes_no_record` (`json.loads` patched, `owned()` over the fixture calls it zero times, each row is exactly `COLUMNS` and equals the full record's projection, both indexes present) · `test_GREEN_shard_store_owned_yields_the_same_columns` (the two readers' `owned()` equal) · `test_RED_store_under_the_blob_only_schema_refuses_naming_recompile` (a format-3 meta row refuses naming the generation format) |
 | the five rebuilds | `ARMS OK` fastapi 4 · sqlalchemy 5 · hono 5 · express 4 · graphy 6 (the receipt's first run named `ARMS DRIFT` in SEAM — `_columns` is a new function of `federated_store`; the region re-rendered, `GRAPHY_TENANT_OK`); `ATLAS OK` on all five, and every atlas receipt's `files` map identical before and after on all five tenants (the sqlalchemy atlas drawn before and after: 13 files byte-identical by `sha256sum`) |
 | the receipt | the first run with the floor and the gate running beside it read floor 19.2 s and graphy RED (the drift); the clean run: floor 464 passed (461) in 16.2 s (14.4 — three store-compiling tests added, and `executescript` — the schema's two new indexes — 4.2 → 6.3 s profiled, now the floor's top frame ahead of `_write_parquet`), gate OK 24.6 s (22.4), fastapi 3.3 → 3.3 s, sqlalchemy 6.5 → 6.4 s (RSS 277 → 277 MB; the store file 19.9 MB), hono 2.7 → 2.6, express 2.6 → 2.6, graphy 2.1 → 2.4 with `ARMS OK` and every door green, index verify 2.6 → 2.5 with 0 broken, `pass.engine_hot_lanes` 6 → 5 (the floor's hottest frame is sqlite's now; `container._write_parquet` still on top of the graphy · sqlalchemy · fastapi lanes — the next lane), the whole receipt 75.1 → 76.5 s, `measure.py diff` exit 0; quickstart express 8.8 → 6.3 and httpx 5.5 → 5.1, the network noise §49 names |
+
+## 53 · EAT AGAIN SPLICES — a per-file receipt in PROVENANCE, a re-mint parses only what moved, byte-identical to a full mint (2026-09-07 · graphyos issue 17)
+
+**What it was.** `graphy eat` on a repo eaten a minute ago wiped `.graphy/substrate/` and did
+everything again: pip-installed the repo into its venv, parsed every file of the package and its
+ring, converged, built, checked. The shell's walk-before-edit gate (§18) lives on a repo that
+changes one file at a time, and every edit was followed by the full eat — on httpx, 2.3 s with
+the pip re-run, 127 files parsed, none of which had changed.
+
+**What it is.** The mint keeps a per-file receipt in the shard's `PROVENANCE.json` under `sources`:
+`file → sha256 of bytes → the node slots and edge records it produced`, in mint order, with the
+`pin` the records also depend on (python_ast: the package name and the repo root's local package
+set; typescript_ast: the package name and the file list, since a relative specifier resolves
+against the files that exist). A re-mint over the same shard directory hashes every file, parses
+the ones whose bytes moved, and takes the rest's records off the previous `nodes.json` and
+`edges.json` — each file's records are a contiguous span of both, because the producer emits file
+by file in walk order. An id two files spell (`pkg/x.py` beside `pkg/x/__init__.py`; `index.js`
+beside `index.mjs`) is the one thing a span cannot recover, so the receipt stores exactly those
+records and their slots (`extra` · `own`; one record in `async`, two in `is-promise`, none in
+SQLAlchemy, hono or httpx) and the replay is the full mint's, record for record. A receipt that
+does not fit — the pin moved, the producer (adapter · graphy · python) is not this one, the records
+beside it disagree with its counts — is discarded and the full mint runs. No daemon, no watcher,
+no cache outside the shard's own directory; the corpus digest and the parity are what they were,
+the digest now reading the receipt's hashes instead of every file a second time.
+
+`graphy eat` keeps each previous `<slug>_graph/` as exactly `nodes.json` · `edges.json` ·
+`PROVENANCE.json` (every build product beside them wiped, the stored walks kept as before), prunes
+a shard the new ring no longer names, and its `EAT OK` line says `(N of M files parsed, S s)`.
+`provision` writes `provision.json` beside the venv pinning the sha256 of `pyproject.toml` ·
+`setup.py` · `setup.cfg` · `requirements.txt`; a re-eat under the same declaration skips the pip
+install and says so (delete the receipt to force). `measure.py` runs `graphy eat .` once more on
+each quickstart clone: `eat_seconds` (the first eat's own line, provision included) beside
+`eat_again_seconds` and `eat_again_parsed`.
+
+```bash
+cd staging/quickstart && git clone -q --depth 1 https://github.com/encode/httpx.git httpx-cold && cd httpx-cold
+time ../../../.venv/bin/graphy eat . | grep '^EAT OK'      # (127 of 127 files parsed, 4.3s) — the venv, the pip install, the mint, the build
+time ../../../.venv/bin/graphy eat . | grep '^EAT OK'      # (0 of 127 files parsed, 0.7s)
+printf '\n\ndef _added():\n    return 1\n' >> httpx/_models.py && time ../../../.venv/bin/graphy eat . | grep '^EAT OK'   # (1 of 127 files parsed, 0.7s)
+python3 -c "import json; s = json.load(open('.graphy/substrate/httpx_graph/PROVENANCE.json'))['sources']; print(s['pin'], s['parsed'], s['reused'], s['cross_file'], list(s['files'])[:2])"
+cd ../express && for i in 1 2; do time ../../../.venv/bin/graphy eat . | grep '^EAT OK'; done   # (0 of 581 files parsed) the second time; the seconds are the parquet over 86 shards
+cd ../../../engine && python3 -m pytest -q tests/test_smash.py -k "remint or receipt or eat_again or two_files"
+cd .. && python3 measure.py run --out recon.json && python3 measure.py diff recon.before17.json recon.json
+```
+
+| httpx | before | after |
+|---|---|---|
+| `graphy eat .` cold on a fresh clone (venv · pip · mint · converge · build · check) | 4.3 s | 4.3 s — 127 of 127 files parsed |
+| `graphy eat .` again, nothing changed | 2.3 s (pip re-run, 127 parsed) · 3.4 s with the venv's pip cache cold | 0.7 s eat, 0.8 s wall — 0 of 127 parsed, pip skipped |
+| `graphy eat .` after one edit — the gate's loop | 2.3 s, 127 parsed | 0.7 s — 1 of 127 parsed |
+| the second eat against the first | the same seconds | 16 % — under the issue's quarter |
+| express (86 shards, 581 files), eat again | 133 parsed the first time under the new code (`async` and `is-promise` were not spliceable before the stored records) | 0 of 581 parsed, 3.6 s — `container._write_parquet` over 86 shards is the whole of it |
+
+| check | result |
+|---|---|
+| byte-identical | `test_GREEN_a_remint_parses_only_the_files_whose_bytes_moved_and_equals_a_full_mint` — `ast.parse` patched: a re-mint with nothing moved parses 0, one touched file parses exactly 1 against the full mint's 2, an added file 1, a deleted file 0; after each, `nodes.json` and `edges.json` equal a fresh full mint's bytes. `test_GREEN_an_id_two_files_emit_is_stored_by_the_receipt_and_the_splice_stays_byte_identical` — the cross-file id under both producers' semantics: touched, deleted, restored, each equal to a full mint |
+| the receipt refuses to guess | `test_RED_a_receipt_that_does_not_fit_is_discarded_and_the_full_mint_runs` — a hand inside `nodes.json`, a producer version that is not this one, a repo root that gains a local package (the pin moves and every file's imports re-resolve): each parses everything and equals a fresh mint |
+| eat twice | `test_GREEN_eat_again_keeps_the_shards_parses_nothing_and_prunes_a_shard_the_ring_dropped` — the second eat parses 0 with every shard's bytes unchanged and the resolver's sidecar rewritten; a root that stops importing a ring package sees that shard pruned. `test_provision`: the second provision under the same declaration skips pip, a moved `pyproject.toml` runs it, a failed install leaves no receipt |
+| the five rebuilds | `ARMS OK` on all five (the graphy tenant named `ARMS DRIFT` twice on the way — `_reuse_from` · `_clear_substrate`, then the `_receipt` module — the regions re-rendered) |
+| the receipt | four full runs this session, the last two clean: floor 467 passed (464, three tests added), gate OK 24.0 · 37.4 s (24.6 — its pip is the network), fastapi 3.3 → 3.3–3.5 s, sqlalchemy 6.4 → 6.4–6.6 s, hono 2.6 → 2.7, express 2.6 → 2.6, graphy 2.4 → 2.4–2.5 with `ARMS OK`, index verify 2.5 → 2.6 with 0 broken, `pass.engine_hot_lanes` 5 → 5 (`container._write_parquet` on top of the same lanes — the next lane), wheel 263,903 → 268,759 B under the cap; **quickstart httpx `eat_seconds` 4.3 · `eat_again_seconds` 0.8 · `eat_again_parsed` 0; express 5.8 · 3.6 · 0** — the done check, in the receipt. `floor.seconds` under `measure.py run` read 18.2 · 17.5 · 29.1 · 33.5 · 30.3 across the five runs with `sqlite3.executescript` the frame that swelled and no engine frame moving; the floor run directly read 17.0 · 17.6 · 17.6 · 17.8 · 19.1 s with the change and 18.3 s at the previous commit with the change stashed (`git stash -u && python3 -m pytest -q && git stash pop`), `measure.measure_floor` alone 17.8 s — the box's own noise this session, the kind §49 names, and the diff's three named regressions (`floor.seconds`, `gate.seconds`, the whole receipt's `seconds`) are those times and nothing else |

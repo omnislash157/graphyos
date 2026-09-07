@@ -195,11 +195,19 @@ def measure_tenant(name: str, py: str) -> dict:
 
 
 def measure_quickstart(url: str) -> dict:
+    """The quickstart cold, then ``graphy eat .`` once more on the eaten clone: ``eat_seconds`` is
+    the first eat's own (from its EAT OK line, the clone and the showcase excluded),
+    ``eat_again_seconds`` the second's — the splice over the previous shards, the provision skipped."""
     name = url.rsplit("/", 1)[-1][:-4]
-    shutil.rmtree(HERE / "staging" / "quickstart" / name, ignore_errors=True)
+    repo = HERE / "staging" / "quickstart" / name
+    shutil.rmtree(repo, ignore_errors=True)
     rc, out, secs = _run(["bash", str(HERE / "quickstart.sh"), url])
+    again_rc, again_out, again_secs = _run([str(HERE / ".venv" / "bin" / "graphy"), "eat", "."], cwd=repo)
     return {"repo": name, "ok": "GRAPHY_QUICKSTART_OK" in out, "seconds": secs,
             "ring": _num(r"RING: (\d+) shard", out), "rc": rc,
+            "eat_seconds": _num(r"(?m)^EAT OK: .*, ([\d.]+)s\)", out, float), "eat_again_seconds": again_secs,
+            "eat_again_ok": again_rc == 0 and "EAT OK" in again_out,
+            "eat_again_parsed": _num(r"(?m)^EAT OK: .*\((\d+) of \d+ files parsed", again_out),
             **_profiled(["bash", str(HERE / "quickstart.sh"), url])}
 
 

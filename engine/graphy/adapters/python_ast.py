@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 from collections import deque
 from pathlib import Path
 from typing import Any, Iterator
 
+from graphy.adapters._receipt import Receipt
 from graphy.ir import PYTHON_AST_VOCABULARY
 
-__all__ = ["build_ir", "walk_files", "is_package_dir", "PYTHON_AST_VOCABULARY"]
+__all__ = ["build_ir", "mint_records", "walk_files", "is_package_dir", "PYTHON_AST_VOCABULARY"]
 
 _DEFAULT_EXCLUDES = (
     "__pycache__", ".git", ".venv", "venv", "node_modules",
@@ -373,19 +375,46 @@ def build_ir(corpus_dir: str | Path) -> tuple[_NodeRecords, list[dict]]:
     """Mint the IR of one corpus. A directory is a package (``__init__.py`` present) or a repo
     root; a single ``.py`` file is a one-module distribution (``typing_extensions.py``) whose
     scheme is the file's stem. Files are named relative to the corpus's parent."""
+    nodes, edges, _ = mint_records(corpus_dir)
+    return nodes, edges
+
+
+def mint_records(corpus_dir: str | Path, *, reuse=None) -> tuple[_NodeRecords, list[dict], dict]:
+    """``build_ir`` with the per-file receipt: for every file the producer read, in mint order,
+    the sha256 of its bytes and how many node slots and edge records it produced. A file's records are
+    a function of its bytes, its path, the package name and the root's local package set — the
+    ``pin`` — and nothing else, so a re-mint may take them from the previous shard instead of
+    parsing: ``reuse(pin, relpath, sha256)`` returns ``(node_records, edge_records)`` or None,
+    and the producer parses only what it returns None for. Each file's records are a contiguous
+    span of the shard; an id two files emit is the one thing a span cannot recover, and the
+    receipt stores exactly those records (``_receipt``)."""
     root = Path(corpus_dir).resolve()
     nodes: _NodeRecords = _NodeRecords()
     edges: list[dict] = []
     if root.is_file() and root.suffix == ".py":
         package, base, local_packages = root.stem, root.parent, frozenset()
+        rel_base, rel_root = base, root.parent
     else:
         package, base = root.name, root
         local_packages = frozenset() if is_package_dir(root) else _local_package_names(root)
+        rel_base, rel_root = base.parent, root
+    pin = f"python_ast:{package}:{'package' if is_package_dir(root) or root.is_file() else 'tree'}:" \
+          + ",".join(sorted(local_packages))
+    receipt = Receipt("last")
     for file in walk_files(root):
-        for rec in _emit_records_for_file(file, base, package, local_packages=local_packages,
-                                          rel_base=base.parent if root.is_dir() else base):
-            if rec.get("kind") == "node":
-                nodes[rec["id"]] = rec
-            else:
-                edges.append(rec)
-    return nodes, edges
+        rel = str(file.relative_to(rel_root)).replace("\\", "/")
+        try:
+            sha = hashlib.sha256(file.read_bytes()).hexdigest()
+        except OSError:
+            continue
+        cached = reuse(pin, rel, sha) if reuse is not None else None
+        if cached is None:
+            recs = list(_emit_records_for_file(file, base, package, local_packages=local_packages,
+                                               rel_base=rel_base))
+            n_recs = [r for r in recs if r.get("kind") == "node"]
+            e_recs = [r for r in recs if r.get("kind") != "node"]
+        else:
+            n_recs, e_recs = cached
+        receipt.file(rel, sha, n_recs, e_recs, nodes, parsed=cached is None)
+        edges.extend(e_recs)
+    return nodes, edges, receipt.finish(pin)

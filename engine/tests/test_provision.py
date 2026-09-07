@@ -27,9 +27,21 @@ def test_GREEN_python_repo_gets_a_venv_and_pip_install(tmp_path):
     pv = provision.provision(repo, "python_ast", runner=runner)
     assert pv.installed and pv.site == repo / ".graphy" / "venv" / "lib" / "python3.12" / "site-packages"
     assert calls[0][1:3] == ["-m", "venv"] and calls[1][-1] == str(repo) and "pip" in calls[1]
-    # a repo that will not install is minted alone, and the line says so
+    # the receipt beside the venv pins the declaration: a second provision under the same
+    # pyproject skips pip and says so; the declaration moving runs it again
+    receipt = repo / ".graphy" / "venv" / provision.RECEIPT_NAME
+    assert receipt.is_file()
+    n = len(calls)
+    skipped = provision.provision(repo, "python_ast", runner=runner)
+    assert skipped.installed and "skipped" in skipped.how and len(calls) == n
+    (repo / "pyproject.toml").write_text('[project]\nname="pkg"\nversion="1"\ndependencies=["x"]\n')
+    again = provision.provision(repo, "python_ast", runner=runner)
+    assert again.installed and "skipped" not in again.how and len(calls) == n + 1 and "pip" in calls[-1]
+    # a repo that will not install is minted alone, and the line says so — and leaves no receipt
+    receipt.unlink()
     pv2 = provision.provision(repo, "python_ast", runner=lambda cmd, cwd=None, timeout=0: (1, "boom") if "pip" in cmd else (0, ""))
     assert not pv2.installed and "did not pip-install" in pv2.how and "boom" in pv2.how
+    assert not receipt.exists()
     # no metadata at all: no pip is run
     bare = tmp_path / "bare"
     (bare / "x").mkdir(parents=True)
