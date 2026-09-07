@@ -3049,3 +3049,68 @@ cd engine && python3 -m pytest -q tests/test_workflows.py   # 10 passed
 | the gate | `GRAPHY_STANDALONE_OK` with `WORKFLOWS OK: 5 file(s)` after `BURDEN OK`; the step costs 23 ms |
 | the fault, re-run | `ci.yml` at 6e47127 through `workflows.py`: `ci.yml:43: mapping values are not allowed here — the plain scalar 'the receipt (quick: the floor, the gate, the wheel)' carries ': '; quote it`, exit 3 — the same line and column-33 fault PyYAML names |
 | the burden | unchanged: 0 runtime deps, 3 extras, 6 programs — the parser is 471 lines of stdlib |
+
+## 59 · THE STORE'S TMP FILE PAYS NO DURABILITY UNTIL IT IS THE STORE — the schema script 65 → 0.3 ms, the floor 13.9 → 7.5 s, one fsync where there were dozens (2026-09-07 · graphyos issue 23)
+
+**What it was.** `compile_store` fills a `.tmp.<pid>` sqlite file and renames it over the store.
+That tmp file paid full durability on every statement: `SCHEMA` is eight DDL statements, each its own
+journaled transaction — create the journal, write, sync, delete — so `executescript(SCHEMA)` took
+**65 ms wall on disk and 0.2 ms in `:memory:`**, under 1 ms of it CPU (`getrusage` around the call:
+user 0.0–0.6 ms, sys 0.9–1.2 ms). Then a journaled `commit` at the end, ~30 ms more. Every build,
+every eat, every rebuild, every refresh sibling, and the floor's 90 `compile_store`s paid it: the
+profiled floor read `executescript` 90 calls · 14.7 s and `commit` 93 · 2.9 s as its top two frames,
+called from `compile_store` only. `strace -c` attributed 1.5 ms to 38 `fdatasync`s — the wait is
+inside sqlite's journal cycle, not in a syscall strace times, which is why no earlier profile named
+it and the receipt read this lane as engine-hot on `_write_parquet` instead (the pybind11 attribution
+of §57, again).
+
+**What it is.** The tmp connection runs `PRAGMA journal_mode=OFF` and `PRAGMA synchronous=OFF`
+before the schema — the file is garbage until the rename, and a crash mid-build leaves a `.tmp.<pid>`
+the next build unlinks, exactly as before — and after `close()` the finished file is fsynced once,
+then renamed. What lands under the store's name is complete, never torn: the durability the
+per-statement journal bought, paid once. The directory is not synced; the old compile never synced
+it either, and a rename lost to a crash leaves the previous store whole. The first cut synced the
+directory too and the floor read 8.8–9.0 s; dropping it read 7.1–8.1. The pragmas live on the tmp
+connection only: the landed store answers `PRAGMA journal_mode` → `delete`, and `open_for` opens it
+read-only as before. The schema, the rows, the meta, the digest, the generation: unchanged —
+`check` green on every tenant, the doors' answers on every tenant byte-identical before and after.
+`compile_store` is the only sqlite writer in the engine (`rg 'sqlite3.connect' engine/graphy`: it and
+`open_for`'s `mode=ro`).
+
+```bash
+# from engine/
+../.venv/bin/python - <<'P'
+import sqlite3, tempfile, time; from pathlib import Path; from graphy.federated_store import SCHEMA, TMP_STORE_PRAGMAS
+for label, path, pre in [("file, as before", None, []), (":memory:", ":memory:", []), ("file, as it fills now", None, list(TMP_STORE_PRAGMAS))]:
+    db = sqlite3.connect(path or str(Path(tempfile.mkdtemp())/"s.sqlite")); [db.execute(p) for p in pre]
+    t0 = time.perf_counter(); db.executescript(SCHEMA); print(f"{label:24} {(time.perf_counter()-t0)*1000:6.1f} ms")
+P
+for i in 1 2 3; do /usr/bin/time -f "floor %e s" ../.venv/bin/python -m pytest -q -q -p no:cacheprovider 2>&1 | grep floor; done
+for i in 1 2 3; do /usr/bin/time -f "build %e s" ../.venv/bin/graphy build --tenant tenants/fastapi/tenant.json --tenant-id fastapi 2>&1 | grep '^build'; done
+../.venv/bin/python -m pytest -q tests/test_federated_store.py -k tmp_store_syncs_once
+# the RED proofs (each edit reverted after)
+python3 - <<'P'
+from pathlib import Path; p = Path("graphy/federated_store.py"); p.write_text(p.read_text().replace("        for pragma in TMP_STORE_PRAGMAS:\n            db.execute(pragma)\n", ""))
+P
+../.venv/bin/python -m pytest -q tests/test_federated_store.py -k tmp_store_syncs_once      # assert [] == ['PRAGMA journal_mode=OFF', 'PRAGMA synchronous=OFF']
+sed -i 's/    _sync_then_replace(tmp, p)/    os.replace(tmp, p)/' graphy/federated_store.py
+../.venv/bin/python -m pytest -q tests/test_federated_store.py -k tmp_store_syncs_once      # assert [('replace', …tmp…)] == [('fsync', …tmp…), ('replace', …)]
+# the same answer: every door on every tenant, before and after
+for t in fastapi sqlalchemy hono express graphy; do seed=$(python3 -c "import json; p=json.load(open('tenants/$t/partition.json')); print('$t://module/'+next(iter(p['groups'].values()))[0])"); for v in explain blast descend; do ../.venv/bin/graphy $v "$seed" --tenant tenants/$t/tenant.json --tenant-id $t --depth 2 | grep -v '^DOOR:'; done; ../.venv/bin/graphy check --tenant tenants/$t/tenant.json --tenant-id $t | tail -1; done > /tmp/doors.after.txt; diff /tmp/doors.before.txt /tmp/doors.after.txt
+cd .. && python3 measure.py run && python3 measure.py diff recon.before23.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `executescript(SCHEMA)` on the tmp file | 65 ms (70.9 in the same run as the after) | 0.3 ms |
+| the floor, three runs, `/usr/bin/time` | 13.3 · 13.9 · 14.1 s | 7.9 · 8.1 · 7.1 s (the experiment before the change, file fsync only: 7.2 · 7.3 · 7.4; with a directory fsync too: 8.8 · 9.0 · 8.8) |
+| `graphy build` on the fastapi tenant, three runs | 0.74 · 0.93 · 0.75 s | 0.97 · 0.65 · 0.64 s |
+| syncs per `compile_store` | one per DDL statement and per commit (the journal cycle) | one `fsync` of the finished file |
+
+| check | result |
+|---|---|
+| the floor | 484 passed · 3 skipped (483 + 1: the two pragmas run on the tmp connection before the schema, the finished file is fsynced then renamed, the landed store's `journal_mode` reads `delete`) |
+| the RED proofs | the pragmas removed → `assert [] == ['PRAGMA journal_mode=OFF', 'PRAGMA synchronous=OFF']`; the rename without the sync → `assert [('replace', …)] == [('fsync', …), ('replace', …)]` |
+| the same answer | every door on every tenant and every `check`: `diff` empty, and with old code and new code on the same shards under `PYTHONHASHSEED=0`, 131 lines, `diff` empty. Without the seed pinned one hop-2 parent on the fastapi blast differs between two builds of one shard — old code or new, the same: the mesh's edge set iterates in hash order and the store's rowids follow it (issue 26, found here, filed) |
+| the gate | `GRAPHY_STANDALONE_OK` — the receipt's gate 21.0 → 17.4 s; the graphy tenant's six arm regions re-rendered (`_sync_then_replace` and the test moved the walk: 2619 → 2627 nodes, 6526 → 6540 edges) |
+| the receipt | `measure.py run` then `diff recon.before23.json recon.json`, three times. The first read the gate RED (CHANGELOG drift — §59 appended before the wheel step regenerated it) and the graphy tenant RED (the arm drift above), both fixed before this row. The second, under the operator's browser at 30 % CPU: `floor.seconds` 14.7 → 7.9, `gate.seconds` 21.0 → 16.8, `quickstart.express.seconds` 8.2 → 5.5, `tenants.express.seconds` 2.5 → 1.8, the whole receipt 74.3 → 62.7 s; eight numbers the wrong way, every one a door at 60–120 ms moving by 10 ms or the httpx quickstart — the doors timed direct on the old and the new store read 0.07 s five times each, the httpx eat direct 0.52 · 0.54 · 0.52 s. The third, same load: `floor.seconds` 14.7 → 9.1, `gate.seconds` → 17.4, `pass.engine_hot_lanes` 5 → 4 (the floor lane came off the count: its hottest frame is no longer the engine's), the receipt 74.3 → 66.4 s, one number the wrong way — `quickstart.httpx.seconds` 4.7 → 5.7, the cold quickstart's clone and pip provisioning: run cold three times by hand it reads 4.82 · 5.36 · 5.40 s, and `eat_again_seconds` in the same lane 0.6 → 0.5. A fourth, the browser still on the box (load 2.3): `floor.seconds` → 11.0, `gate.seconds` → 18.0, three the wrong way — the httpx quickstart's clone-and-provision again (4.2 → 5.3 · 4.7 → 5.9) and `tenants.fastapi.seconds` 2.9 → 3.4, which the same rebuild timed 3.0 twice in the runs before. `MEASURE DIFF` exits 1 on those; the done block's diff line reads red on a network lane and a loaded box, the engine lines read green, and the issue stays open for the operator's ruling — the march holds on it rather than closing over a red line |

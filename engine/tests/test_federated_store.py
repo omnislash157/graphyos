@@ -577,3 +577,41 @@ def test_RED_store_under_the_blob_only_schema_refuses_naming_recompile(tmp_path)
     con.close()
     with pytest.raises(fs.StoreError, match="generation format"):
         fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
+
+
+def test_GREEN_the_tmp_store_syncs_once_before_the_rename(tmp_path, monkeypatch):
+    """The tmp file pays no durability while it fills — the two pragmas run on its connection before
+    the schema — and the finished file is fsynced once, then renamed: what lands under the store's
+    name is complete, never torn, and no statement waits on the disk."""
+    import os
+    tenant, _ = _walk_fixture(tmp_path)
+    events: list[tuple] = []
+    real_connect = sqlite3.connect
+
+    class _Spy:
+        def __init__(self, con):
+            self._con = con
+
+        def execute(self, sql, *a):
+            events.append(("execute", sql.split()[0], sql))
+            return self._con.execute(sql, *a)
+
+        def __getattr__(self, name):
+            return getattr(self._con, name)
+
+    def connect(path, *a, **k):
+        events.append(("connect", str(path)))
+        return _Spy(real_connect(path, *a, **k))
+
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(fs.sqlite3, "connect", connect)
+    monkeypatch.setattr(fs.os, "fsync", lambda fd: (events.append(("fsync", os.readlink(f"/proc/self/fd/{fd}"))), real_fsync(fd)))
+    monkeypatch.setattr(fs.os, "replace", lambda a, b: (events.append(("replace", str(a), str(b))), real_replace(a, b)))
+    dbp = _compile(tenant, tmp_path)
+    tmp = next(e[1] for e in events if e[0] == "connect")
+    assert tmp.startswith(str(dbp) + ".tmp."), events
+    first_two = [e[2] for e in events if e[0] == "execute"][:2]
+    assert first_two == list(fs.TMP_STORE_PRAGMAS), first_two          # before the schema, on the tmp connection
+    order = [e[:2] for e in events if e[0] in ("fsync", "replace")]
+    assert order == [("fsync", tmp), ("replace", tmp)], order
+    assert sqlite3.connect(dbp).execute("PRAGMA journal_mode").fetchone()[0] == "delete"   # the pragma lived on the tmp connection only
