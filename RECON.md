@@ -3613,3 +3613,57 @@ git show HEAD~1:engine/graphy/cli.py > graphy/cli.py && python3 -m pytest -q tes
 | the floor | 494 passed · 3 skipped (493 + 1); the RED proof against the parent's code |
 | the gate | `GRAPHY_STANDALONE_OK` — `graphy resolves OK (0.2.0)` |
 | the release | `bash release.sh` → `graphyos-0.2.0-py3-none-any.whl` · `.tar.gz`, twine check green, the changelog under `## 0.2.0`; the `v0.2.0` tag's run 34158170572: build success · publish success; PyPI answers 0.2.0; a fresh venv's `pip install graphyos==0.2.0` imports 0.2.0 and `graphy --help` runs; CI on the public commit (bcd9a98): gate success · floor (3.12) success · floor (3.10) success; the badge renders `passing` |
+
+## 71 · THE RED TEAM — ten findings from a fresh agent told to hurt the product, ranked; the first fixed here: the showcase job holds no token and no checkout (2026-09-07 · graphyos issues 34–44)
+
+**How it was run.** One agent with no knowledge of how the product was built, the map and the
+README as its only brief, told to think as a security researcher, a skeptical senior engineer and
+a hostile user: read the engine, run the floor, feed it garbage in a scratch directory, run the
+first five minutes as a stranger, touch nothing in either repo. It ran 32 tools over eight minutes
+and deleted what it made. Every finding below is on the board with its reproduction, one issue
+each, in this order.
+
+| # | severity | the finding | issue |
+|---|---|---|---|
+| 1 | high | `showcase-on-issue.yml` ran a stranger's repo in the job that held the workflow token (`actions/checkout` persists it in `.git/config`) and posted a page path grepped from a log that code could write — code execution on the runner with `issues: write`, for any GitHub account, twenty minutes a run | #34, this section |
+| 2 | high | `eat` and `showcase <url>` run the repo's build (`pip install <repo>`); the README says "provisions its dependencies" | #35 |
+| 3 | medium / high | the re-mint splice trusts a shard on disk: a planted edge survived `MINT OK · BUILD OK · CHECK OK` (reproduced) | #36 |
+| 4 | medium | `.private_markers.sha256` is unsalted sha256 and public: two of seven markers recovered from a 21-word guess list | #44 |
+| 5 | medium | a syntax error, a latin-1 file, 300 nested parentheses: no nodes, still "parsed 7 of 7" (reproduced) | #38 |
+| 6 | medium | `check` fresh and `showcase` 0.0 s against uncommitted edits: the cursor is the HEAD alone (reproduced) | #39 |
+| 7 | medium | a file named with backticks breaks out of the comment's fence (not reproduced) | #40 |
+| 8 | low | `cartograph._build` runs a descriptor string with `shell=True`, dead code | #41 |
+| 9 | low | Windows claimed by shims, `eat` cannot provision there | #42 |
+| 10 | nit | the walk example seeds and targets one node; the MCP server says 0.1.0; `EAT REFUSED` after the banner; showcase clones into the cwd; "never a load" overreaches | #43 |
+
+**What held.** Zero runtime dependencies; no model call anywhere in the engine; no hardcoded path
+or username in any tracked file; the index refuses tampered bytes and never creates symlinks; the
+MCP server survived every malformed request and stayed up; a shard edited without a re-eat reads
+`STALE`; no `eval` · `exec` · `pickle`; every subprocess is argv but finding 8; the PR workflows use
+`pull_request`, never `pull_request_target`; the release job holds `id-token: write` alone.
+
+**The first fix: #34.** Two jobs. The showcase job carries `permissions: {}`, never checks this
+repo out, installs `graphyos` from PyPI into a runner with nothing to steal, runs the stranger's
+url into `$RUNNER_TEMP`, and reads the page from where the showcase writes it
+(`<work>/<name>/.graphy/showcase/showcase.txt`, the name from the url) — never from a grepped log
+line — then hands `comment.md` up as an artifact. The post job, `needs: showcase`, holds
+`issues: write` and nothing else, downloads the artifact and posts it; a showcase that produced no
+artifact posts nothing. The comment's fence is four backticks. `workflows.py` parses it; a floor
+test pins the shape — no token and no checkout in the showcase job, the post job separate with the
+one permission, no grep of the log — and reads RED against the old file on `GH_TOKEN`. What the
+stranger's build can still do on the runner: burn its twenty minutes and read a runner that holds
+nothing; #35's `--no-provision` takes even that away.
+
+```bash
+python3 workflows.py                                            # WORKFLOWS OK: 5 file(s)
+cd engine && python3 -m pytest -q tests/test_workflows.py -k holds_no_token
+git stash push ../.github/workflows/showcase-on-issue.yml && python3 -m pytest -q tests/test_workflows.py -k holds_no_token; git stash pop    # RED on the old file: 'GH_TOKEN' in the showcase job
+# the live proof: an issue on the public repo naming a small public repo — the showcase job green with no token, the post job's comment on the issue
+gh run list --repo omnislash157/graphyos --workflow showcase-on-issue.yml --limit 1
+```
+
+| check | result |
+|---|---|
+| the floor | 495 passed · 3 skipped (494 + 1); the RED proof against the old workflow |
+| the gate | `GRAPHY_STANDALONE_OK` |
+| the live run | LIVE_RUN |

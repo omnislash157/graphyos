@@ -1,22 +1,26 @@
 name: showcase on issue
 
 # An opened issue that names one https git url (github.com or gitlab.com) gets its repo showcased
-# on the runner — clone, eat, propose, draw — and showcase.txt posted back as a comment, with the
+# on a runner — clone, eat, propose, draw — and showcase.txt posted back as a comment, with the
 # recipe. A failure posts the tool's refusal line, never a stack. No model in the lane.
+#
+# Two jobs, on purpose (graphyos #34): the showcase runs a stranger's repo, so its job holds no
+# token and never checks this repo out — it installs graphyos from PyPI into a runner that has
+# nothing to steal, and hands the comment up as an artifact; the post job, which alone may write
+# to issues, downloads that artifact and posts it. The page is read from where the showcase
+# writes it, never from a line grepped out of a log the stranger's code could have written.
 on:
   issues:
     types: [opened]
 
-permissions:
-  contents: read
-  issues: write
+permissions: {}
 
 jobs:
   showcase:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions: {}
     steps:
-      - uses: actions/checkout@v4
       - name: the url, if the issue names exactly one
         id: url
         env:
@@ -24,39 +28,57 @@ jobs:
         run: |
           urls=$(printf '%s' "$BODY" | grep -oE 'https://(github\.com|gitlab\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?' | sed 's/\.git$//' | sort -u)
           n=$(printf '%s\n' "$urls" | grep -c . || true)
-          if [ "$n" -ne 1 ]; then echo "none=1" >> "$GITHUB_OUTPUT"; echo "no single repo url in the issue ($n found) — nothing to showcase"; else echo "url=$urls" >> "$GITHUB_OUTPUT"; fi
+          if [ "$n" -ne 1 ]; then echo "no single repo url in the issue ($n found) — nothing to showcase"; else echo "url=$urls" >> "$GITHUB_OUTPUT"; echo "name=$(basename "$urls")" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-python@v5
         if: steps.url.outputs.url != ''
         with:
           python-version: "3.12"
-      - name: install graphyos with every extra
+      - name: install graphyos from PyPI
         if: steps.url.outputs.url != ''
         run: |
           python -m pip install --upgrade pip
-          pip install -e "engine[dev,typescript,estate]"
+          pip install 'graphyos[estate,typescript]'
       - name: showcase it, capped
         if: steps.url.outputs.url != ''
         env:
           URL: ${{ steps.url.outputs.url }}
+          NAME: ${{ steps.url.outputs.name }}
         run: |
           set +e
-          timeout 900 graphy showcase "$URL.git" --work "$RUNNER_TEMP/showcase" > showcase.log 2>&1
+          timeout 900 graphy showcase "$URL.git" --work "$RUNNER_TEMP/showcase" > "$RUNNER_TEMP/showcase.log" 2>&1
           rc=$?
           echo "rc=$rc"
-          page=$(grep -oE 'the text:  .*' showcase.log | sed 's/the text:  //')
+          page="$RUNNER_TEMP/showcase/$NAME/.graphy/showcase/showcase.txt"
           {
             echo "### Your codebase, drawn by graphy in one command"
             echo
             echo "\`pip install graphyos && cd <repo> && graphy eat . && graphy showcase .\` — on $URL, on this runner, no model involved."
             echo
-            if [ "$rc" -eq 0 ] && [ -n "$page" ] && [ -f "$page" ]; then
-              echo '```text'; head -c 60000 "$page"; echo '```'
+            if [ "$rc" -eq 0 ] && [ -f "$page" ]; then
+              echo '````text'; head -c 60000 "$page"; echo '````'
             else
-              echo "It refused, and this is what it said:"; echo; echo '```text'; grep -E 'REFUSED|FAILED|RED|timeout' showcase.log | head -20 || tail -20 showcase.log; echo '```'
+              echo "It refused, and this is what it said:"; echo; echo '````text'; grep -E 'REFUSED|FAILED|RED|timeout' "$RUNNER_TEMP/showcase.log" | head -20 || tail -20 "$RUNNER_TEMP/showcase.log"; echo '````'
             fi
-          } > comment.md
-      - name: post it
+          } > "$RUNNER_TEMP/comment.md"
+      - uses: actions/upload-artifact@v4
         if: steps.url.outputs.url != ''
+        with:
+          name: showcase-comment-${{ github.event.issue.number }}
+          path: ${{ runner.temp }}/comment.md
+
+  post:
+    needs: showcase
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        id: comment
+        continue-on-error: true
+        with:
+          name: showcase-comment-${{ github.event.issue.number }}
+      - name: post it
+        if: steps.comment.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh issue comment ${{ github.event.issue.number }} --body-file comment.md
+        run: gh issue comment ${{ github.event.issue.number }} --repo ${{ github.repository }} --body-file comment.md

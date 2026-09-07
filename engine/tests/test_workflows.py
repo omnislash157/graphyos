@@ -109,3 +109,22 @@ def test_GREEN_the_repo_workflows_and_RED_a_directory_with_the_fault(tmp_path):
                    "'the receipt (quick: the floor, the gate, the wheel)' carries ': '; quote it"]
     assert notes == ["ci.yml: unparseable"]
     assert workflows.check_dir(tmp_path / "nowhere")[0] == [f"{tmp_path / 'nowhere'}: no workflow file to parse"]
+
+
+def test_GREEN_the_showcase_job_holds_no_token_and_no_checkout_and_the_post_job_is_separate():
+    """The showcase runs a stranger's repo: its job carries no GH_TOKEN, checks out nothing, and
+    may write nothing; the one job with issues: write only downloads the comment and posts it
+    (graphyos #34)."""
+    doc = workflows.parse((ROOT / ".github" / "workflows" / "showcase-on-issue.yml").read_text())
+    jobs = doc["jobs"]
+    show = [j for j in jobs.values() if any("graphy showcase" in (st.get("run") or "") for st in j["steps"])]
+    assert len(show) == 1, "one job runs the showcase"
+    show = show[0]
+    assert "GH_TOKEN" not in str(show) and "github.token" not in str(show)
+    assert not any("checkout" in (st.get("uses") or "") for st in show["steps"])
+    assert show.get("permissions") == {} and doc.get("permissions") == {}
+    post = [j for j in jobs.values() if any("issue comment" in (st.get("run") or "") for st in j["steps"])]
+    assert len(post) == 1 and post[0] is not show and post[0]["needs"] == "showcase"
+    assert post[0]["permissions"] == {"issues": "write"}
+    assert not any("checkout" in (st.get("uses") or "") for st in post[0]["steps"])
+    assert not any("grep" in (st.get("run") or "") and "the text:" in (st.get("run") or "") for st in show["steps"]), "the page path is grepped from the log"
