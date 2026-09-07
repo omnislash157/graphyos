@@ -209,6 +209,8 @@ gh issue view <n> --repo omnislash157/graphyos      # an item: its evidence and 
 One issue is armed; the Stop hook holds the session on it until it closes on GitHub, then arms
 the next, acks `/clear` into the session's own tmux pane, and kicks the fresh context every two
 minutes until it acks. The skill: `.claude/skills/self-clear/SKILL.md`. The code: `.claude/hooks/march.py`.
+The board law — the fork, the add gate, the close, and the optimization pass that runs when the board
+drains: `.claude/skills/rung-discipline/SKILL.md`.
 
 | move | the tap (repo root) |
 |---|---|
