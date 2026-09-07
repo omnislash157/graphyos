@@ -6,7 +6,7 @@
 A producer maps a parse tree onto the nine words (`adapters.python_ast`, `adapters.typescript_ast`); `ir` validates; `smash` mints a package into a shard and follows its imports into the ring; `index` pushes and pulls content-addressed shards; `refresh` follows upstream into a sibling; `farm` mints many; `provision` installs a repo's own dependencies for `eat`; `release` enforces one release per scheme.
 
 <!-- graphy:arm PRODUCE generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=abc499dc8b900e3e cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:fc02420eb0fad9ba354096f830256ddcfd2dd04ab6236588127aae98ae17e43b -->
+     store=c8b7e4b36bf80c18 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:fc02420eb0fad9ba354096f830256ddcfd2dd04ab6236588127aae98ae17e43b -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.

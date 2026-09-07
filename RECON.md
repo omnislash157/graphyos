@@ -2869,3 +2869,127 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before20.json r
 | the RED proofs | `urllib.request` at cli's top → `test_GREEN_cli_loads_no_verb_module_and_no_http_client` fails naming `email.parser …`; `from graphy import smash` at the top → fails naming the adapters; a producer dropped from `_PRODUCER_NAMES` → `test_GREEN_parser_producer_names_pin_the_minting_registry` fails naming `typescript_ast` |
 | the gate | `GRAPHY_STANDALONE_OK` — burden: wheel 269,249 B under the cap, 0 runtime deps |
 | the receipt | `measure.py run` then `diff recon.before20.json recon.json`: `MEASURE REGRESSION: 1 number(s) moved the wrong way — tenants.express.seconds 2.5 -> 2.9 (+16%)`, 45 others moved and every door on every tenant faster (fastapi · sqlalchemy · hono · express · graphy, 16–25 % off each `descend` · `blast` · `explain`, one process each), the floor 17.7 → 14.0 s under the receipt, the whole receipt 82.3 → 79.8 s, fastapi's rebuild RSS 183 → 166 MB, the wheel 269,605 B. The express number is noise: `bash tenants/express/rebuild.sh` timed directly, three runs each with the receipt's interpreter, reads before 2.61 · 2.58 · 2.60 s and after 2.39 · 2.36 · 2.37 s — faster, as every other tenant. Re-derive: `PYTHON=../.venv/bin/python; for i in 1 2 3; do /usr/bin/time -f %e bash tenants/express/rebuild.sh >/dev/null; done` on each side of `git stash` |
+
+## 57 · THE RING'S PARQUET WAITS FOR THE FIRST ASK — one connection per batch, one JSON array per table, `eat` of an 85-shard ring 3.8 → 2.5 s (2026-09-07 · graphyos issue 21)
+
+**What it was.** `graphy eat` emitted `adjacency.parquet` + `nodes.parquet` beside every shard of
+the ring, each shard through its own `duckdb.connect()` (6 ms — as much as a whole shard's write)
+and each table through a newline-JSON feed written one `json.dumps` per row. Over express's 86
+shards the emit was 1.28 s of a 3.8 s eat: 0.49 s opening connections, 0.59 s writing, the rest
+loading and digesting — for 85 ring parquets nobody had queried.
+
+**What the profiler said, and why it was wrong by 5×.** The receipt read `container.emit` and
+`_write_parquet` as the hottest engine frames in five of nine lanes — 6.0 s of tottime each in the
+express quickstart. cProfile cannot see duckdb's pybind11 methods: no `execute` frame appears among
+`_write_parquet`'s callees, its `ncalls` reads 2 for 86 calls, and the pybind11 time lands in the
+caller's self time. The profiled eat took 7.6 s wall and reported 18.6 s of frames. The wall clock
+says 1.28 s, and that is the number this section moves. The hot-frame rule (§48) still reads the
+attribution, so `pass.engine_hot_lanes` is what it is until duckdb's calls are visible.
+
+**What it is.**
+- **One connection per batch.** `emit_all` and `estate` open one `duckdb.connect()` and pass it
+  to every `emit`; `_write_parquet` creates its table `OR REPLACE` and drops it, so any number of
+  writes run in a row on one connection. `emit` alone still opens its own.
+- **One JSON array per table, never parameters.** The issue asked for rows bound as columns (a
+  relation over Python lists, or `executemany`) and to measure both. Measured on the FastAPI
+  fixture (3,715 edges · 507 nodes, both tables): the old per-row newline feed 22.0 ms; one
+  `json.dumps` of the rows as an array + `read_json(format='array')` 14.7 ms; `INSERT … SELECT
+  unnest($1), unnest($2), …` 958 ms (chunks of 64 · 256 · 1024 rows: 815 · 756 · 740 ms);
+  `INSERT … VALUES (?, …)` in chunks of 100 · 500: 849 · 833 ms; `executemany` 3,038 ms; a dict of
+  lists registered as a relation: refused by duckdb 1.5.5 (`not suitable for replacement scans`).
+  Binding one list of 10 · 100 · 1,000 · 3,715 strings costs 1.5 · 5.6 · 52 · 190 ms — about 50 µs
+  a value, so six columns of a shard cost a second where the array feed costs 15 ms (4.4 ms of it
+  the dump, 4.1 ms the `COPY`). The file is the fast path; the round trip the issue named was not
+  the cost, the connection and the per-row loop were. Under cProfile the array feed's hottest frame
+  is `json/encoder.py:iterencode` — the stdlib's — where the per-row loop's was `_write_parquet`.
+  A 60,000-row feed of 27 MB loads in 0.23 s (past `read_json`'s 16 MB per-object cap, since an
+  array's elements are the objects).
+- **The ring is pending until the estate asks.** `graphy build --container <slug>_graph` emits
+  that shard's parquet now and writes a `pending` receipt (`container.json` with `"pending": true`,
+  no parquet, a stale pair from an earlier emit removed) beside every other lane; `eat` passes the
+  eaten package's own shard. `verify` reads `pending` as its own state — never stale, never a
+  fault: `check` says `container fresh for 1/86 shard(s), 85 pending until the estate asks` and is
+  green; `graphy container` says `CONTAINER PENDING: 1/86 fresh · 85 pending` and exits 0.
+  `graphy estate` emits every pending container first, on the connection it queries with, and
+  says so: `ESTATE: emitted 85 pending container(s) on the first ask — … 0.50 s`. `graphy
+  container --emit` writes what is not fresh (pending · stale · absent) and names what it left:
+  `CONTAINER OK: 85 shard(s) … · 1 already fresh`. `build` without `--container` emits all, as
+  every tenant's `rebuild.sh` does; a shard the roster does not hold refuses by name.
+- **Byte-identical content.** The parquet's rows and schema are compared equal (`ORDER BY ALL`)
+  between the old feed and the array feed on both tables; the container receipt's row counts are
+  the same integers; the index estate (`index_estate.py`, its own feed) is untouched, and the three
+  questions of §35 over the farm index re-emitted with this code (718 shards · 967,530 nodes ·
+  6,071,008 edges, 55.0 s) answer the same rows as before the re-emit: 157 packages · 8,041
+  import edges of `typing_extensions`; `Exception` 270/1,529 · `Protocol` 122/1,519 · `Enum`
+  121/1,440 over 18,960 rows; `sentry-sdk` 3 · `typer` 2 · `sglang` 2 over 6 rows.
+- **One thread for the batch.** The first receipt of the shared connection read every tenant's
+  peak RSS up 20–55 % (fastapi's `build` 177 → 237 MB, timed directly). Each of duckdb's eight
+  worker threads keeps an allocator arena that outlives the query; per-shard connections had freed
+  them ten times over. Measured on the fastapi tenant's ten shards, two passes: defaults 253 MB ·
+  `memory_limit='64MB'` 256 · `allocator_flush_threshold='4MB'` 243 · `threads=2` 172 · `threads=1`
+  150 MB and 0.61 s against 0.67 — a shard's write is too small to split. `emit_all` sets
+  `threads = 1` on the connection for the batch and puts the caller's value back after; the build's
+  RSS now reads 149 MB, under what it was.
+- The graphy tenant eats graphy, so the walk moved: six arm regions re-rendered by `graphy arms`
+  (five stamps, SEAM's inventory by two lines), `ARMS OK` on the rebuild.
+- duckdb stays the optional extra; `build` still says `CONTAINER SKIPPED` without it. Nothing added.
+
+```bash
+cd engine
+../.venv/bin/python - <<'PY'                     # the writer, measured: feed vs parameters (FastAPI fixture)
+import sys, time, json, os; sys.path.insert(0, "."); import duckdb
+from pathlib import Path; from graphy import container; from graphy.native_json_graph_ir import load_graph_ir
+gd = Path("tests/fixtures/fastapi_graph"); gir = load_graph_ir(gd)
+rows = container._edge_rows(list(gir.edges) + [r for r in gir.residuals if isinstance(r, dict) and r.get("kind") == "edge"])
+cols = {"src": "VARCHAR", "dst": "VARCHAR", "edge_type": "VARCHAR", "attrs": "VARCHAR", "dst_repr": "VARCHAR", "src_repr": "VARCHAR"}
+con = duckdb.connect(); out = Path("/tmp/adj.parquet")
+def t(label, fn):
+    ts = [];
+    for _ in range(3): t0 = time.perf_counter(); fn(); ts.append(time.perf_counter() - t0)
+    print(f"{label:24} {min(ts)*1000:8.1f} ms")
+t("array feed", lambda: container._write_parquet(con, "adj", cols, rows, out))
+def unnest():
+    con.execute(f"CREATE OR REPLACE TABLE adj ({', '.join(f'{k} {v}' for k, v in cols.items())})")
+    con.execute(f"INSERT INTO adj SELECT {', '.join(f'unnest(${i+1})' for i in range(len(cols)))}", [list(c) for c in zip(*rows)])
+    con.execute(f"COPY adj TO '{out}' (FORMAT PARQUET)")
+t("unnest($1..$6)", unnest)
+for n in (10, 100, 1000, len(rows)):
+    t(f"bind a list of {n}", lambda n=n: con.execute("SELECT count(*) FROM (SELECT unnest($1))", [[r[0] for r in rows[:n]]]).fetchall())
+PY
+# the eat, three each side (the express clone, 86 shards); the estate's first ask writes the ring
+cd ../staging/quickstart/express; for i in 1 2 3; do /usr/bin/time -f "eat %e s" ../../../.venv/bin/graphy eat . 2>&1 | grep -E "^eat |CONTAINER"; done
+/usr/bin/time -f "estate %e s" ../../../.venv/bin/graphy estate --tenant .graphy/tenant.json --tenant-id express --sql "SELECT count(*) FROM adj"
+../../../.venv/bin/graphy container --tenant .graphy/tenant.json --tenant-id express | tail -1
+cd ../../../engine
+# the profiler's blind spot: no execute frame under _write_parquet, ncalls 2 for 86 calls
+P=/tmp/p; rm -rf $P; (cd ../staging/quickstart/express && GRAPHY_PROFILE_DIR=$P ../../../.venv/bin/graphy eat . >/dev/null)
+../.venv/bin/python -c "import pstats, glob; s = pstats.Stats(*glob.glob('$P/*.prof')); s.sort_stats('tottime').print_stats(3); s.print_callees('_write_parquet')"
+# the RED proofs (each edit reverted after)
+sed -i 's/        return \[emit(d, con=con) for d in dirs\]/        return [emit(d) for d in dirs]/' graphy/container.py && python3 -m pytest -q tests/test_container.py -k one_connection      # 4 connection(s) for 3 shards
+python3 - <<'P'
+from pathlib import Path; p = Path("graphy/container.py"); p.write_text(p.read_text().replace('    if receipt.get("pending") is True:\n        return "pending"\n', ''))
+P
+python3 -m pytest -q tests/test_container.py -k leaves_the_rest_pending                                                            # assert 'absent' == 'pending'
+sed -i 's/receipts = emit_all(pending, con=con)/receipts = emit_all(pending)/' graphy/container.py && python3 -m pytest -q tests/test_container.py -k leaves_the_rest_pending   # 2 connection(s) to emit two and query three
+sed -i 's/receipts, kept = container.emit_missing(dirs)/receipts, kept = container.emit_all(dirs), 0/' graphy/cli.py && python3 -m pytest -q tests/test_container.py -k leaves_the_fresh_alone   # 'CONTAINER OK: 2 shard(s)' not in 'CONTAINER OK: 3 shard(s) …'
+git checkout graphy/container.py graphy/cli.py
+# the farm's three questions, before and after a re-emit (§35's commands)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before21.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `graphy eat .` on the express clone (86 shards, no provisioning), three runs | 3.86 · 3.76 · 3.82 s | 2.49 · 2.69 · 2.47 s |
+| the container inside that eat | `86 shard(s) … 1.28 s beside the shards` | `1 shard(s) … 0.02 s beside express_graph; 85 pending` |
+| the 86 shards' emit, direct: connect · load · rows · write · digest | 1.28 s: 0.49 · 0.04 · 0.03 · 0.59 · 0.04 | the estate's first ask writes 85 in 0.50 s (0.66 s wall); the second ask 0.16 s |
+| the writer on the FastAPI fixture, both tables | per-row newline feed 22.0 ms | array feed 14.7 ms — `unnest` 958 · `VALUES` 833 · `executemany` 3,038 ms rejected by measurement |
+| `duckdb.connect` calls in `emit_all` over N shards · in `estate` emitting P pending and querying N | N · 1 + P | 1 · 1 |
+| the farm estate's three questions (718 shards) | 157 · 8,041 / 18,960 rows / 6 rows | the same rows |
+| `graphy build` on the fastapi tenant, peak RSS | 177 MB | 237 MB with eight threads on the shared connection; 149 MB with one |
+
+| check | result |
+|---|---|
+| the floor | 473 passed · 3 skipped (470 + 3: one connection per batch; `--container <shard>` leaves the rest pending, `check` green naming it, `container` PENDING exit 0, the estate emits on one connection and answers over all, a shard outside the roster refuses; `--emit` writes only what is not fresh) |
+| the RED proofs | a connection per shard → `4 connection(s) for 3 shards`; `verify` blind to pending → `'absent' == 'pending'`; the estate emitting on a second connection → `2 connection(s) to emit two and query three`; `--emit` rewriting the fresh one → `'CONTAINER OK: 2 shard(s)' not in 'CONTAINER OK: 3 shard(s) …'` |
+| the gate | `GRAPHY_STANDALONE_OK` — burden: wheel 269,605 B under the cap, 0 runtime deps |
+| the receipt | `measure.py run` then `diff recon.before21.json recon.json`: `MEASURE DIFF OK: 49 number(s) moved, none the wrong way past tolerance` — `quickstart.express.seconds` 9.0 → 8.2 (`eat_again` 4.2 → 2.4), `quickstart.httpx.seconds` 5.7 → 4.7, every `tenants.*.seconds` down (express 2.9 → 2.5 · fastapi 3.1 → 2.9 · hono 2.6 → 2.4 · graphy 2.3 → 2.1 · sqlalchemy 6.1 → 5.8), every lane's RSS down 8–27 %, the floor 470 → 473 in 14.7 s, the whole receipt 79.8 → 74.3 s. `pass.engine_hot_lanes` 6 → 5: the express quickstart's hottest frame is now `pathlib`, the httpx quickstart's and the five tenants' still read `_write_parquet` — the pybind11 attribution above, which one lane fewer does not cure. The issue asked for two quickstart lanes off the count; one came off. The first receipt of this change, before the thread setting, read RSS up on four tenants and the graphy tenant RED on arms drift — both named above, both fixed before this row |

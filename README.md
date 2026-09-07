@@ -75,8 +75,8 @@ MINT OK: httpcore 539 nodes / 2251 edges -> …/.graphy/substrate/httpcore_graph
 RING: 7 shard(s) · stdlib skipped 62 · unresolved brotli, click, h2, … -> …/.graphy/substrate/ring.json
 RESOLVE OK: httpx 1658 label(s) -> … edge(s) (import … · local … · reexport … · self … · super …)
 BUILD OK: compiled 2522 nodes / … edges -> …/.graphy/substrate/.mesh_store_….sqlite
-CONTAINER OK: 7 shard(s) · 2522 node row(s) · … edge row(s) · 0.45 MB parquet · 0.28 s beside the shards
-CHECK OK: descriptor valid; store fresh; journal readable for all declared graphs; container fresh for 7/7 shard(s)
+CONTAINER OK: 1 shard(s) · 538 node row(s) · … edge row(s) · … MB parquet · 0.01 s beside httpx_graph; 6 pending — graphy estate emits them on the first ask, graphy container --emit writes them now
+CHECK OK: descriptor valid; store fresh; journal readable for all declared graphs; container fresh for 1/7 shard(s), 6 pending until the estate asks
 EAT OK: httpx + 6 ring shard(s) -> /path/to/repo/.graphy
   the tenant:  --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx
   a walk:      graphy walk --tenant … --tenant-id httpx --seed httpx://module/httpx --target certifi://module/certifi

@@ -5,7 +5,10 @@ edge) and ``nodes.parquet`` (one row per node) — so the whole estate is one
 install line. The rows carry exactly what the shard carries — the loader's view, sidecar
 included — plus the three forms a walk matches a literal against, derived from the id alone.
 A receipt beside the parquets pins the shard input digest they were built from, so a
-container older than its shard reads as stale, never as fresh."""
+container older than its shard reads as stale, never as fresh. A receipt may instead say
+``pending``: the shard is declared, its parquet not yet written — ``estate`` writes it on the
+first ask and ``emit_all`` writes the rest — so ``eat`` never pays for a ring nobody has queried.
+One DuckDB connection serves a whole batch (``emit_all`` · ``estate``), never one per shard."""
 from __future__ import annotations
 
 import json
@@ -17,7 +20,7 @@ from typing import Any, Sequence
 
 from graphy.native_json_graph_ir import load_graph_ir
 
-__all__ = ["ContainerError", "have_duckdb", "emit", "verify", "estate", "node_forms",
+__all__ = ["ContainerError", "have_duckdb", "emit", "emit_all", "defer", "verify", "estate", "node_forms",
            "ADJACENCY", "NODES", "RECEIPT", "INSTALL_HINT"]
 
 ADJACENCY = "adjacency.parquet"
@@ -97,20 +100,21 @@ def shard_digest(graph_dir: Path) -> str:
 
 
 def _write_parquet(con, table: str, columns: dict[str, str], rows: list[tuple], out: Path) -> int:
-    """Rows go through one newline-delimited JSON file that DuckDB bulk-loads, never through a
-    per-row insert (which costs seconds per ten thousand rows)."""
+    """Rows reach DuckDB as one JSON array — one ``json.dumps`` in C, one vectorized ``read_json``
+    — never bound as parameters: binding a Python value costs about 50 µs each in duckdb 1.5, so a
+    shard of 3,700 six-column edges takes a second through ``unnest($1)`` or ``VALUES (?, …)`` and
+    three through ``executemany``, where the array feed takes 15 ms (RECON §57). The table is
+    created fresh and dropped, so one connection serves any number of writes in a row."""
     names = list(columns)
-    feed = out.with_name(f".{out.name}.{os.getpid()}.jsonl")
-    with feed.open("w", encoding="utf-8") as fh:
-        for row in rows:
-            fh.write(json.dumps(dict(zip(names, row)), ensure_ascii=False) + "\n")
+    feed = out.with_name(f".{out.name}.{os.getpid()}.json")
+    feed.write_text(json.dumps([dict(zip(names, row)) for row in rows], ensure_ascii=False), encoding="utf-8")
     spec = ", ".join(f"'{k}': '{v}'" for k, v in columns.items())
     tmp = out.with_name(f".{out.name}.{os.getpid()}.tmp")
     try:
-        con.execute(f"CREATE TABLE {table} ({', '.join(f'{k} {v}' for k, v in columns.items())})")
+        con.execute(f"CREATE OR REPLACE TABLE {table} ({', '.join(f'{k} {v}' for k, v in columns.items())})")
         if rows:
             con.execute(f"INSERT INTO {table} SELECT {', '.join(names)} FROM read_json('{feed.as_posix()}', "
-                        f"format='newline_delimited', columns={{{spec}}})")
+                        f"format='array', columns={{{spec}}})")
         con.execute(f"COPY {table} TO '{tmp.as_posix()}' (FORMAT PARQUET)")
         os.replace(tmp, out)
         con.execute(f"DROP TABLE {table}")
@@ -122,8 +126,9 @@ def _write_parquet(con, table: str, columns: dict[str, str], rows: list[tuple], 
     return len(rows)
 
 
-def emit(graph_dir: str | Path) -> dict:
-    """Write both parquets and the receipt beside one shard. Returns the receipt."""
+def emit(graph_dir: str | Path, *, con=None) -> dict:
+    """Write both parquets and the receipt beside one shard. Returns the receipt. ``con`` is a
+    connection the caller holds for a batch; without one, this shard gets its own."""
     duckdb = _duckdb()
     gd = Path(graph_dir)
     if not (gd / "nodes.json").is_file() or not (gd / "edges.json").is_file():
@@ -133,7 +138,9 @@ def emit(graph_dir: str | Path) -> dict:
     # every edge the shard carries: the resolved ones the store compiles, and the label-only ones
     # (dst_repr / src_repr) the loader parks as residuals — the parquet keeps both, as the host's did
     edges = list(gir.edges) + [r for r in gir.residuals if isinstance(r, dict) and r.get("kind") == "edge"]
-    con = duckdb.connect()
+    own = con is None
+    if own:
+        con = duckdb.connect()
     try:
         n_edges = _write_parquet(
             con, "adj",
@@ -146,7 +153,8 @@ def emit(graph_dir: str | Path) -> dict:
              "dotted": "VARCHAR", "file": "VARCHAR", "loc": "BIGINT", "attrs": "VARCHAR"},
             _node_rows(gir.nodes), gd / NODES)
     finally:
-        con.close()
+        if own:
+            con.close()
     receipt = {
         "shard": gd.name, "input_digest": shard_digest(gd),
         "duckdb": duckdb.__version__,
@@ -155,40 +163,78 @@ def emit(graph_dir: str | Path) -> dict:
         "files": {ADJACENCY: {"rows": n_edges, "bytes": (gd / ADJACENCY).stat().st_size},
                   NODES: {"rows": n_nodes, "bytes": (gd / NODES).stat().st_size}},
     }
+    _write_receipt(gd, receipt)
+    return receipt
+
+
+def _write_receipt(gd: Path, receipt: dict) -> None:
     tmp = gd / f".{RECEIPT}.{os.getpid()}.tmp"
     tmp.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, gd / RECEIPT)
+
+
+def defer(graph_dir: str | Path) -> dict:
+    """Declare the container without writing it: a ``pending`` receipt beside the shard and no
+    parquet (a stale pair from an earlier emit is removed, so pending means exactly no parquet).
+    ``estate`` emits a pending shard on the first ask; ``emit_all`` over what is not fresh writes
+    the rest. Needs no duckdb — the write that does is the one deferred."""
+    gd = Path(graph_dir)
+    if not (gd / "nodes.json").is_file() or not (gd / "edges.json").is_file():
+        raise ContainerError(f"no shard (nodes.json + edges.json) at {gd}")
+    for name in (ADJACENCY, NODES):
+        if (gd / name).exists():
+            (gd / name).unlink()
+    receipt = {"shard": gd.name, "pending": True,
+               "deferred_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+               "note": "graphy estate emits this container on the first ask; graphy container --emit writes it now"}
+    _write_receipt(gd, receipt)
     return receipt
 
 
 def verify(graph_dir: str | Path) -> str:
     """``fresh`` when both parquets and the receipt exist and the receipt's digest matches the
-    shard as it stands now; ``stale`` when the shard moved under it; ``absent`` otherwise."""
+    shard as it stands now; ``stale`` when the shard moved under it; ``pending`` when the receipt
+    declares a container not yet written; ``absent`` otherwise."""
     gd = Path(graph_dir)
-    if not all((gd / name).is_file() for name in (ADJACENCY, NODES, RECEIPT)):
-        return "absent"
     if not all((gd / name).is_file() for name in ("nodes.json", "edges.json")):
         return "absent"                  # no shard, no container to hold to it — the store lane names the missing file
+    if not (gd / RECEIPT).is_file():
+        return "absent"
     try:
         receipt = json.loads((gd / RECEIPT).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "stale"
+    if receipt.get("pending") is True:
+        return "pending"
+    if not all((gd / name).is_file() for name in (ADJACENCY, NODES)):
+        return "absent"
     return "fresh" if receipt.get("input_digest") == shard_digest(gd) else "stale"
 
 
-def estate(graph_dirs: Sequence[str | Path], traversals: str | Path | None = None):
+def estate(graph_dirs: Sequence[str | Path], traversals: str | Path | None = None, *, log=None):
     """One connection with two views over every container named: ``adj`` and ``nodes``, each
-    with a ``corpus`` column (the shard directory's name). A shard without a fresh container is
-    refused by name — a view that quietly skipped a shard would lie about the estate. With a
-    traversal home that holds walks, a third view ``walks`` (seed, hop, node, via_src, relation,
-    direction, carrier, generation) reads every stored frontier."""
+    with a ``corpus`` column (the shard directory's name). A pending container is emitted first,
+    on this same connection, and ``log`` (when given) is told how many. A shard without a fresh
+    container after that is refused by name — a view that quietly skipped a shard would lie about
+    the estate. With a traversal home that holds walks, a third view ``walks`` (seed, hop, node,
+    via_src, relation, direction, carrier, generation) reads every stored frontier."""
     duckdb = _duckdb()
     dirs = [Path(d) for d in graph_dirs]
-    missing = [d.name for d in dirs if verify(d) != "fresh"]
+    states = {d: verify(d) for d in dirs}
+    missing = [d.name for d, st in states.items() if st not in ("fresh", "pending")]
     if missing:
         raise ContainerError(f"container absent or stale for {missing} — run graphy build (with "
                              f"duckdb installed) or graphy container --emit first")
     con = duckdb.connect()
+    pending = [d for d, st in states.items() if st == "pending"]
+    if pending:
+        try:
+            receipts = emit_all(pending, con=con)
+        except Exception:
+            con.close()
+            raise
+        if log is not None:
+            log(f"ESTATE: emitted {len(pending)} pending container(s) on the first ask — {summarize(receipts)}")
     for view, name, cols in (
             ("adj", ADJACENCY, "src, dst, edge_type, attrs, dst_repr, src_repr"),
             ("nodes", NODES, "id, kind, body, last, node_type, dotted, file, loc, attrs")):
@@ -206,8 +252,36 @@ def estate(graph_dirs: Sequence[str | Path], traversals: str | Path | None = Non
     return con
 
 
-def emit_all(graph_dirs: Sequence[str | Path]) -> list[dict]:
-    return [emit(d) for d in graph_dirs]
+def emit_all(graph_dirs: Sequence[str | Path], *, con=None) -> list[dict]:
+    """Every shard named, through one connection — ``duckdb.connect`` costs 6 ms and a whole
+    shard's write about the same, so a ring of 85 paid half its emit opening connections. The
+    batch runs on one thread: a shard's write is too small to split, and every worker thread
+    keeps an allocator arena that outlives the query — eight of them held 100 MB of RSS over a
+    ten-shard build where one holds none (RECON §57). The caller's setting is put back after."""
+    dirs = list(graph_dirs)
+    if not dirs:
+        return []
+    duckdb = _duckdb()
+    own = con is None
+    if own:
+        con = duckdb.connect()
+    threads = con.execute("SELECT current_setting('threads')").fetchone()[0]
+    con.execute("SET threads = 1")
+    try:
+        return [emit(d, con=con) for d in dirs]
+    finally:
+        if own:
+            con.close()
+        else:
+            con.execute(f"SET threads = {int(threads)}")
+
+
+def emit_missing(graph_dirs: Sequence[str | Path]) -> tuple[list[dict], int]:
+    """Emit what is not fresh (pending · stale · absent); a fresh container is left as it stands
+    (its content would come back byte-for-byte). Returns (receipts, the count left as fresh)."""
+    dirs = [Path(d) for d in graph_dirs]
+    todo = [d for d in dirs if verify(d) != "fresh"]
+    return emit_all(todo), len(dirs) - len(todo)
 
 
 def summarize(receipts: Sequence[dict]) -> str:

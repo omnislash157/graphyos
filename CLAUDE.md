@@ -85,7 +85,7 @@ adapters/               producers, each with its own vocabulary: python_ast · t
 smash.py                the minting lane: mint a package into a shard, follow its import ring, parity against a golden
 index.py                the shard index: push · pull content-addressed shards, every byte verified against the PROVENANCE; a directory or an http base
 converge.py             the seam: wormholes per shard pair; --resolve binds text labels through scope into wormhole_edges.json
-container.py            adjacency.parquet + nodes.parquet + a receipt beside every shard; estate() is one view over all of them (duckdb, optional)
+container.py            adjacency.parquet + nodes.parquet + a receipt beside every shard, one duckdb connection per batch; a receipt may say pending (eat defers the ring) and estate() — one view over all of them — emits it on the first ask (duckdb, optional)
 traversal.py            the traversal store: every walk lands as rows under <data_home>/traversals/<generation>/; walks compose (store · splice) and diff (replay)
 shell/                  what bolts graphy onto a repo: gate.py (walk-before-edit, PreToolUse) · install.py · claude/ (settings.json, GRAPHY.md) · hooks/*.sh · README.md
 federated_store.py      compile_store → the sqlite store; open_for · path_to · spread — the reader
@@ -143,7 +143,7 @@ cli.py                  graphy eat | init | smash | push | pull | index | conver
 | the mechanical fan-out of a shard; a single package cut into its pillars | `python3 -m graphy fanout --graph-dir <shard> --out <dir> [--depth N \| --partition <json>]` · `--verify` — a partition is `{"groups": {NAME: [dotted prefix, …]}, "rest": NAME}`, longest prefix wins |
 | the whole index, one query — the knowledge graph asked across every release the farm minted | `python3 -m graphy estate --index <abs> --emit` once, then `--sql "<over adj(name, corpus, src, dst, edge_type, dst_repr, line) and nodes(name, corpus, id, kind, node_type, dotted, module, role, file, line, version)>"` — STALE refuses when the catalog moved |
 | the whole estate, one query | `python3 -m graphy estate --tenant <descriptor> --tenant-id <name> --sql "<over adj(corpus, src, dst, edge_type, …) and nodes(corpus, id, …)>"` — `pip install 'graphyos[estate]'`; `graphy build` emits the parquet when duckdb is present and says SKIPPED when it is not |
-| is the parquet as fresh as the shard | `python3 -m graphy container --tenant <descriptor> --tenant-id <name>` · `--emit` to write it |
+| is the parquet as fresh as the shard | `python3 -m graphy container --tenant <descriptor> --tenant-id <name>` — fresh · pending · stale by name; `--emit` writes what is not fresh. `build --container <slug>_graph` writes one shard's now and leaves the rest pending until `graphy estate` asks, which is what `eat` does for the ring |
 | the stored walks; the hops the live generation broke | `python3 -m graphy traversals --tenant <descriptor> --tenant-id <name>` · `--replay` — exit 1 when a stored walk no longer holds |
 | bolt the hooks and the gate onto an eaten repo | `python3 -m graphy shell install --repo <abs>` → `.graphy/hooks/*.sh` · `.claude/settings.json` · `GRAPHY.md`; the gate: `echo <hook json> \| python3 -m graphy.shell.gate` — exit 2 blocks, the walk to run on stderr |
 

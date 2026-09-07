@@ -140,3 +140,82 @@ def test_RED_a_stale_container_fails_check_and_the_estate_refuses_by_name(tmp_pa
     assert rc == 2 and "beta_graph" in capsys.readouterr().err
     assert cli.main(["container", "--tenant", str(desc), "--tenant-id", "t", "--emit"]) == 0
     assert container.verify(gd) == "fresh"
+
+
+@needs_duckdb
+def test_GREEN_emit_all_opens_one_connection_over_n_shards(tmp_path, monkeypatch):
+    """The batch holds one connection: duckdb.connect costs as much as a whole shard's write, so
+    a ring of 85 paid half its emit opening connections (graphyos #21)."""
+    import duckdb
+    home, slugs = _ring(tmp_path)
+    real, opened = duckdb.connect, []
+
+    def spy(*a, **k):
+        opened.append(1)
+        return real(*a, **k)
+    monkeypatch.setattr(duckdb, "connect", spy)
+    receipts = container.emit_all([home / f"{s}_graph" for s in slugs])
+    assert len(receipts) == 3 and len(opened) == 1, f"{len(opened)} connection(s) for 3 shards"
+    assert all(container.verify(home / f"{s}_graph") == "fresh" for s in slugs)
+    for s, r in zip(slugs, receipts):
+        gd = home / f"{s}_graph"
+        assert r["files"]["adjacency.parquet"]["rows"] == len(json.loads((gd / "edges.json").read_text()))
+        assert r["files"]["nodes.parquet"]["rows"] == len(json.loads((gd / "nodes.json").read_text()))
+
+
+@needs_duckdb
+def test_GREEN_build_container_for_one_shard_leaves_the_rest_pending_until_the_estate_asks(tmp_path, capsys, monkeypatch):
+    import duckdb
+    home, slugs = _ring(tmp_path)                       # alpha · beta · gamma
+    desc = _tenant(tmp_path, home, slugs)
+    assert cli.main(["build", "--tenant", str(desc), "--tenant-id", "t", "--container", "alpha_graph"]) == 0
+    out = capsys.readouterr().out
+    assert "CONTAINER OK: 1 shard(s)" in out and "2 pending" in out
+    assert container.verify(home / "alpha_graph") == "fresh"
+    for s in ("beta", "gamma"):
+        assert container.verify(home / f"{s}_graph") == "pending"
+        assert not (home / f"{s}_graph" / "adjacency.parquet").exists()
+        assert json.loads((home / f"{s}_graph" / "container.json").read_text())["pending"] is True
+    # pending is a declared state, never a fault: check is green and names it, container says PENDING and exits 0
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "t"]) == 0
+    assert "container fresh for 1/3 shard(s), 2 pending" in capsys.readouterr().out
+    assert cli.main(["container", "--tenant", str(desc), "--tenant-id", "t"]) == 0
+    assert "CONTAINER PENDING: 1/3 fresh · 2 pending" in capsys.readouterr().out
+    # the estate emits the two on the first ask, on its own one connection, and answers over all three
+    real, opened = duckdb.connect, []
+
+    def spy(*a, **k):
+        opened.append(1)
+        return real(*a, **k)
+    monkeypatch.setattr(duckdb, "connect", spy)
+    assert cli.main(["estate", "--tenant", str(desc), "--tenant-id", "t",
+                     "--sql", "SELECT corpus, count(*) AS n FROM nodes GROUP BY corpus ORDER BY corpus"]) == 0
+    out = capsys.readouterr().out
+    assert "ESTATE: emitted 2 pending container(s) on the first ask" in out
+    assert "alpha_graph\t" in out and "beta_graph\t" in out and "gamma_graph\t" in out
+    assert "ESTATE OK: 3 row(s) over 3 shard(s)" in out
+    assert len(opened) == 1, f"{len(opened)} connection(s) to emit two and query three"
+    assert all(container.verify(home / f"{s}_graph") == "fresh" for s in slugs)
+    assert cli.main(["estate", "--tenant", str(desc), "--tenant-id", "t"]) == 0
+    assert "pending" not in capsys.readouterr().out
+    # a shard the roster does not hold refuses by name
+    assert cli.main(["build", "--tenant", str(desc), "--tenant-id", "t", "--container", "delta_graph"]) == 2
+    assert "delta_graph" in capsys.readouterr().err
+
+
+@needs_duckdb
+def test_GREEN_container_emit_writes_what_is_not_fresh_and_leaves_the_fresh_alone(tmp_path, capsys):
+    home, slugs = _ring(tmp_path)
+    desc = _tenant(tmp_path, home, slugs)
+    assert cli.main(["build", "--tenant", str(desc), "--tenant-id", "t", "--container", "beta_graph"]) == 0
+    capsys.readouterr()
+    before = (home / "beta_graph" / "adjacency.parquet").stat().st_mtime_ns
+    assert cli.main(["container", "--tenant", str(desc), "--tenant-id", "t", "--emit"]) == 0
+    out = capsys.readouterr().out
+    assert "CONTAINER OK: 2 shard(s)" in out and "1 already fresh" in out
+    assert (home / "beta_graph" / "adjacency.parquet").stat().st_mtime_ns == before
+    assert all(container.verify(home / f"{s}_graph") == "fresh" for s in slugs)
+    assert cli.main(["container", "--tenant", str(desc), "--tenant-id", "t", "--emit"]) == 0
+    assert "0 shard(s)" in capsys.readouterr().out
+    assert cli.main(["container", "--tenant", str(desc), "--tenant-id", "t"]) == 0
+    assert "CONTAINER OK: 3/3 fresh" in capsys.readouterr().out

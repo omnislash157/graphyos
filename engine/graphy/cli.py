@@ -198,13 +198,24 @@ def _cmd_build(args: argparse.Namespace) -> int:
     print(f"BUILD OK: compiled {info['nodes']} nodes / {info['edges']} edges "
           f"-> {info['db']}")
     dirs = [Path(tenant.data_home) / f"{s}_graph" for s in substrates]
+    now = getattr(args, "container", "all") or "all"
+    if now != "all" and now not in {d.name for d in dirs}:
+        print(f"BUILD REFUSED: --container {now} names no shard in the roster "
+              f"({', '.join(d.name for d in dirs)})", file=sys.stderr)
+        return 2
     if container.have_duckdb():
         try:
-            receipts = container.emit_all(dirs)
+            if now == "all":
+                receipts = container.emit_all(dirs)
+                print(f"CONTAINER OK: {container.summarize(receipts)} beside the shards")
+            else:
+                receipts = container.emit_all([d for d in dirs if d.name == now])
+                deferred = [container.defer(d) for d in dirs if d.name != now]
+                print(f"CONTAINER OK: {container.summarize(receipts)} beside {now}; {len(deferred)} pending — "
+                      f"graphy estate emits them on the first ask, graphy container --emit writes them now")
         except container.ContainerError as exc:
             print(f"CONTAINER FAILED: {exc}", file=sys.stderr)
             return 1
-        print(f"CONTAINER OK: {container.summarize(receipts)} beside the shards")
     else:
         print(f"CONTAINER SKIPPED: {container.INSTALL_HINT}; the JSON path is the reader")
     return 0
@@ -863,7 +874,10 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     if not findings:
         fresh = sum(1 for st in states.values() if st == "fresh")
-        note = (f"; container fresh for {fresh}/{len(states)} shard(s)" if fresh
+        pending = sum(1 for st in states.values() if st == "pending")
+        note = (f"; container fresh for {fresh}/{len(states)} shard(s)"
+                + (f", {pending} pending until the estate asks" if pending else "")
+                if fresh or pending
                 else "; no container (duckdb not installed or never emitted) — the JSON path is the reader")
         print("CHECK OK: descriptor valid; store fresh; journal readable for all "
               f"declared graphs{note}")
@@ -1020,19 +1034,27 @@ def _cmd_container(args: argparse.Namespace) -> int:
         return rc
     if args.emit:
         try:
-            receipts = container.emit_all(dirs)
+            receipts, kept = container.emit_missing(dirs)
         except container.ContainerError as exc:
             print(f"CONTAINER REFUSED: {exc}", file=sys.stderr)
             return 2
-        print(f"CONTAINER OK: {container.summarize(receipts)}")
+        print(f"CONTAINER OK: {container.summarize(receipts)}" + (f" · {kept} already fresh" if kept else ""))
         return 0
     states = {d.name: container.verify(d) for d in dirs}
     for name, st in states.items():
         print(f"  {name:28} {st}")
-    stale = [n for n, st in states.items() if st != "fresh"]
-    print(f"CONTAINER {'OK' if not stale else 'STALE'}: {len(dirs) - len(stale)}/{len(dirs)} fresh"
-          + (f" — emit with --emit" if stale else ""))
-    return 0 if not stale else 1
+    stale = [n for n, st in states.items() if st not in ("fresh", "pending")]
+    pending = [n for n, st in states.items() if st == "pending"]
+    fresh = len(dirs) - len(stale) - len(pending)
+    if stale:
+        print(f"CONTAINER STALE: {fresh}/{len(dirs)} fresh — emit with --emit")
+        return 1
+    if pending:
+        print(f"CONTAINER PENDING: {fresh}/{len(dirs)} fresh · {len(pending)} pending — "
+              f"graphy estate emits them on the first ask; --emit writes them now")
+        return 0
+    print(f"CONTAINER OK: {fresh}/{len(dirs)} fresh")
+    return 0
 
 
 def _cmd_estate_index(args: argparse.Namespace) -> int:
@@ -1095,7 +1117,7 @@ def _cmd_estate(args: argparse.Namespace) -> int:
         return rc
     sql = args.sql or ("SELECT corpus, count(*) AS edges FROM adj GROUP BY corpus ORDER BY edges DESC")
     try:
-        con = container.estate(dirs, traversals=traversal.home_for(_load_tenant(args.tenant)))
+        con = container.estate(dirs, traversals=traversal.home_for(_load_tenant(args.tenant)), log=print)
     except container.ContainerError as exc:
         print(f"ESTATE REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -1291,7 +1313,7 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         return rc
     _scheme_index_from_ring(sub, f"{package} scheme index — derived from ring.json by graphy eat")
     for step in (["converge", "--tenant", str(desc), "--tenant-id", package, "--resolve"],
-                 ["build", "--tenant", str(desc), "--tenant-id", package],
+                 ["build", "--tenant", str(desc), "--tenant-id", package, "--container", f"{package}_graph"],
                  ["check", "--tenant", str(desc), "--tenant-id", package]):
         rc = main(step)
         if rc != 0:
@@ -1490,6 +1512,9 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="path to the tenant descriptor JSON")
     p_build.add_argument("--tenant-id", default=None,
                          help="the receipt name written into every OverrideRecord")
+    p_build.add_argument("--container", default="all", metavar="all|<slug>_graph",
+                         help="the parquet beside every shard now (all, the default), or beside one shard now "
+                              "with the rest pending until graphy estate asks (what eat does for the ring)")
     p_build.set_defaults(handler=_cmd_build)
 
     p_container = sub.add_parser(
