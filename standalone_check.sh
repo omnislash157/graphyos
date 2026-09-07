@@ -45,5 +45,8 @@ python3 "$HERE/scrub.py" --tracked || { echo "prose scrub        FAILED — priv
 echo "prose scrub        OK"
 bash "$HERE/release.sh" --check
 python3 "$HERE/burden.py" || { echo "burden            FAILED — a responsibility grew without burden.json saying so"; exit 3; }
+# The workflow files parse here, on the box, before CI is asked: a file GitHub cannot parse runs
+# zero jobs and nobody sees CI stop (RECON.md §58). stdlib only; every refusal names file:line.
+python3 "$HERE/workflows.py" || { echo "workflows          FAILED — a file under .github/workflows/ would run zero jobs"; exit 3; }
 
 echo "GRAPHY_STANDALONE_OK"

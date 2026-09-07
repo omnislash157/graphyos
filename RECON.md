@@ -1877,7 +1877,7 @@ two commands the constitution names, on a runner with no `.private_modules` (the
 SKIPPED there, by design) and no host to reach.
 
 ```text
-https://github.com/omnislash157/graphyos/actions/runs/34007625366   commit 07206ff   success
+https://github.com/omnislash157/graphy/actions/runs/34007625366   commit 07206ff   success
   floor (3.12)  success   23 s
   floor (3.10)  success   27 s
   gate          success   32 s   (the venv, the install, the floor again, the hashed scrub, the census)
@@ -2993,3 +2993,59 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before21.json r
 | the RED proofs | a connection per shard → `4 connection(s) for 3 shards`; `verify` blind to pending → `'absent' == 'pending'`; the estate emitting on a second connection → `2 connection(s) to emit two and query three`; `--emit` rewriting the fresh one → `'CONTAINER OK: 2 shard(s)' not in 'CONTAINER OK: 3 shard(s) …'` |
 | the gate | `GRAPHY_STANDALONE_OK` — burden: wheel 269,605 B under the cap, 0 runtime deps |
 | the receipt | `measure.py run` then `diff recon.before21.json recon.json`: `MEASURE DIFF OK: 49 number(s) moved, none the wrong way past tolerance` — `quickstart.express.seconds` 9.0 → 8.2 (`eat_again` 4.2 → 2.4), `quickstart.httpx.seconds` 5.7 → 4.7, every `tenants.*.seconds` down (express 2.9 → 2.5 · fastapi 3.1 → 2.9 · hono 2.6 → 2.4 · graphy 2.3 → 2.1 · sqlalchemy 6.1 → 5.8), every lane's RSS down 8–27 %, the floor 470 → 473 in 14.7 s, the whole receipt 79.8 → 74.3 s. `pass.engine_hot_lanes` 6 → 5: the express quickstart's hottest frame is now `pathlib`, the httpx quickstart's and the five tenants' still read `_write_parquet` — the pybind11 attribution above, which one lane fewer does not cure. The issue asked for two quickstart lanes off the count; one came off. The first receipt of this change, before the thread setting, read RSS up on four tenants and the graphy tenant RED on arms drift — both named above, both fixed before this row |
+
+## 58 · THE GATE PARSES THE WORKFLOWS — a stdlib subset parser, strict where GitHub is, refuses the file that ran zero jobs with its line (2026-09-07 · graphyos issue 22)
+
+**What it was.** The step name `the receipt (quick: the floor, the gate, the wheel)` carried an
+unquoted `: ` — a mapping value inside a plain scalar — so `ci.yml` did not parse and every push
+from that commit ran zero jobs: the run reads `failure` with no job to open and GitHub's summary
+says *This run likely failed because of a workflow file issue*. The floor and the gate ran green on
+this box each time; nothing on the box read the workflow files. §55 found it by hand while reading
+the run list for the first CI timing.
+
+**What it is.** `workflows.py` at the repo root, stdlib only, and the gate runs it after the
+burden: every `*.yml` under `.github/workflows/` parsed by a parser for the YAML that workflows are
+written in — block mappings and sequences, plain and quoted scalars, flow `[a, b]` and `{k: v}`,
+block scalars `|` and `>`, comments — and shaped: the top level carries `name` · `on` · `jobs` and
+only keys GitHub knows, every job `runs-on` and `steps` (or `uses`), `needs` names a job that
+exists, every step exactly one of `uses` and `run` and only keys GitHub knows. Every refusal names
+`file:line`. The parser is strict where GitHub is strict and stricter where being stricter costs
+nothing at the gate: a plain scalar carrying `: ` refuses (the fault), a tab in the indentation
+refuses, a duplicate key refuses, a sequence item indented past its siblings refuses, an empty key
+refuses, a plain scalar continuing on the next line refuses (quote it or use `|`). No `yaml`, no
+`actionlint`: `burden.json` still says zero runtime dependencies and the extras by name; the
+census admits no new program.
+
+**What proves the parser.** PyYAML is on the box's system interpreter (never the gate's): the
+five workflow files parse to the same structure under both (every key, every value, every block
+scalar byte-identical, PyYAML's `on` → `True` mapped back), and a sweep of 2,838 single-line
+mutations of the five files (a quote dropped, a line dedented, indented, tabbed, deleted,
+duplicated, a colon appended or dropped, a bracket or a quote left open) reads: 2,641 agree, 197
+mine refuses and PyYAML accepts (duplicate keys, a bare scalar where a block is expected, a
+multi-line quoted scalar — each a refusal GitHub or this gate wants), 0 mine accepts and PyYAML
+refuses. The first sweep read 25 accepted-bad — an empty key `: x`, and `- uses:` read as a key
+when a step was indented past its siblings — both refused now and both on the floor.
+
+```bash
+# from the repo root
+python3 workflows.py                                       # WORKFLOWS OK: 5 file(s) … parse and carry name · on · jobs, every step uses or runs
+git show 6e47127:.github/workflows/ci.yml > /tmp/broken/ci.yml && python3 workflows.py /tmp/broken   # …/ci.yml:43: mapping values are not allowed here — the plain scalar 'the receipt (quick: …)' carries ': '; quote it — exit 3
+bash standalone_check.sh                                   # the gate: … WORKFLOWS OK … GRAPHY_STANDALONE_OK; with the broken ci.yml in place: workflows FAILED, exit 3
+# the run list the issue read (the public repo, ci.yml): 31 runs, 21 failure — 18 of them with zero jobs
+gh run list --repo omnislash157/graphyos --workflow ci.yml --limit 100 --json conclusion,databaseId -q '.[] | select(.conclusion=="failure") | .databaseId' | while read id; do gh run view $id --repo omnislash157/graphyos --json jobs -q '.jobs | length'; done | sort | uniq -c
+# the cross-check and the sweep (PyYAML on the system interpreter, never the gate's)
+python3 - <<'P'                                            # five True: every key, value and block scalar the same, leaves compared as strings
+import yaml, glob, importlib.util as u
+s = u.spec_from_file_location("wf", "workflows.py"); wf = u.module_from_spec(s); s.loader.exec_module(wf)
+norm = lambda x: {("on" if k is True else str(k)): norm(v) for k, v in x.items()} if isinstance(x, dict) else [norm(v) for v in x] if isinstance(x, list) else None if x is None else str(x).lower() if isinstance(x, bool) else str(x)
+for f in sorted(glob.glob(".github/workflows/*.yml")): print(f, norm(wf.parse(open(f).read())) == norm(yaml.safe_load(open(f))))
+P
+cd engine && python3 -m pytest -q tests/test_workflows.py   # 10 passed
+```
+
+| check | result |
+|---|---|
+| the floor | 483 passed · 3 skipped (473 + 10: the subset parses as PyYAML does on a workflow with every construct the five files use; the unquoted colon refused at line 19; six faults each naming its line — a deeper-indented step, a duplicate key, an empty key, a tab, an open bracket, a continued scalar; the shape naming what GitHub would refuse; the repo's own directory green and a directory holding the fault red by `file:line`) |
+| the gate | `GRAPHY_STANDALONE_OK` with `WORKFLOWS OK: 5 file(s)` after `BURDEN OK`; the step costs 23 ms |
+| the fault, re-run | `ci.yml` at 6e47127 through `workflows.py`: `ci.yml:43: mapping values are not allowed here — the plain scalar 'the receipt (quick: the floor, the gate, the wheel)' carries ': '; quote it`, exit 3 — the same line and column-33 fault PyYAML names |
+| the burden | unchanged: 0 runtime deps, 3 extras, 6 programs — the parser is 471 lines of stdlib |

@@ -60,6 +60,7 @@ standalone_check.sh   the departure gate. Run it after EVERY change to engine/. 
 scrub.py              the prose scrub that never names what it scrubs: tokens hashed against .private_markers.sha256; --tree engine · --tracked (everything outside staging/)
 census.sh             where the private language sits, per tracked directory → CENSUS OK is the public cut's tripwire
 burden.py             the burden invariants (burden.json): zero runtime dependencies, the extras by name, the wheel under its cap, every host and every subprocess program on the list, every tracked engine doc declared or an arm region, the scrub — the gate refuses growth by name
+workflows.py          every file under .github/workflows/ parsed (a stdlib subset parser, strict where GitHub is) and shaped — name · on · jobs, every step uses or runs; a file that would run zero jobs is refused in the gate with its line, before a push finds out
 measure.py            the receipt: every RECON number re-derived into recon.json by `run` (--quick for CI); every lane's hottest functions and peak RSS from a second run under GRAPHY_PROFILE_DIR, and `pass.engine_hot_lanes` — the optimization pass ends when it reads 0; `diff OLD NEW` names every number that moved and exits 1 on a regression — the improvement gate's before and after
 release.sh            the release made mechanical: wheel + sdist into dist/, twine check, CHANGELOG.md derived from RECON's section titles (--check in the gate); a `v<version>` tag on the public repo publishes to PyPI by trusted publishing (release.yml), no token
 CHANGELOG.md          derived from RECON.md by release.sh — a build product the gate verifies, the one generated doc in git besides the arm regions
@@ -72,7 +73,12 @@ engine/               THE PRODUCT. pip-installable (`graphyos`), imports and run
   graphy/             the package — see the map below
   tenants/            each compiled codebase is a tenant: a descriptor, a substrate, a fan-out — fastapi, sqlalchemy, hono, express, graphy
   tests/              the floor; tests/fixtures/fastapi_graph is the minted FastAPI shard (PROVENANCE.json)
-staging/              gitignored — the corpora, the indexes and the farm work this box minted from; never tracked
+staging/docs/         doctrine and prior audits — development input, never released
+staging/tools/        the untriaged host tool folder — the census picks what travels
+staging/skills/       the fan-out manifest
+staging/containers/   gitignored — the compiled graph packages (adjacency.parquet beside every graph)
+staging/brains/       gitignored — the cochange meshes
+staging/corpora/      gitignored — the pinned venvs and checkouts the minting lane reads
 ```
 
 ## THE ENGINE MAP — `engine/graphy/`
