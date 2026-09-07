@@ -461,8 +461,16 @@ def test_GREEN_open_for_hashes_shard_bytes_and_never_parses_them(tmp_path, monke
         assert raw not in payloads.values(), "open_for parsed a shard payload — that is a load"
         return real_loads(s, *a, **k)
 
+    real_path_open = Path.open
+
+    def spy_path_open(self, mode="r", *a, **k):
+        # 3.10's pathlib opens through an accessor bound to io.open at import, past the io spy
+        opened.append((str(self), mode))
+        return real_path_open(self, mode, *a, **k)
+
     monkeypatch.setattr(builtins, "open", spy_open)
     monkeypatch.setattr(io, "open", spy_open)
+    monkeypatch.setattr(Path, "open", spy_path_open)
     monkeypatch.setattr(json, "loads", spy_loads)
     store = fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
     assert store.membership("widgets://module/widgets") == "widgets"
