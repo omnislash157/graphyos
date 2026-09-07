@@ -136,8 +136,9 @@ def _clone(url: str, work: Path, log) -> Path:
 
 
 def showcase(target: str, *, out: str | Path | None = None, work: str | Path | None = None, log=None,
-             eat=None, open_store=None, graphy_cmd: list[str] | None = None) -> dict:
-    """Clone when a URL, eat when no fresh .graphy stands, propose, draw, compose, check."""
+             eat=None, open_store=None, graphy_cmd: list[str] | None = None, no_provision: bool = False) -> dict:
+    """Clone when a URL, eat when no fresh .graphy stands, propose, draw, compose, check.
+    ``no_provision`` is handed to the eat: nothing of the repo's runs, the ring is empty (graphyos #35)."""
     from graphy import federated_store as fstore
     from graphy.cli import _load_tenant, _roster, _graphy_command, main as cli_main
     log = log or (lambda *_: None)
@@ -153,7 +154,8 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
     home = repo / ".graphy"
     desc = home / "tenant.json"
     if not desc.is_file():
-        rc = (eat or (lambda r: cli_main(["eat", str(r)])))(repo)
+        argv = ["eat", str(repo)] + (["--no-provision"] if no_provision else [])
+        rc = (eat or (lambda r: cli_main(argv)))(repo)
         if rc != 0:
             raise ShowcaseError(f"eat exited {rc} for {repo}")
     ring = json.loads((home / "substrate" / "ring.json").read_text(encoding="utf-8"))

@@ -42,3 +42,23 @@ def test_RED_showcase_refusals(tmp_path, capsys):
     assert rc == 2 and "name a git url or a repo path" in capsys.readouterr().err
     rc = cli.main(["showcase", str(tmp_path / "nowhere")])
     assert rc == 2 and "not a directory" in capsys.readouterr().err
+
+
+def test_GREEN_showcase_hands_no_provision_to_the_eat(tmp_path, monkeypatch):
+    """`showcase --no-provision` eats with the flag, so nothing of the stranger's repo runs on
+    the box that showcases it (graphyos #35): the argv the eat receives is pinned."""
+    seen = []
+    monkeypatch.setattr(cli, "main", lambda argv: (seen.append(argv), 2)[1])
+    repo = tmp_path / "r"
+    repo.mkdir()
+    try:
+        showcase.showcase(str(repo), no_provision=True)
+    except showcase.ShowcaseError as exc:
+        assert "eat exited 2" in str(exc)
+    assert seen == [["eat", str(repo), "--no-provision"]]
+    seen.clear()
+    try:
+        showcase.showcase(str(repo))
+    except showcase.ShowcaseError:
+        pass
+    assert seen == [["eat", str(repo)]]

@@ -9,6 +9,8 @@ name: showcase on issue
 # nothing to steal, and hands the comment up as an artifact; the post job, which alone may write
 # to issues, downloads that artifact and posts it. The page is read from where the showcase
 # writes it, never from a line grepped out of a log the stranger's code could have written.
+# The showcase runs with --no-provision (graphyos #35): nothing of the stranger's repo executes —
+# no pip install, no npm — the package is minted from its source and its ring is empty.
 on:
   issues:
     types: [opened]
@@ -45,7 +47,7 @@ jobs:
           NAME: ${{ steps.url.outputs.name }}
         run: |
           set +e
-          timeout 900 graphy showcase "$URL.git" --work "$RUNNER_TEMP/showcase" > "$RUNNER_TEMP/showcase.log" 2>&1
+          timeout 900 graphy showcase "$URL.git" --work "$RUNNER_TEMP/showcase" --no-provision > "$RUNNER_TEMP/showcase.log" 2>&1
           rc=$?
           echo "rc=$rc"
           page="$RUNNER_TEMP/showcase/$NAME/.graphy/showcase/showcase.txt"

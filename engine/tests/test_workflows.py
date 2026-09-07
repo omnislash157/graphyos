@@ -128,3 +128,5 @@ def test_GREEN_the_showcase_job_holds_no_token_and_no_checkout_and_the_post_job_
     assert post[0]["permissions"] == {"issues": "write"}
     assert not any("checkout" in (st.get("uses") or "") for st in post[0]["steps"])
     assert not any("grep" in (st.get("run") or "") and "the text:" in (st.get("run") or "") for st in show["steps"]), "the page path is grepped from the log"
+    assert any("graphy showcase" in (st.get("run") or "") and "--no-provision" in st["run"] for st in show["steps"]), \
+        "the showcase job runs the stranger's build (graphyos #35)"

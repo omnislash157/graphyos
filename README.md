@@ -60,8 +60,14 @@ and JavaScript producer.
 `npm install` for a `package.json` repo — printed, and a repo that will not install is minted
 alone and the line says so), mints the package and every package it imports, resolves the labels
 through scope, compiles the store, audits it, and ends with the three things you do next: the
-MCP block to paste into Claude Code or Cursor, the drawing, three questions. `--site-packages`
-names an install you already have and skips the provisioning.
+MCP block to paste into Claude Code or Cursor, the drawing, three questions.
+
+**Eating a repo you do not trust runs its build.** `pip install <repo>` runs that repo's build
+backend on your machine, and `npm install` its dependencies' installs (scripts off). For a
+stranger's repo, `graphy eat . --no-provision` (and `graphy showcase <url> --no-provision`)
+runs nothing of theirs: the package is minted from its source with an empty ring, every import
+left unresolved by name, no venv, no pip, no npm. `--site-packages` names an install you
+already have and skips the provisioning.
 
 **What it reads today.** Python, through the standard library's own parser; TypeScript (with
 TSX) and JavaScript (ESM and CommonJS), through tree-sitter. Nothing else yet: a language is a

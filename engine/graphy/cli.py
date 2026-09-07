@@ -498,7 +498,7 @@ def _cmd_showcase(args: argparse.Namespace) -> int:
         print("SHOWCASE REFUSED: name a git url or a repo path (`.` for the one you stand in)", file=sys.stderr)
         return 2
     try:
-        r = showcase_lane.showcase(args.target, out=args.out, work=args.work, log=print)
+        r = showcase_lane.showcase(args.target, out=args.out, work=args.work, log=print, no_provision=args.no_provision)
     except (showcase_lane.ShowcaseError, TenantError, fstore.StoreError, OSError) as exc:
         print(f"SHOWCASE REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -1241,7 +1241,19 @@ def _cmd_eat(args: argparse.Namespace) -> int:
                   f"{' — ' + ', '.join(c.name for c in candidates) if candidates else ''}; name one with --package",
                   file=sys.stderr)
             return 2
-    if not args.site_packages:
+    if getattr(args, "no_provision", False):
+        # Eating a repo you do not trust runs its build (pip install <repo>, or npm install): this
+        # flag runs nothing — the ring is read from an empty directory, so the package is minted
+        # from its source alone and every import it makes is left unresolved by name (graphyos #35).
+        if args.site_packages:
+            print("EAT REFUSED: --no-provision and --site-packages contradict — the first reads an empty ring, "
+                  "the second the install you name", file=sys.stderr)
+            return 2
+        empty = (Path(args.home).expanduser().resolve() if args.home else repo / ".graphy") / "no-ring"
+        empty.mkdir(parents=True, exist_ok=True)
+        print("PROVISION SKIPPED: --no-provision; the ring is empty, every import is unresolved")
+        args.site_packages = str(empty)
+    elif not args.site_packages:
         from graphy import provision as provision_lane
         try:
             pv = provision_lane.provision(repo, producer, log=print)
@@ -1473,6 +1485,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_eat.add_argument("--package", default=None,
                        help="the importable package to mint when the repo carries more than one")
     p_eat.add_argument("--home", default=None, help="where the tenant lands (default: <repo>/.graphy)")
+    p_eat.add_argument("--no-provision", action="store_true",
+                       help="run nothing of the repo's: no venv, no pip, no npm — the package is minted from its source "
+                            "with an empty ring, every import unresolved (eating a repo you do not trust runs its build otherwise)")
     p_eat.add_argument("--producer", default=None, choices=_PRODUCER_NAMES,
                        help="the ecosystem door (default: python_ast; typescript_ast when the repo carries a package.json and no importable Python package)")
     p_eat.set_defaults(handler=_cmd_eat)
@@ -1645,6 +1660,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("target", nargs="?", default=None, help="a git url, or a repo path (`.`)")
     p_show.add_argument("--out", default=None, help="where the page lands (default <repo>/.graphy/showcase/)")
     p_show.add_argument("--work", default=None, help="where a url is cloned (default ./showcase/<name>)")
+    p_show.add_argument("--no-provision", action="store_true",
+                       help="eat with --no-provision: nothing of the repo's runs, the ring is empty")
     p_show.set_defaults(handler=_cmd_showcase)
 
     p_trav = sub.add_parser(

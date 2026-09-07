@@ -629,3 +629,33 @@ def test_RED_eat_settles_the_package_before_it_provisions_anything(tmp_path, mon
     assert "2 importable package(s)" in err and "alpha, beta" in err and "--package" in err
     assert called == [], "the repo was provisioned before the package was settled"
     assert not (repo / ".graphy").exists()
+
+
+def test_GREEN_eat_no_provision_runs_nothing_of_the_repo_and_mints_an_empty_ring(tmp_path, monkeypatch, capsys):
+    """`graphy eat --no-provision`: the provisioner is never called (no venv, no pip, no npm), the
+    line says the ring is empty, the package is minted from its source with every import
+    unresolved by name, and the eat lands green (graphyos #35)."""
+    import subprocess
+    import graphy.provision as provision
+    repo = tmp_path / "repo"
+    (repo / "solo").mkdir(parents=True)
+    (repo / "solo" / "__init__.py").write_text("import os\nimport requests\nfrom . import b\n")
+    (repo / "solo" / "b.py").write_text("def f():\n    return 1\n")
+    (repo / "pyproject.toml").write_text('[project]\nname = "solo"\nversion = "0"\n')
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo, check=True)
+    called = []
+    monkeypatch.setattr(provision, "provision", lambda *a, **k: (called.append(a), (_ for _ in ()).throw(RuntimeError("never")))[1])
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    out = capsys.readouterr().out
+    assert "PROVISION SKIPPED: --no-provision; the ring is empty, every import is unresolved" in out
+    assert "EAT OK" in out and "unresolved requests" in out
+    assert called == [], "the repo was provisioned under --no-provision"
+    assert not (repo / ".graphy" / "venv").exists()
+    assert not list((repo / ".graphy" / "no-ring").iterdir()), "the empty ring holds something"
+    ring = json.loads((repo / ".graphy" / "substrate" / "ring.json").read_text())
+    assert ring["root"] == "solo" and list(ring["minted"]) == ["solo"]
+    # RED: the two ways of naming the ring contradict, and the refusal comes before anything lands
+    (repo / ".graphy").rename(repo / ".was")
+    assert cli.main(["eat", str(repo), "--no-provision", "--site-packages", str(tmp_path)]) == 2
+    assert "contradict" in capsys.readouterr().err and not (repo / ".graphy").exists()

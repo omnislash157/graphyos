@@ -3667,3 +3667,45 @@ gh run list --repo omnislash157/graphyos --workflow showcase-on-issue.yml --limi
 | the floor | 495 passed · 3 skipped (494 + 1); the RED proof against the old workflow |
 | the gate | `GRAPHY_STANDALONE_OK` |
 | the live run | issue #45 named `pallets/click`: run 34168519445 — `showcase` success (no token, no checkout, `permissions: {}`), `post` success; the comment on #45 carries click's page (the pillars, the units, the ring, the MCP block); CI green on the public commit 1447015 |
+
+## 72 · EATING A STRANGER'S REPO RUNS ITS BUILD — the README says so, and `--no-provision` runs nothing of theirs (2026-09-07 · graphyos issue 35)
+
+**The finding.** Red-team finding 2 (§71). `graphy eat <repo>` and `graphy showcase <url>` provision
+by `pip install <repo>`, which runs the repo's build backend and every sdist dependency's; a
+`package.json` repo gets `npm install --ignore-scripts`. The README said "provisions the repo's own
+dependencies beside it" and showed `graphy showcase https://github.com/encode/httpx.git` — a newcomer
+did not learn they had just executed that repo's build hooks on their machine.
+
+**The change.** The README's install section says it in one bold sentence: eating a repo you do
+not trust runs its build. `graphy eat . --no-provision` (and `showcase <url> --no-provision`, which
+hands the flag to its eat) runs nothing of the repo's: no venv, no pip, no npm. The ring is read
+from an empty directory (`<home>/no-ring/`), so the package is minted from its source alone and
+every import it makes is left unresolved by name — the same path `--site-packages <empty>` always
+took, now spelled as the intent. The line: `PROVISION SKIPPED: --no-provision; the ring is empty,
+every import is unresolved`. `--no-provision` with `--site-packages` is a refusal (they contradict)
+before anything lands. `graphy eat .` without the flag behaves exactly as before. The
+showcase-on-issue workflow runs `--no-provision`: after §71 the stranger's build could still burn
+twenty minutes on a runner that held nothing; now nothing of the stranger's runs at all.
+
+**The floor.** `test_cli`: a repo with one package eaten under `--no-provision` — the provisioner is
+a spy that throws and is never called, the line prints, `EAT OK` with the import named unresolved,
+no `venv`, the `no-ring` directory empty, `ring.json` minting the root alone; the contradiction
+refused with exit 2 and no `.graphy/` made. `test_showcase`: the argv the eat receives is pinned,
+`--no-provision` present when asked and absent otherwise. `test_workflows`: the showcase job's run
+line carries `--no-provision` — RED against the old workflow file.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py tests/test_showcase.py tests/test_workflows.py -k "no_provision or holds_no_token"
+grep -n 'runs its build\|--no-provision' README.md | head -3
+cd /tmp && rm -rf np && git clone -q https://github.com/pallets/click.git np && cd np && ~/graphy/.venv/bin/graphy eat . --no-provision | grep -E 'PROVISION SKIPPED|EAT OK' && ! [ -d .graphy/venv ]
+git stash push .github/workflows/showcase-on-issue.yml && (cd engine && ../.venv/bin/python -m pytest -q tests/test_workflows.py -k holds_no_token); git stash pop    # RED on the old file: no --no-provision
+python3 burden.py && bash standalone_check.sh | tail -1
+python3 measure.py run && python3 measure.py diff recon.before35.json recon.json
+```
+
+| check | result |
+|---|---|
+| the live run | `pallets/click`, a fresh clone: `PROVISION SKIPPED` · `RING: 1 shard(s) · stdlib skipped 45 · unresolved _typeshed, typing_extensions` · `EAT OK: click + 0 ring shard(s) (17 of 17 files parsed, 0.2s)`; no `.graphy/venv` — against §70's 3.0 s with the venv and pip install |
+| the floor | 497 passed · 3 skipped (495 + 2); the RED proof against the old workflow file |
+| the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` unchanged: runtime deps 0 · extras 3 · wheel 276,205 B (cap 400,000) |
+| the receipt | two runs. Every engine line flat or better: `tenants.sqlalchemy.seconds` 5.3 → 5.0, its RSS 263,756 → 251,368 kB, every tenant rebuild OK, `pass.engine_hot_lanes` 1. The wrong way, both runs, only the lanes this change never touches: the quickstarts' clone + pip/npm install over the network (`quickstart.httpx.seconds` 4.6 → 5.6 then 5.4; express 7.0 → 8.8 then clean) and `floor.seconds` 7.5 → 8.9 on the second run under the operator's browser at 21 % CPU (7.6 s by hand, `-o addopts=""`). Closed on the engine lines by the standing ruling (§59) |
