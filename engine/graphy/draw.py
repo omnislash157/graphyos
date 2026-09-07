@@ -192,9 +192,11 @@ def neighbourhood(store, seed: str, radius: int = 2, max_nodes: int = 60) -> Pic
 
 
 def render(pic: Picture, *, emit: str = "ascii", lr: bool = False, color: bool = False,
-           interactive: bool = False, title: str | None = None) -> str:
+           interactive: bool = False, title: str | None = None, layout=None) -> str:
+    """One emit of a picture. ``layout`` is the picture's layout when the caller already has it —
+    the atlas lays each picture out once and emits it twice (RECON.md §66)."""
     orient = "LR" if lr else "TB"
-    lo = S.layout(pic.nodes, pic.edges, pic.labels)
+    lo = layout if layout is not None else S.layout(pic.nodes, pic.edges, pic.labels)
     t = title or pic.title
     if emit == "html":
         return S.emit_html(lo, title=t, orient=orient, interactive=interactive, node_meta=pic.meta)
@@ -217,8 +219,9 @@ def atlas(store, corpus: str, cut, out_dir: str | Path, *, lr: bool = True, min_
         except DrawError:
             continue
     for name, pic in pics.items():
+        lo = S.layout(pic.nodes, pic.edges, pic.labels)          # once; both emits place it once more between them
         for emit, ext in (("ascii", ".txt"), ("html", ".html")):
-            text = render(pic, emit=emit, lr=lr, interactive=(emit == "html"))
+            text = render(pic, emit=emit, lr=lr, interactive=(emit == "html"), layout=lo)
             p = out / f"{name}{ext}"
             p.write_text(text, encoding="utf-8")
             files[p.name] = hashlib.sha256(text.encode("utf-8")).hexdigest()

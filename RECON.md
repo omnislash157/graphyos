@@ -3393,3 +3393,45 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before29.json r
 | the same answer | express: 172 `nodes.json` · `edges.json` the same sha256 after a cold re-mint; hono: 4 the same after a rebuild |
 | the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`node_dirs_of` moved the walk) |
 | the receipt | `measure.py run` then `diff recon.before29.json recon.json`: **`quickstart.express.eat_again_seconds` 2.2 → 1.2 (−45 %)** — the eat over the eaten clone, the engine's own number in this lane — `tenants.express.seconds` 1.7 → 1.5, hono's doors and RSS down; three numbers the wrong way and none the locator's: `quickstart.express.eat_seconds` 4.4 → 6.1 and `.seconds` 5.0 → 6.6 (the cold eat's `npm install` over the network — the same lane read 7.7 · 8.4 · 8.1 · 5.0 · 6.6 across the last receipts), `tenants.fastapi.seconds` 2.7 → 3.3 (by hand under §61: 2.85 · 3.32 · 6.89, the box's noise). `MEASURE DIFF` exits 1 on those; closed on the engine lines by the standing ruling (§59) |
+
+## 66 · THE ATLAS LAYS EACH PICTURE OUT ONCE — and places it once per orientation, sqlalchemy's atlas 1.86 → 1.50 s, the same files (2026-09-07 · graphyos issue 30)
+
+**What it was.** `draw.render` called `S.layout(...)` on every call and `atlas` called it twice per
+picture — ascii, then html — so every picture was laid out twice (263 ms of layout paid twice over
+sqlalchemy's six pictures); and each emitter began with `_placed(lo, orient)`, the coordinate pass
+(`_assign_cross`, 145 ms on ORM alone), again for the same orientation. `graphy draw --atlas` on
+sqlalchemy: 1.86 s wall; in-process, building the six pictures from the store 328 ms, the ascii
+emits 897 ms, the html emits 466 ms.
+
+**What it is.** `draw.render` takes a `layout=` it is handed; `atlas` lays each picture out once and
+hands it to both emits. `Layout.placed` memoizes the coordinate pass per orientation, so the second
+emit reuses it (`_placed` looks the orientation up, `_place` is the pass). Old code and new over the
+same store draw byte-identical atlases: sqlalchemy's 12 files and fastapi's 13. What remains is
+the ascii canvas — ORM's is 625 rows × 3,477 columns: `Canvas.render` 0.49 s, `hseg` · `vseg`
+0.47 s over the six pictures, and the crossing sweeps 0.52 s inside `layout` — a different issue.
+
+**The token missed by a tenth.** The issue's done block said under 1.4 s; the atlas reads 1.51 ·
+1.49 · 1.50. The layout-once and place-once cuts were the change; the tenth that remains is the
+canvas, named above and filed. Closed with the miss named.
+
+```bash
+# from engine/
+for i in 1 2 3; do /usr/bin/time -f "atlas %e s" ../.venv/bin/graphy draw --tenant tenants/sqlalchemy/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --atlas /tmp/atlas --partition tenants/sqlalchemy/partition.json 2>&1 | grep '^atlas'; done
+git stash push graphy/sugiyama.py graphy/draw.py && ../.venv/bin/graphy draw … --atlas /tmp/atlas_old … && git stash pop && ../.venv/bin/graphy draw … --atlas /tmp/atlas_new … && diff -rq /tmp/atlas_old /tmp/atlas_new    # empty, sqlalchemy and fastapi
+python3 -m pytest -q tests/test_draw.py -k lays_each_picture      # layout and _place each called once per picture over the fixture's atlas; the same files as before; render(pic, layout=lo) the same text
+git show HEAD~1:engine/graphy/draw.py > graphy/draw.py && git show HEAD~1:engine/graphy/sugiyama.py > graphy/sugiyama.py && python3 -m pytest -q tests/test_draw.py -k lays_each_picture   # RED: no attribute '_place' (reverted after)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before30.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `graphy draw --atlas` on sqlalchemy (6 pictures), three runs | 1.86 s | 1.51 · 1.49 · 1.50 s |
+| `S.layout` calls · `_place` calls per atlas | 2 · 2 per picture | 1 · 1 per picture |
+| fastapi's atlas (8 pictures, small) | 0.19 s | 0.18 s |
+
+| check | result |
+|---|---|
+| the floor | 490 passed · 3 skipped (489 + 1); the RED proof against the parent's code |
+| the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical (`diff -rq` empty) |
+| the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`_place` moved the walk) |
+| the receipt | `measure.py run` then `diff recon.before30.json recon.json`: **`MEASURE DIFF OK: 45 number(s) moved, none the wrong way past tolerance`** — the first clean receipt since §57; `tenants.fastapi.seconds` 3.3 → 2.8, `tenants.sqlalchemy.seconds` 5.5 → 5.6 (the atlas's 0.36 s inside a rebuild the box times to ±0.3), `pass.engine_hot_lanes` 1 (the floor) |

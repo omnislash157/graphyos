@@ -456,7 +456,10 @@ def _assign_cross(layers: list, adj: dict, size: dict, gap: int) -> dict:
 
 class Layout:
     __slots__ = ("layers", "layer_of", "adj", "dummies", "reversed_edges",
-                 "width", "labels", "isolated", "edges")
+                 "width", "labels", "isolated", "edges", "placed")
+
+    def __init__(self):
+        self.placed: dict = {}       # orient → _Placed: the coordinate pass, once per orientation (RECON.md §66)
 
     def is_dummy(self, n) -> bool:
         return isinstance(n, str) and n.startswith("\x00dummy")
@@ -522,8 +525,20 @@ def _disp_w(s: str) -> int:
 
 
 def _placed(lo: Layout, orient: str = "TB") -> _Placed:
-    from collections import defaultdict
+    """The coordinate pass for one orientation, memoized on the layout: an ascii and an html emit
+    of the same picture share it, as the atlas does for every picture."""
     TB = orient.upper() != "LR"
+    cache = getattr(lo, "placed", None)
+    if cache is not None and TB in cache:
+        return cache[TB]
+    pl = _place(lo, TB)
+    if cache is not None:
+        cache[TB] = pl
+    return pl
+
+
+def _place(lo: Layout, TB: bool) -> _Placed:
+    from collections import defaultdict
     width, layer_of, layers = lo.width, lo.layer_of, lo.layers
     n_layers = len(layers)
     cross_gap = COL_GAP if TB else 1

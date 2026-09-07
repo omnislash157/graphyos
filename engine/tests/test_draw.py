@@ -78,3 +78,26 @@ def test_GREEN_atlas_and_cli(tmp_path, capsys):
     assert rc == 1 and "DRAW UNANSWERABLE" in capsys.readouterr().err
     rc = cli.main(["draw", "--tenant", str(desc), "--tenant-id", "doors"])
     assert rc == 2 and "name one with --corpus" in capsys.readouterr().err
+
+
+def test_GREEN_the_atlas_lays_each_picture_out_once_and_places_it_once(tmp_path, monkeypatch):
+    """Two emits per picture, ascii and html, share one layout and one coordinate pass: the atlas
+    hands render the layout it computed, and _placed memoizes the pass per orientation on the
+    layout — the same files as two independent renders (graphyos #30)."""
+    import graphy.sugiyama as S
+    tenant, desc, roster = _fixture(tmp_path)
+    cut = fanout.load_partition(_cut(tmp_path))
+    store = fs.open_for(roster, tenant=tenant, tenant_id="doors")
+    plain = draw.atlas(store, "fastapi", cut, tmp_path / "plain")
+    calls = {"layout": 0, "place": 0}
+    real_layout, real_place = S.layout, S._place
+    monkeypatch.setattr(S, "layout", lambda *a, **k: (calls.__setitem__("layout", calls["layout"] + 1), real_layout(*a, **k))[1])
+    monkeypatch.setattr(S, "_place", lambda *a, **k: (calls.__setitem__("place", calls["place"] + 1), real_place(*a, **k))[1])
+    spied = draw.atlas(store, "fastapi", cut, tmp_path / "spied")
+    n = len(spied["pictures"])
+    assert n >= 3 and calls == {"layout": n, "place": n}, (n, calls)
+    assert spied["files"] == plain["files"], "the same bytes as before: a layout once, an emit twice"
+    pic = draw.units(store, "fastapi")
+    lo = S.layout(pic.nodes, pic.edges, pic.labels)
+    assert draw.render(pic, emit="ascii", lr=True, layout=lo) == draw.render(pic, emit="ascii", lr=True)
+    assert set(lo.placed) == {False}, "the LR pass was memoized on the layout, and only it"
