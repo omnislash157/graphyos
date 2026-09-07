@@ -424,3 +424,60 @@ def test_GREEN_an_id_two_files_emit_is_stored_by_the_receipt_and_the_splice_stay
     (js / "index.js").unlink()
     _full_and_spliced(js, live, fresh, producer="typescript_ast", package="js")
     assert "js://func/js.index.b" in json.loads((live / "nodes.json").read_text(encoding="utf-8"))
+
+
+def test_RED_a_planted_edge_in_a_shard_on_disk_does_not_survive_the_splice(tmp_path, capsys):
+    """Red-team finding 3 (RECON §71, graphyos #36): the splice trusted a shard's records whenever
+    PROVENANCE's per-source-file hashes matched, but the receipt hashes the sources, not the records
+    — a hostile repo that commits `.graphy/substrate/<pkg>_graph/` with one planted edge and matching
+    source hashes had it survive MINT OK · BUILD OK · CHECK OK. The payload must hash to
+    `PROVENANCE.files` before a splice reuses anything: the planted shard is refused by name and
+    minted fresh, the fresh shard carries no planted row and equals a full mint; an untouched shard
+    splices exactly as before, byte-identical, parsing nothing."""
+    import ast
+    sp = _site(tmp_path)
+    corpus = sp / "alpha"
+    live, fresh = tmp_path / "live", tmp_path / "fresh"
+    smash.mint(corpus, live, mint_command="m")
+    smash.mint(corpus, fresh, mint_command="m")
+    clean = _shard_bytes(live)
+
+    # the plant: one imports edge re-pointed, the source hashes untouched
+    edges = json.loads((live / "edges.json").read_text(encoding="utf-8"))
+    victim = next(e for e in edges if e["edge_type"] == "imports")
+    victim["dst"] = "alpha://module/alpha.PLANTED"
+    (live / "edges.json").write_text(json.dumps(edges), encoding="utf-8")
+    assert b"PLANTED" in (live / "edges.json").read_bytes()
+
+    prov = smash.mint(corpus, live, mint_command="m")
+    err = capsys.readouterr().err
+    assert "SPLICE REFUSED: live edges.json does not match its PROVENANCE" in err
+    assert "minted fresh" in err
+    src = prov[smash.SOURCES_KEY]
+    assert src["reused"] == 0 and src["parsed"] == 2
+    assert src["splice_refused"].startswith("SPLICE REFUSED: live edges.json")
+    assert b"PLANTED" not in (live / "edges.json").read_bytes()
+    assert _shard_bytes(live) == clean == _shard_bytes(fresh)
+
+    # a planted node, same law
+    nodes = json.loads((live / "nodes.json").read_text(encoding="utf-8"))
+    nodes["alpha://module/alpha.PLANTED"] = dict(next(iter(nodes.values())), id="alpha://module/alpha.PLANTED")
+    (live / "nodes.json").write_text(json.dumps(nodes), encoding="utf-8")
+    prov = smash.mint(corpus, live, mint_command="m")
+    assert "SPLICE REFUSED: live nodes.json does not match its PROVENANCE" in capsys.readouterr().err
+    assert prov[smash.SOURCES_KEY]["reused"] == 0
+    assert b"PLANTED" not in (live / "nodes.json").read_bytes()
+    assert _shard_bytes(live) == clean
+
+    # the same answer: an untouched shard splices as before — nothing parsed, nothing refused, the bytes the same
+    parsed: list[int] = []
+    real = ast.parse
+    try:
+        ast.parse = lambda *a, **k: (parsed.append(1), real(*a, **k))[1]
+        prov = smash.mint(corpus, live, mint_command="m")
+    finally:
+        ast.parse = real
+    assert parsed == [] and prov[smash.SOURCES_KEY]["reused"] == 2
+    assert "splice_refused" not in prov[smash.SOURCES_KEY]
+    assert capsys.readouterr().err == ""
+    assert _shard_bytes(live) == clean

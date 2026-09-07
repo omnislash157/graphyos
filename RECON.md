@@ -1877,7 +1877,7 @@ two commands the constitution names, on a runner with no `.private_modules` (the
 SKIPPED there, by design) and no host to reach.
 
 ```text
-https://github.com/omnislash157/graphy/actions/runs/34007625366   commit 07206ff   success
+https://github.com/omnislash157/graphyos/actions/runs/34007625366   commit 07206ff   success
   floor (3.12)  success   23 s
   floor (3.10)  success   27 s
   gate          success   32 s   (the venv, the install, the floor again, the hashed scrub, the census)
@@ -3569,7 +3569,7 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before33.json r
 
 **Why a release.** 0.1.0 went to PyPI on the morning of the 7th; twenty-seven commits followed —
 §48–§69, the whole optimization pass — and `pip install graphyos` handed none of it out. The README's
-CI badge pointed at the private repo (`omnislash157/graphy`), a broken image on the public page.
+CI badge pointed at the private repo (`omnislash157/graphyos`), a broken image on the public page.
 Both fixed here; the version is 0.2.0 in `pyproject.toml` and `graphy.__version__`, the changelog
 derives it, and the `v0.2.0` tag on the public repo publishes by trusted publishing.
 
@@ -3709,3 +3709,46 @@ python3 measure.py run && python3 measure.py diff recon.before35.json recon.json
 | the floor | 497 passed · 3 skipped (495 + 2); the RED proof against the old workflow file |
 | the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` unchanged: runtime deps 0 · extras 3 · wheel 276,205 B (cap 400,000) |
 | the receipt | two runs. Every engine line flat or better: `tenants.sqlalchemy.seconds` 5.3 → 5.0, its RSS 263,756 → 251,368 kB, every tenant rebuild OK, `pass.engine_hot_lanes` 1. The wrong way, both runs, only the lanes this change never touches: the quickstarts' clone + pip/npm install over the network (`quickstart.httpx.seconds` 4.6 → 5.6 then 5.4; express 7.0 → 8.8 then clean) and `floor.seconds` 7.5 → 8.9 on the second run under the operator's browser at 21 % CPU (7.6 s by hand, `-o addopts=""`). Closed on the engine lines by the standing ruling (§59) |
+
+## 73 · THE SPLICE TRUSTED A SHARD ON DISK BYTE-FOR-BYTE — the payload must hash to its PROVENANCE before a splice (2026-09-07 · graphyos issue 36)
+
+**The finding.** Red-team finding 3 (§71). The re-mint splice (`smash._reuse_from`) reused a shard's
+records whenever the PROVENANCE's per-source-file sha256 and producer block matched — but that receipt
+hashes the *sources*, never the records. One `imports` edge in `click_graph/edges.json` re-pointed to
+`click://module/click.PLANTED`, then `graphy eat .` → `MINT OK … (parsed 0 of 17 files)` · `BUILD OK` ·
+`CHECK OK`, the planted row in the store. A hostile repo commits `.graphy/substrate/<pkg>_graph/` with
+matching source hashes (the workflow pins Python 3.12 and one graphy release, so the producer block is
+predictable) and "no model decides an edge, never hand-edited" is false for anything eaten from it.
+
+**The change.** Before a splice reuses a single record, the shard's `nodes.json` and `edges.json`
+bytes must hash to `PROVENANCE.files` — the digests the mint wrote, the same check `index.verify_shard`
+runs on a push. A mismatch is named on stderr and nothing of the shard is reused; the full mint runs
+and overwrites it: `SPLICE REFUSED: <slug>_graph edges.json does not match its PROVENANCE (sha256 …
+vs declared …) — the shard was edited after the mint; nothing of it is reused, minted fresh`. The
+refusal is also carried in the new PROVENANCE under `sources.splice_refused`. The bytes are read once
+for the hash and the JSON is decoded from them on the first file that matches, so an untouched shard
+costs one sha256 per payload file more than before and parses nothing, as before.
+
+**The floor.** `test_smash`: a shard with one planted `imports` edge, source hashes untouched — the
+re-mint refuses by name, reuses 0 and parses 2, the shard carries no `PLANTED` byte and equals a full
+mint byte-for-byte; a planted node, the same law; then the untouched shard splices as before — nothing
+parsed, nothing on stderr, no `splice_refused`, the bytes the same. RED against the old `smash.py`
+(the refusal line never printed). §53's splice tests unchanged and green.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_smash.py -k "planted or splice"
+git stash push engine/graphy/smash.py && (cd engine && ../.venv/bin/python -m pytest -q tests/test_smash.py -k planted); git stash pop    # RED on the old splice
+cd /tmp && rm -rf pl && git clone -q --depth 1 https://github.com/pallets/click.git pl && cd pl && ~/graphy/.venv/bin/graphy eat . --no-provision >/dev/null \
+  && python3 -c "import json;p='.graphy/substrate/click_graph/edges.json';e=json.load(open(p));next(x for x in e if x['edge_type']=='imports')['dst']='click://module/click.PLANTED';json.dump(e,open(p,'w'))" \
+  && ~/graphy/.venv/bin/graphy eat . --no-provision 2>&1 | grep -E 'SPLICE REFUSED|MINT OK|EAT OK' && ! grep -q PLANTED .graphy/substrate/click_graph/edges.json \
+  && python3 -c "import sqlite3,glob;c=sqlite3.connect(glob.glob('.graphy/substrate/.mesh_store_*.sqlite')[0]);print('planted rows:',sum('PLANTED' in str(r) for t in ('nodes','edges') for r in c.execute(f'select * from {t}')))"
+python3 burden.py && bash standalone_check.sh | tail -1
+python3 measure.py run && python3 measure.py diff recon.before36.json recon.json
+```
+
+| check | result |
+|---|---|
+| the live run | `pallets/click`, a fresh clone eaten, one `imports` edge planted in `click_graph/edges.json`, eaten again: `SPLICE REFUSED: click_graph edges.json does not match its PROVENANCE (sha256 fdbb1043fce1… vs declared 89b7ddf70c29…) — … minted fresh` · `MINT OK: click 608 nodes / 3174 edges (parsed 17 of 17 files)` · `BUILD OK` · `CHECK OK` · `EAT OK … (17 of 17 files parsed, 1.0s)`; `PLANTED` in the shard 0, in the store's `nodes` and `edges` tables 0. Eaten a third time, untouched: `0 of 17 files parsed, 0.6s` — the splice as before |
+| the floor | 498 passed · 3 skipped (497 + 1); the RED proof against the old `smash.py` |
+| the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` unchanged: runtime deps 0 · extras 3 · wheel 276,205 B (cap 400,000) |
+| the receipt | two runs. The lines the change lives on are flat: `quickstart.httpx.eat_again_seconds` 0.4 → 0.4, `quickstart.express.eat_again_seconds` 1.2 → 1.2 (the splice over the previous shards, now with one sha256 per payload file), `eat_again_parsed` 0 on both; every tenant rebuild OK, `pass.engine_hot_lanes` 1 → 0; `tenants.hono.rss_kb` 119,744 → 115,320, `tenants.sqlalchemy.rss_kb` 259,120 → 253,392. The wrong way, only lanes the splice never runs in: `quickstart.express.eat_seconds` 3.8 → 5.9 (the first eat — no shard on disk, `npm install` over the network), `tenants.sqlalchemy.seconds` 5.0 → 6.0 on the second run (a wipe-and-mint, no splice; 4.7 s by hand right after), `floor.seconds` 8.9 → 10.7 (9.4 s by hand, `-o addopts=""`; one new test that mints six times). Closed on the engine lines by the standing ruling (§59) |

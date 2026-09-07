@@ -283,15 +283,38 @@ def _reuse_from(shard_dir: Path, producer_block: dict):
     None when the shard has no receipt, the receipt is not spliceable, or the producer that wrote
     it (adapter · graphy · python) is not this one — a record minted by another producer version
     is not this producer's output, and a full mint runs. The previous records are read once, on
-    the first file that matches; a file whose bytes moved, or a pin that moved, returns None."""
+    the first file that matches; a file whose bytes moved, or a pin that moved, returns None.
+
+    Returns ``(reuse, refusal)``. The receipt hashes the *sources*, not the records, so before a
+    single record is reused the payload itself — nodes.json and edges.json bytes — must hash to
+    ``PROVENANCE.files``, the digests the mint wrote (the same check ``index.verify_shard`` runs).
+    A shard whose bytes disagree with its receipt was edited after the mint: a planted edge with
+    matching source hashes would otherwise survive the splice into the store. Such a shard is
+    named in ``refusal`` and nothing of it is reused — the full mint runs."""
     try:
         prov = json.loads((shard_dir / PROVENANCE_NAME).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
+        return None, None
     src = prov.get(SOURCES_KEY) if isinstance(prov, dict) else None
     if (not isinstance(src, dict) or not src.get("spliceable") or not isinstance(src.get("files"), dict)
             or prov.get("producer") != producer_block):
-        return None
+        return None, None
+    receipts = prov.get("files") if isinstance(prov.get("files"), dict) else {}
+    raw: dict[str, bytes] = {}
+    for name in ("nodes.json", "edges.json"):
+        want = receipts.get(name, {}).get("sha256") if isinstance(receipts.get(name), dict) else None
+        try:
+            data = (shard_dir / name).read_bytes()
+        except OSError:
+            return None, None
+        got = hashlib.sha256(data).hexdigest()
+        if not isinstance(want, str):
+            return None, f"SPLICE REFUSED: {shard_dir.name} PROVENANCE carries no sha256 for {name} — minted fresh"
+        if got != want:
+            return None, (f"SPLICE REFUSED: {shard_dir.name} {name} does not match its PROVENANCE "
+                          f"(sha256 {got[:12]}… vs declared {want[:12]}…) — the shard was edited after the mint; "
+                          "nothing of it is reused, minted fresh")
+        raw[name] = data
     spans: dict[str, tuple[str, int, int, int, int]] = {}
     n_off = e_off = 0
     for rel, f in src["files"].items():
@@ -310,9 +333,9 @@ def _reuse_from(shard_dir: Path, producer_block: dict):
             return None
         if not loaded:
             try:
-                nodes = json.loads((shard_dir / "nodes.json").read_text(encoding="utf-8"))
-                edges = json.loads((shard_dir / "edges.json").read_text(encoding="utf-8"))
-            except (OSError, ValueError):
+                nodes = json.loads(raw["nodes.json"].decode("utf-8"))
+                edges = json.loads(raw["edges.json"].decode("utf-8"))
+            except ValueError:
                 nodes, edges = None, None
             if not isinstance(nodes, dict) or not isinstance(edges, list) or len(nodes) != n_off or len(edges) != e_off:
                 loaded.append(None)          # the records disagree with the receipt: the receipt is discarded
@@ -324,7 +347,7 @@ def _reuse_from(shard_dir: Path, producer_block: dict):
         _, n0, nn, e0, ne = span
         return _receipt.splice(node_list[n0:n0 + nn], edge_list[e0:e0 + ne], src["files"][rel])
 
-    return reuse
+    return reuse, None
 
 
 def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
@@ -343,7 +366,9 @@ def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
     shard_dir = Path(shard_dir).resolve()
     prod = PRODUCERS[producer] if isinstance(producer, str) else producer
     producer_block = {"adapter": prod.name, "graphy": _graphy_version(), "python": platform.python_version()}
-    reuse = _reuse_from(shard_dir, producer_block) if shard_dir.is_dir() else None
+    reuse, refusal = _reuse_from(shard_dir, producer_block) if shard_dir.is_dir() else (None, None)
+    if refusal:
+        print(refusal, file=sys.stderr)
     if prod.name == "python_ast":
         nodes, edges, sources = python_ast.mint_records(corpus, reuse=reuse)
     else:
@@ -368,7 +393,7 @@ def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
                    **(distribution or {})},
         "counts": _counts(node_map, edges),
         "files": {name: _file_receipt(shard_dir / name) for name in ("nodes.json", "edges.json")},
-        SOURCES_KEY: sources,
+        SOURCES_KEY: {**sources, **({"splice_refused": refusal} if refusal else {})},
         "note": _NOTE,
     }
     _write_json(shard_dir / PROVENANCE_NAME, prov)

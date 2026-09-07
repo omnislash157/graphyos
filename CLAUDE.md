@@ -73,12 +73,7 @@ engine/               THE PRODUCT. pip-installable (`graphyos`), imports and run
   graphy/             the package — see the map below
   tenants/            each compiled codebase is a tenant: a descriptor, a substrate, a fan-out — fastapi, sqlalchemy, hono, express, graphy
   tests/              the floor; tests/fixtures/fastapi_graph is the minted FastAPI shard (PROVENANCE.json)
-staging/docs/         doctrine and prior audits — development input, never released
-staging/tools/        the untriaged host tool folder — the census picks what travels
-staging/skills/       the fan-out manifest
-staging/containers/   gitignored — the compiled graph packages (adjacency.parquet beside every graph)
-staging/brains/       gitignored — the cochange meshes
-staging/corpora/      gitignored — the pinned venvs and checkouts the minting lane reads
+staging/              gitignored — the corpora, the indexes and the farm work this box minted from; never tracked
 ```
 
 ## THE ENGINE MAP — `engine/graphy/`
