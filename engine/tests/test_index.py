@@ -178,3 +178,34 @@ def test_pulled_lane_carries_its_command(tmp_path: Path) -> None:
     assert t.build_lanes["b_graph"][1] == "pulled"
     with pytest.raises(ValueError, match="KEY:KIND"):
         cli._parse_lanes(["no-kind"])
+
+
+def test_verify_index_fans_out_over_threads_and_reads_the_same_rows(tmp_path: Path, monkeypatch) -> None:
+    """Hashing is the work and it releases the GIL: verify_index maps the entries over a thread
+    pool and returns the rows in catalog order — the same rows the serial loop read, a flipped
+    byte still named by its file — and every payload is hashed by chunks, never held whole, so
+    eight threads hold eight chunks and not eight shards (graphyos #28)."""
+    import threading
+    idx = tmp_path / "index"
+    for i in range(12):
+        shard_index.push(_shard(tmp_path / f"s{i}", salt=str(i)), idx, name=f"alpha=={i}")
+    victim = idx / "shards" / shard_index.catalog(str(idx))["alpha==7"] / "edges.json"
+    victim.write_bytes(victim.read_bytes().replace(b"imports", b"IMPORTS"))
+    serial = shard_index.verify_index(str(idx), threads=1)
+    seen: set[int] = set()
+    real = shard_index._verify_entry_streaming
+
+    def spy(src, address):
+        seen.add(threading.get_ident())
+        return real(src, address)
+    monkeypatch.setattr(shard_index, "_verify_entry_streaming", spy)
+    pooled = shard_index.verify_index(str(idx), threads=4)
+    assert pooled == serial and [r[0] for r in pooled] == sorted(f"alpha=={i}" for i in range(12))
+    assert len(seen) > 1, "the verify ran on one thread"
+    broken = [r for r in pooled if r[2]]
+    assert len(broken) == 1 and broken[0][0] == "alpha==7" and "edges.json" in broken[0][2]
+    reads: list[str] = []
+    real_read = shard_index._Source.read
+    monkeypatch.setattr(shard_index._Source, "read", lambda self, rel: (reads.append(rel), real_read(self, rel))[1])
+    shard_index.verify_index(str(idx), threads=2)
+    assert reads and not any(rel.endswith(("nodes.json", "edges.json")) for rel in reads), "a payload was read whole"

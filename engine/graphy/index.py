@@ -40,6 +40,9 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+=@-]{0,199}$")
 _ADDRESS_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
+_CHUNK = 1 << 20
+
+
 class IndexError_(RuntimeError):
     """Raised for every refusal: the index, the name, the shard, or the bytes did not hold."""
 
@@ -75,24 +78,32 @@ def _read_shard(shard_dir: Path) -> dict[str, bytes]:
     return files
 
 
-def verify_shard(files: dict[str, bytes]) -> dict:
-    """The PROVENANCE must be JSON and its file receipts must match the payload bytes. Returns
-    the provenance. A shard whose PROVENANCE disagrees with its bytes was edited after the mint."""
+def _provenance_of(raw: bytes) -> dict:
     try:
-        prov = json.loads(files["PROVENANCE.json"].decode("utf-8"))
+        prov = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise IndexError_(f"PROVENANCE.json is not valid JSON: {exc}") from exc
     if not isinstance(prov, dict) or not isinstance(prov.get("files"), dict):
         raise IndexError_("PROVENANCE.json carries no 'files' receipts — nothing to verify the payload against")
+    return prov
+
+
+def _check_payload(prov: dict, receipts: dict[str, dict]) -> dict:
     for name in PAYLOAD_FILES:
         want = prov["files"].get(name, {}).get("sha256")
         if not isinstance(want, str):
             raise IndexError_(f"PROVENANCE.json has no sha256 for {name}")
-        got = _sha(files[name])
+        got = receipts[name]["sha256"]
         if got != want:
             raise IndexError_(f"{name} does not match its PROVENANCE: sha256 {got[:12]}… vs declared "
                               f"{want[:12]}… — the shard was edited after the mint; re-mint, never hand-edit")
     return prov
+
+
+def verify_shard(files: dict[str, bytes]) -> dict:
+    """The PROVENANCE must be JSON and its file receipts must match the payload bytes. Returns
+    the provenance. A shard whose PROVENANCE disagrees with its bytes was edited after the mint."""
+    return _check_payload(_provenance_of(files["PROVENANCE.json"]), _receipts(files))
 
 
 def default_name(prov: dict) -> str | None:
@@ -232,6 +243,37 @@ class _Source:
         p = Path(self.base) / rel
         return p.read_bytes() if p.is_file() else None
 
+    def digest(self, rel: str) -> dict | None:
+        """The receipt of one file — ``{"bytes", "sha256"}`` — hashed by chunks, never held whole:
+        what a verify needs of a payload file. A local file streams from disk; a remote one from
+        the response. None when the file is absent."""
+        h, size = hashlib.sha256(), 0
+        if self.remote:
+            import urllib.error
+            import urllib.parse
+            import urllib.request
+            url = self.base.rstrip("/") + "/" + urllib.parse.quote(rel)
+            try:
+                with urllib.request.urlopen(url, timeout=60) as r:  # noqa: S310 — the operator named the base
+                    for chunk in iter(lambda: r.read(_CHUNK), b""):
+                        h.update(chunk)
+                        size += len(chunk)
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    return None
+                raise IndexError_(f"{url}: HTTP {exc.code}") from exc
+            except (urllib.error.URLError, OSError) as exc:
+                raise IndexError_(f"{url}: {exc}") from exc
+            return {"bytes": size, "sha256": h.hexdigest()}
+        p = Path(self.base) / rel
+        if not p.is_file():
+            return None
+        with p.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(_CHUNK), b""):
+                h.update(chunk)
+                size += len(chunk)
+        return {"bytes": size, "sha256": h.hexdigest()}
+
 
 def _resolve(src: _Source, ref: str) -> tuple[str, str | None]:
     """A 64-hex ref is an address; anything else is a name looked up in names/."""
@@ -268,8 +310,7 @@ def _fetch_entry(src: _Source, address: str) -> tuple[dict, dict[str, bytes]]:
     return manifest, files
 
 
-def _verify_entry(address: str, manifest: dict, files: dict[str, bytes]) -> dict:
-    receipts = _receipts(files)
+def _check_entry(address: str, manifest: dict, receipts: dict[str, dict]) -> None:
     for name in SHARD_FILES:
         want = (manifest.get("files") or {}).get(name, {}).get("sha256")
         if receipts[name]["sha256"] != want:
@@ -277,7 +318,37 @@ def _verify_entry(address: str, manifest: dict, files: dict[str, bytes]) -> dict
                               "at rest were altered; refusing to land it")
     if address_of(receipts) != address:
         raise IndexError_(f"the files at {address[:12]}… do not hash to their address — refusing to land it")
+
+
+def _verify_entry(address: str, manifest: dict, files: dict[str, bytes]) -> dict:
+    """The bytes in hand (a pull) against the manifest, the address and the PROVENANCE."""
+    receipts = _receipts(files)
+    _check_entry(address, manifest, receipts)
     return verify_shard(files)
+
+
+def _verify_entry_streaming(src: "_Source", address: str) -> dict:
+    """The same verify without holding a payload: every file hashed by chunks from the source, only
+    the manifest and the PROVENANCE in memory — what ``verify_index`` runs on every thread, so the
+    index lane's peak RSS is one chunk per thread, never eight shards (RECON.md §64)."""
+    raw = src.read(f"shards/{address}/{MANIFEST_NAME}")
+    if raw is None:
+        raise IndexError_(f"no shard at address {address[:12]}… in {src.base}")
+    try:
+        manifest = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise IndexError_(f"manifest at {address[:12]}… is unreadable: {exc}") from exc
+    prov_raw = src.read(f"shards/{address}/PROVENANCE.json")
+    if prov_raw is None:
+        raise IndexError_(f"shard {address[:12]}… is missing PROVENANCE.json in {src.base}")
+    receipts = {"PROVENANCE.json": {"bytes": len(prov_raw), "sha256": _sha(prov_raw)}}
+    for name in PAYLOAD_FILES:
+        r = src.digest(f"shards/{address}/{name}")
+        if r is None:
+            raise IndexError_(f"shard {address[:12]}… is missing {name} in {src.base}")
+        receipts[name] = r
+    _check_entry(address, manifest, receipts)
+    return _check_payload(_provenance_of(prov_raw), receipts)
 
 
 def pull(ref: str, index: str, out: str | Path) -> dict:
@@ -319,15 +390,27 @@ def catalog(index: str) -> dict[str, str]:
     return cat
 
 
-def verify_index(index: str) -> list[tuple[str, str, str | None]]:
-    """Re-hash every named entry. Returns (name, address, problem-or-None) rows."""
+VERIFY_THREADS = max(1, min(8, os.cpu_count() or 1))
+
+
+def _verify_one(src: "_Source", name: str, address: str) -> tuple[str, str, str | None]:
+    try:
+        _verify_entry_streaming(src, address)
+        return (name, address, None)
+    except IndexError_ as exc:
+        return (name, address, str(exc))
+
+
+def verify_index(index: str, *, threads: int | None = None) -> list[tuple[str, str, str | None]]:
+    """Re-hash every named entry. Returns (name, address, problem-or-None) rows in catalog order.
+    The entries are read and hashed over a thread pool (``VERIFY_THREADS``, one per core up to
+    eight): hashing is the work, ``hashlib`` and the reads release the GIL, and the farm index's
+    718 shards (2 GB) took 2.6 s on one core and 0.66 s on eight (RECON.md §64)."""
+    from concurrent.futures import ThreadPoolExecutor
     src = _Source(index)
-    rows: list[tuple[str, str, str | None]] = []
-    for name, address in sorted(catalog(index).items()):
-        try:
-            manifest, files = _fetch_entry(src, address)
-            _verify_entry(address, manifest, files)
-            rows.append((name, address, None))
-        except IndexError_ as exc:
-            rows.append((name, address, str(exc)))
-    return rows
+    entries = sorted(catalog(index).items())
+    n = max(1, threads or VERIFY_THREADS)
+    if n == 1 or len(entries) < 2:
+        return [_verify_one(src, name, address) for name, address in entries]
+    with ThreadPoolExecutor(n) as pool:
+        return list(pool.map(lambda item: _verify_one(src, *item), entries))

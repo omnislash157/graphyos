@@ -3305,3 +3305,47 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before27.json r
 | the same answer | the sidecar's edges and counts unchanged — only the stamp's key and value; `check` green on every tenant; the graphy tenant's arms re-rendered (`ring_source_digest` · `source_digest` moved the walk) and verify |
 | the gate | `GRAPHY_STANDALONE_OK` |
 | the receipt | `measure.py run` then `diff recon.before27.json recon.json`: every engine number flat or better (the receipt 60.4 → 60.3 s, `quickstart.httpx.seconds` 5.3 → 4.5, `pass.engine_hot_lanes` 1 — the floor); one number the wrong way, `wheel.seconds` 2.8 → 3.5 (pip, build and twine). `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |
+
+## 64 · INDEX VERIFY FANS OUT — 2 GB hashed over eight cores instead of one, the farm index 2.6 → 0.72 s, the same rows (2026-09-07 · graphyos issue 28)
+
+**What it was.** `verify_index` fetched and re-hashed each catalog entry in a `for` loop: on the farm
+index (718 named shards, 3,624 files, 1,956 MB) `graphy index --verify` took 2.65 · 2.62 · 2.58 s,
+its profile `_hashlib.openssl_sha256` 2.17 s and `BufferedReader.read` 0.35 s — hashing is the
+work, on one core of eight, and `hashlib` releases the GIL, as do the reads.
+
+**What it is.** The same per-entry verify mapped over a `concurrent.futures.ThreadPoolExecutor`
+of `VERIFY_THREADS` — one per core, capped at eight — with the rows returned in catalog order;
+`threads=1` (or a catalog of one) runs the loop as before. `pull` and `push` verify one shard and
+are untouched. Every refusal message is the same string from the same place. Stdlib only.
+
+**The first cut tripled the lane's RSS, and the second cut it to a quarter of the original.** The
+pooled loop still ran `_fetch_entry`, which reads a shard's three files whole, so eight threads
+held eight shards: the receipt read `index.rss_kb` 169,256 → 560,060. `_verify_entry_streaming`
+holds the manifest and the PROVENANCE only and hashes each payload file by chunks from the source
+(`_Source.digest`: a local file streams from disk, a remote one from the response), then runs the
+same manifest, address and PROVENANCE checks over the receipts (`_check_entry` · `_check_payload`,
+which `verify_shard` and `_verify_entry` — the pull's path, bytes in hand — now share). Eight
+threads hold eight 1 MB chunks: 40 MB peak, 0.53 s. The test reads the source through a spy and
+refuses if a payload file is ever read whole.
+
+```bash
+# from engine/
+for i in 1 2 3; do /usr/bin/time -f "index verify %e s" ../.venv/bin/graphy index --index $(pwd)/../staging/index/farm --verify 2>&1 | grep -E 'index verify|INDEX'; done
+python3 -m pytest -q tests/test_index.py -k fans_out       # twelve shards, one with a flipped byte: the pooled rows equal the serial rows, more than one thread seen, alpha==7 named by edges.json
+git show HEAD~1:engine/graphy/index.py > graphy/index.py && python3 -m pytest -q tests/test_index.py -k fans_out    # RED: verify_index() got an unexpected keyword argument 'threads' (reverted after)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before28.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `graphy index --verify`, the farm index, three runs | 2.65 · 2.62 · 2.58 s | 0.72 · 0.72 · 0.72 s pooled over whole reads; 0.53 · 0.54 · 0.53 s pooled over chunked digests |
+| the verb's peak RSS (`/usr/bin/time %M`) | 169 MB (one shard held whole) | 560 MB pooled over whole reads; 40 MB over chunked digests |
+| `verify_index` in-process, the prototype | serial 2,578 ms | 4 threads 789 · 8 threads 663 ms, the same 718 rows |
+| hashing 1,956 MB alone | 1,351 ms | 409 ms on 4 or 8 threads |
+
+| check | result |
+|---|---|
+| the floor | 488 passed · 3 skipped (487 + 1: twelve shards, one with a flipped byte — the pooled rows equal the serial rows, more than one thread seen, `alpha==7` named by `edges.json`, no payload read whole); the RED proof against the parent's code names the missing `threads` |
+| the same answer | the same 718 rows in the same order; the flipped byte named by file and address |
+| the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`_verify_one` moved the walk) |
+| the receipt | `measure.py run` then `diff recon.before28.json recon.json`: **`index.verify_seconds` 2.6 → 0.5 (−81 %) · `index.rss_kb` 169,256 → 40,120 (−76 %)**, the receipt 57.4 → 54.5 s; the first receipt of the pooled loop over whole reads read `index.rss_kb` → 560,060 (+231 %) — the streaming digest above is what that number bought; one number the wrong way, `quickstart.httpx.seconds` 4.5 → 5.2 (the cold clone and pip over the network, §59). `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |
