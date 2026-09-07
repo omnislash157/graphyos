@@ -6,6 +6,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 spec = importlib.util.spec_from_file_location("burden", Path(__file__).parents[2] / "burden.py")
 burden = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(burden)
@@ -13,6 +15,7 @@ RULES = json.loads((Path(__file__).parents[2] / "burden.json").read_text())
 
 
 def test_RED_a_runtime_dependency_or_an_undeclared_extra_is_refused(tmp_path):
+    pytest.importorskip("tomllib")  # 3.11+; the gate's interpreter — the 3.10 floor skips this one
     pp = tmp_path / "pyproject.toml"
     pp.write_text('[project]\nname="x"\nversion="0"\ndependencies=[]\n[project.optional-dependencies]\nestate=["duckdb>=1"]\n')
     assert burden.check_dependencies(pp, RULES) == []

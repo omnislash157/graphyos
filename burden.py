@@ -19,7 +19,6 @@ import json
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -34,6 +33,11 @@ def load_rules() -> dict:
 
 
 def check_dependencies(pyproject: Path, rules: dict) -> list[str]:
+    try:
+        import tomllib  # 3.11+; the gate runs there — a 3.10 floor skips this one check by name
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("burden: check_dependencies needs tomllib (Python 3.11+); "
+                           "the gate runs on 3.12 and a 3.10 floor skips it") from exc
     red = []
     proj = tomllib.loads(pyproject.read_text(encoding="utf-8")).get("project", {})
     deps = proj.get("dependencies", [])
