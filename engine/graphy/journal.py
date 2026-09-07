@@ -105,15 +105,21 @@ def _edge_key(e: dict) -> str:
 
 def _read_ids(graph_dir: Path) -> tuple[set[str], set[str]]:
     gd = Path(graph_dir)
-    nodes_raw = json.loads((gd / "nodes.json").read_text(encoding="utf-8"))
+    edges_file = gd / "edges.json"
+    if edges_file.exists():
+        from graphy.native_json_graph_ir import raw_shard   # the one parse per shard per process
+        raw = raw_shard(gd)
+        nodes_raw, edges_raw = raw["nodes"], raw["edges"]
+    else:
+        nodes_raw = json.loads((gd / "nodes.json").read_text(encoding="utf-8"))
+        edges_raw = None
     if isinstance(nodes_raw, dict):
         node_ids = set(nodes_raw.keys())
     else:
         node_ids = {n["id"] for n in nodes_raw}
     edge_keys: set[str] = set()
-    edges_file = gd / "edges.json"
-    if edges_file.exists():
-        edge_keys = {_edge_key(e) for e in json.loads(edges_file.read_text(encoding="utf-8"))}
+    if edges_raw is not None:
+        edge_keys = {_edge_key(e) for e in edges_raw}
     return node_ids, edge_keys
 
 

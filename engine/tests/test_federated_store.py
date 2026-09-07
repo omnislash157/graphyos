@@ -424,3 +424,97 @@ def test_GREEN_advertised_refuse_command_parses(tmp_path):
     fresh = fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="adv test id",
                         db_path=db)
     assert fresh.generation() != served
+
+
+def test_GREEN_open_for_hashes_shard_bytes_and_never_parses_them(tmp_path, monkeypatch):
+    """A walk is a query, never a load: the freshness check reads nodes.json / edges.json (and the
+    sidecar) for hashing only. Every file open during open_for is recorded; the shard payloads
+    are opened read-binary and json.loads never sees their bytes."""
+    import builtins
+    import io
+    from graphy import native_json_graph_ir as nj
+    tenant, data_home = _walk_fixture(tmp_path)
+    db = _compile(tenant, tmp_path)
+    nj._RAW.clear()
+    nj._SHARDS.clear()
+    payloads = {}
+    for gd in (data_home / "fastapi_graph", data_home / "widgets_graph"):
+        for name in nj.SHARD_INPUTS:
+            if (gd / name).is_file():
+                payloads[str(gd / name)] = (gd / name).read_bytes()
+    opened: list[tuple[str, str]] = []
+    real_open = builtins.open
+
+    def spy_open(file, mode="r", *a, **k):
+        opened.append((str(file), mode))
+        return real_open(file, mode, *a, **k)
+
+    parsed: list[int] = []
+    real_loads = json.loads
+
+    def spy_loads(s, *a, **k):
+        raw = s if isinstance(s, (bytes, bytearray)) else s.encode("utf-8")
+        parsed.append(len(raw))
+        assert raw not in payloads.values(), "open_for parsed a shard payload — that is a load"
+        return real_loads(s, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", spy_open)
+    monkeypatch.setattr(io, "open", spy_open)
+    monkeypatch.setattr(json, "loads", spy_loads)
+    store = fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
+    assert store.membership("widgets://module/widgets") == "widgets"
+    shard_opens = [(f, m) for f, m in opened if f in payloads]
+    assert shard_opens, "the freshness check never touched the shard bytes"
+    assert all(m == "rb" for _f, m in shard_opens), shard_opens
+    assert all(f in payloads or "_graph" not in f for f, _m in opened), opened
+    assert not [n for n in parsed if n in {len(b) for b in payloads.values()}]
+    # a byte moved in any input still reads STALE — the verdict is as strict as before
+    monkeypatch.undo()
+    _mutate_widgets(data_home)
+    with pytest.raises(fs.StoreError, match="STALE"):
+        fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
+
+
+def test_GREEN_one_parse_per_shard_per_process_and_a_rewrite_reparses(tmp_path, monkeypatch):
+    from graphy import native_json_graph_ir as nj
+    tenant, data_home = _walk_fixture(tmp_path)
+    nj._RAW.clear()
+    nj._SHARDS.clear()
+    gd = data_home / "widgets_graph"
+    real_loads = json.loads
+    count = []
+    monkeypatch.setattr(json, "loads", lambda s, *a, **k: count.append(1) or real_loads(s, *a, **k))
+    a = nj.load_graph_ir(gd)
+    n = len(count)
+    assert n >= 2
+    b = nj.load_graph_ir(gd)
+    assert b is a and len(count) == n, "a second load of an untouched shard parsed again"
+    assert a.input_digest == nj.shard_input_digest(gd)
+    _mutate_widgets(data_home)
+    c = nj.load_graph_ir(gd)
+    assert c is not a and len(count) > n and c.input_digest != a.input_digest
+
+
+def test_RED_store_under_an_older_input_digest_format_refuses_naming_recompile(tmp_path):
+    import sqlite3
+    tenant, _ = _walk_fixture(tmp_path)
+    db = _compile(tenant, tmp_path)
+    con = sqlite3.connect(db)
+    con.execute("UPDATE meta SET v=? WHERE k='input_digest'", (json.dumps({"fastapi": "abc"}),))
+    con.commit()
+    con.close()
+    with pytest.raises(fs.StoreError, match="digest format"):
+        fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
+
+
+def test_GREEN_the_parse_memo_is_bounded(tmp_path):
+    from graphy import native_json_graph_ir as nj
+    nj._RAW.clear()
+    nj._SHARDS.clear()
+    for i in range(nj.MEMO_SHARDS + 5):
+        gd = tmp_path / f"s{i}_graph"
+        _write_graph(gd, {f"s{i}://module/s{i}": {"kind": "node", "node_type": "module", "id": f"s{i}://module/s{i}",
+                                                 "dotted": f"s{i}", "file": "x.py", "loc": 1, "docstring": ""}}, [])
+        nj.load_graph_ir(gd)
+    assert len(nj._RAW) == nj.MEMO_SHARDS and len(nj._SHARDS) == nj.MEMO_SHARDS
+    assert str(tmp_path / "s0_graph") not in nj._RAW and str(tmp_path / f"s{nj.MEMO_SHARDS + 4}_graph") in nj._RAW

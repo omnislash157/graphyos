@@ -25,7 +25,7 @@ from graphy.cross_substrate import (
 )
 from graphy.query import activate, rank
 from graphy._shared import _ast_edge_salience
-from graphy.native_json_graph_ir import _detect_duplicate_json_keys
+from graphy.native_json_graph_ir import _detect_duplicate_json_keys, shard_input_digest
 from graphy.tenant import Tenant
 
 SCHEMA = """
@@ -97,12 +97,14 @@ def _sha16(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:16]
 
 
+INPUT_DIGEST_FORMAT = 2
+_INPUT_DIGEST_FORMAT_KEY = ".input_digest_format"
+
+
 def _shard_input_digest(graph_dir: Path) -> str:
-    gir = _cross_substrate.load_graph_ir(str(graph_dir))
-    h = hashlib.sha256()
-    h.update(b"nodes\x00" + json.dumps(gir.nodes, sort_keys=True, default=str).encode())
-    h.update(b"\x00edges\x00" + json.dumps(gir.edges, sort_keys=True, default=str).encode())
-    return h.hexdigest()[:16]
+    """The bytes of nodes.json, edges.json and the sidecar hashed — never parsed (a walk is a
+    query, never a load). Format 1 parsed and re-serialized every shard per query."""
+    return shard_input_digest(graph_dir)
 
 
 def _scheme_index_input_digest(index_path: Path, loaded: list[str]) -> str:
@@ -186,6 +188,7 @@ def _compute_input_digest(substrates: list[str], *, tenant: Tenant | None = None
     digests[_INDEX_INPUT_KEY] = _scheme_index_input_digest(
         data_home / _INDEX_INPUT_KEY, sorted(substrates))
     digests[_REGISTRY_INPUT_KEY] = _registry_input_digest(Path(tenant.join_keys))
+    digests[_INPUT_DIGEST_FORMAT_KEY] = INPUT_DIGEST_FORMAT
     return json.dumps(digests, sort_keys=True, separators=(",", ":"))
 
 
@@ -274,6 +277,16 @@ class SQLiteStore:
                              f"serve a snapshot whose freshness cannot be measured; "
                              f"recompile with `compile_store`")
         self._input_digest = meta["input_digest"]
+        try:
+            fmt = json.loads(self._input_digest).get(_INPUT_DIGEST_FORMAT_KEY)
+        except (ValueError, AttributeError):
+            fmt = None
+        if fmt != INPUT_DIGEST_FORMAT:
+            raise StoreError(
+                f"store at {p} measures its inputs under digest format "
+                f"{fmt or '<pre-versioning>'}; this build speaks {INPUT_DIGEST_FORMAT} "
+                f"(the bytes hashed, never parsed). Its freshness cannot be compared with "
+                f"ours — recompile with `compile_store`")
         self._gen = meta["generation"]
 
     def generation(self) -> str:

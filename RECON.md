@@ -2436,3 +2436,58 @@ diff that gates.
 | the pass number | `pass.engine_hot_lanes` 5 of 9 lanes, with the lanes named; `stdlib_hot` flipping to false is a regression |
 | the receipt | 79.0 s timed + 77.1 s profiled; the graphy tenant's CLI arm re-rendered (the walk moved: `_main` · `_profiled`), ARMS OK |
 | found on the way | `CHANGELOG.md` had stopped at §38: every section since the split says `graphyos issue N` and `release.sh` read only `issue N`; the pattern widened, 38 entries, the public board's sections tagged `graphyos #N` |
+
+## 49 · THE FRESHNESS CHECK IS A HASH — the bytes, never a parse; one parse per shard per process (2026-09-07 · graphyos issue 13)
+
+**What it was.** `open_for` measured the store's freshness by loading every shard's JSON and
+re-serializing it with `sort_keys=True` to hash — a full load per question, 0.26 s of a 0.30 s
+`explain` on SQLAlchemy and the `json.raw_decode` line in §48's table. The law's own words say
+a walk is a query, never a load.
+
+**What it is.** `native_json_graph_ir.shard_input_digest` hashes the BYTES of `nodes.json`,
+`edges.json` and `wormhole_edges.json` (its absence hashed as absent) — `hashlib`, a 1 MB chunk at
+a time, nothing parsed. The store's input digest carries `.input_digest_format: 2`; a store compiled
+under the old form refuses with the recompile hint (never silently served, never silently slow).
+The verdict is as strict as it was and stricter where it counts: a byte moved in any of the three
+inputs reads STALE. Beside it, `raw_shard` / `load_graph_ir` parse each shard ONCE per digest per
+process — the memo is keyed by the resolved directory and served only when the bytes hash to the
+same digest, so a rewritten shard re-parses and an untouched one never does; it is bounded to the
+16 most recently loaded directories (`MEMO_SHARDS`), because unbounded it held every fixture copy
+the floor loads and the floor's peak RSS read +31% — and the journal's
+`_read_ids` and `check`'s store lane read the same parse. `check` still parses (it is an audit: a
+malformed shard is COULD-NOT-TELL there), once.
+
+```bash
+cd engine && T=tenants/sqlalchemy/tenant.json
+for v in "explain sqlalchemy.orm.session.Session" check build; do /usr/bin/time -f "$v %es %MKB" ../.venv/bin/python -m graphy $v --tenant $T --tenant-id sqlalchemy >/dev/null; done
+../.venv/bin/python -m cProfile -s tottime -m graphy explain sqlalchemy.orm.session.Session --tenant $T --tenant-id sqlalchemy | head -12
+python3 -m pytest -q tests/test_federated_store.py -k "hashes_shard_bytes or one_parse or older_input_digest"
+cd .. && python3 measure.py run --out recon.json && python3 measure.py diff recon.before13.json recon.json
+python3 -c "import json;r=json.load(open('recon.json'));[print(k,v['doors']) for k,v in r['tenants'].items()]"
+```
+
+| verb on the SQLAlchemy tenant (24 MB of shard) | before | after |
+|---|---|---|
+| `explain sqlalchemy.orm.session.Session` | 0.31 s · 106 MB | 0.12 s · 28 MB |
+| `check` | 1.02 s · 161 MB | 0.47 s · 124 MB |
+| `build` | 2.12 s · 288 MB | 1.53 s · 291 MB |
+| of an `explain`: the freshness digest | 0.26 s (`json.raw_decode` + `json.dumps`) | 0.013 s (`_hashlib.HASH.update`, 40 calls) |
+
+What is left in an `explain` after the hash: ~60 ms importing `graphy.cli` (the http stack rides in
+through `graphy.index` — issue 20) and ~45 ms of the walk itself (`SQLiteStore.neighbours`, 296
+calls). The engine's hottest frame in a door is now the walk, which is the shape the law wants.
+
+**The receipt grew a lane.** `measure.py` now times the three doors on every rebuilt tenant, one
+process each, on the tenant's first pillar's module id (`tenants.<name>.doors.{explain,blast,descend}.seconds`,
+`doors.seconds` the slowest); the numbers regress like any time.
+
+| check | result |
+|---|---|
+| the floor test | every file opened during `open_for` recorded: the shard payloads opened `rb` only, `json.loads` never handed their bytes; a byte mutated reads STALE (`test_GREEN_open_for_hashes_shard_bytes_and_never_parses_them`) |
+| one parse | a second `load_graph_ir` of an untouched shard returns the same object with zero `json.loads`; a rewrite re-parses and moves `input_digest` |
+| the old store | a digest without the format key refuses naming `compile_store` |
+| the isolation test | the bridge's each-side-reads-only-its-own-data_home floor holds (`test_bridge.py::test_GREEN_two_tenants_open_in_one_process_and_neither_reads_the_other`) |
+| burden | unchanged: runtime deps 0 · wheel under cap · scrub OK |
+| the receipt | five full runs this session; the last: floor 459 passed in 16.5 s (the direct floor 15.2–15.8 s on three runs, `before` 14.9), gate OK 22.8 s, `pass.engine_hot_lanes` 5 → 4 (the graphy and sqlalchemy lanes' hottest frame is now the producer's `ast.iter_child_nodes` — issue 14), fastapi 4.7 → 3.7 s, sqlalchemy 8.8 → 7.4 s, hono 2.9 → 2.7 s, graphy 2.9 → 2.6 s |
+| the doors lane | `tenants.<name>.doors.seconds` on the last run: express 0.085 · fastapi 0.098 · graphy 0.084 · hono 0.085 · sqlalchemy 0.136 (its `explain`; `descend` 0.091) — the SQLAlchemy `explain` sits above the issue's 0.1 s line by the `graphy.cli` import (~60 ms, issue 20), not by any load |
+| noise, named | `quickstart.express.seconds` read 6.2 · 6.5 · 9.1 · 9.7 · 9.8 across the five runs with the engine's own frames identical in every profile (`container.emit` 6.5 s): its clone and `npm install` are network-bound, like the gate's pip in §48; `tenants.express.seconds` 2.5 → 2.6 on four runs and 2.9 on the fifth at load average 1.5 — the diff on this box names them, CI's back-to-back diff on one runner is the gate |

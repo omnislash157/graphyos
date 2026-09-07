@@ -61,7 +61,7 @@ sys.exit(int(rc))
 """
 
 
-def _run(cmd, *, cwd=None, env=None, timeout=3600) -> tuple[int, str, float]:
+def _run(cmd, *, cwd=None, env=None, timeout=3600, ndigits: int = 1) -> tuple[int, str, float]:
     t0 = time.perf_counter()
     e = dict(os.environ)
     e.update(env or {})
@@ -71,7 +71,7 @@ def _run(cmd, *, cwd=None, env=None, timeout=3600) -> tuple[int, str, float]:
         rc = p.returncode
     except subprocess.TimeoutExpired as exc:
         out, rc = f"timeout after {timeout}s", 124
-    return rc, out, round(time.perf_counter() - t0, 1)
+    return rc, out, round(time.perf_counter() - t0, ndigits)
 
 
 def _num(pattern: str, text: str, cast=int, default=None):
@@ -158,6 +158,27 @@ def measure_wheel(py: str) -> dict:
             "version": _num(r"graphyos-([\d.]+)-py3", wheels[0].name, cast=str) if wheels else None}
 
 
+DOORS = ("explain", "blast", "descend")
+
+
+def measure_doors(name: str, py: str) -> dict:
+    """The doors on the rebuilt tenant, one process each, wall-clock: the seed is the first prefix
+    of the tenant's first pillar as its module id — a query, never a load, so `seconds` is the
+    slowest of the three and every one must answer."""
+    tdir = ENGINE / "tenants" / name
+    part = json.loads((tdir / "partition.json").read_text(encoding="utf-8"))
+    dotted = next(iter(part["groups"].values()))[0]
+    seed = f"{name}://module/{dotted}"
+    out = {"seed": seed}
+    for verb in DOORS:
+        rc, text, secs = _run([py, "-m", "graphy", verb, seed, "--tenant", str(tdir / "tenant.json"),
+                               "--tenant-id", name, "--depth", "2"], cwd=ENGINE, ndigits=3)
+        out[verb] = {"ok": rc == 0, "seconds": secs}
+    out["ok"] = all(out[v]["ok"] for v in DOORS)
+    out["seconds"] = max(out[v]["seconds"] for v in DOORS)
+    return out
+
+
 def measure_tenant(name: str, py: str) -> dict:
     env = {"PYTHON": py}
     if name == "fastapi":
@@ -169,6 +190,7 @@ def measure_tenant(name: str, py: str) -> dict:
             "shards": len(re.findall(r"^MINT OK: |^PULL OK: ", out, re.M)),
             "nodes": _num(r"BUILD OK: compiled (\d+) nodes", out), "edges": _num(r"BUILD OK: compiled \d+ nodes / (\d+) edges", out),
             "arms": _num(r"ARMS OK: (\d+) arm", out), "atlas": _num(r"ATLAS OK: (\d+) picture", out), "rc": rc,
+            "doors": measure_doors(name, py) if rc == 0 else {"ok": False},
             **_profiled(["bash", str(ENGINE / "tenants" / name / "rebuild.sh")], env=env)}
 
 

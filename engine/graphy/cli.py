@@ -742,6 +742,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
             break
         graph_dir = data_home / f"{s}_graph"
         try:
+            from graphy.native_json_graph_ir import load_graph_ir as _load_ir
+            _load_ir(graph_dir)                 # the audit parses — once per shard per process
             fstore._shard_input_digest(graph_dir)
         except (fstore.StoreError, AttributeError, TypeError, KeyError,
                 ValueError, OSError) as exc:

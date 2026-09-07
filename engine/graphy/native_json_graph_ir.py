@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,10 @@ class ResolvedShard:
 
     residuals: tuple[Any, ...] = field(default_factory=tuple)
     """Malformed node or edge records that could not be parsed."""
+
+    input_digest: str = ""
+    """sha256 (16 hex) over the bytes of the three inputs this shard was parsed from —
+    the same value `shard_input_digest` derives without parsing."""
 
 
 @dataclass(frozen=True)
@@ -173,24 +179,95 @@ def _canonical_payload(obj: Any) -> str:
 
 
 WORMHOLE_SIDECAR = "wormhole_edges.json"
+SHARD_INPUTS = ("nodes.json", "edges.json", WORMHOLE_SIDECAR)
+_ABSENT = b"<ABSENT>"
+_CHUNK = 1 << 20
 
 
-def _sidecar_edges(gd: Path) -> list:
-    """Edges the resolver derived from the producer's text labels (`graphy converge --resolve`).
-    They ride beside edges.json, never inside it: the producer's output stays verbatim."""
-    path = gd / WORMHOLE_SIDECAR
-    if not path.is_file():
-        return []
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    edges = raw.get("edges") if isinstance(raw, dict) else raw
-    return list(edges) if isinstance(edges, list) else []
+def _file_sha256(path: Path) -> bytes:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(_CHUNK), b""):
+            h.update(chunk)
+    return h.digest()
+
+
+def _fold(h, name: str, file_digest: bytes | None) -> None:
+    h.update(name.encode() + b"\x00" + (file_digest if file_digest is not None else _ABSENT) + b"\x00")
+
+
+def shard_input_digest(graph_dir: str | Path) -> str:
+    """sha256 (16 hex) over the BYTES of a shard's inputs — nodes.json, edges.json and the
+    wormhole sidecar (its absence hashed as absent). Never a parse: a query measures freshness
+    by this, and a byte changed in any input moves it. Missing nodes/edges raise OSError."""
+    gd = resolve_graph(Path(graph_dir))
+    h = hashlib.sha256(b"shard-input\x00")
+    for name in SHARD_INPUTS:
+        p = gd / name
+        _fold(h, name, None if name == WORMHOLE_SIDECAR and not p.is_file() else _file_sha256(p))
+    return h.hexdigest()[:16]
+
+
+_RAW: OrderedDict[str, tuple[str, dict[str, Any]]] = OrderedDict()
+_SHARDS: OrderedDict[str, tuple[str, ResolvedShard]] = OrderedDict()
+MEMO_SHARDS = 16          # the memo is bounded: the most recent directories, least recently loaded evicted;
+                          # a ring wider than this re-parses on its second pass (still one parse fewer than before)
+
+
+def _remember(memo: OrderedDict, key: str, value) -> None:
+    memo[key] = value
+    memo.move_to_end(key)
+    while len(memo) > MEMO_SHARDS:
+        memo.popitem(last=False)
+
+
+def raw_shard(graph_dir: str | Path) -> dict[str, Any]:
+    """The three inputs read, byte-hashed and parsed ONCE per digest per process: the memo is
+    keyed by the resolved directory and served only when the bytes hash to the same digest, so
+    a rewritten shard is re-parsed and an untouched one never is. Keys: digest · nodes · edges
+    (the payloads as written) · sidecar (the resolver's edge list, [] when absent)."""
+    gd = resolve_graph(Path(graph_dir))
+    key = str(gd)
+    h = hashlib.sha256(b"shard-input\x00")
+    read: dict[str, bytes | None] = {}
+    for name in SHARD_INPUTS:
+        p = gd / name
+        data = None if name == WORMHOLE_SIDECAR and not p.is_file() else p.read_bytes()
+        read[name] = data
+        _fold(h, name, None if data is None else hashlib.sha256(data).digest())
+    digest = h.hexdigest()[:16]
+    hit = _RAW.get(key)
+    if hit is not None and hit[0] == digest:
+        _RAW.move_to_end(key)
+        return hit[1]
+    sidecar: list = []
+    if read[WORMHOLE_SIDECAR] is not None:
+        raw = json.loads(read[WORMHOLE_SIDECAR])
+        edges = raw.get("edges") if isinstance(raw, dict) else raw
+        sidecar = list(edges) if isinstance(edges, list) else []
+    parsed = {"digest": digest, "nodes": json.loads(read["nodes.json"]),
+              "edges": json.loads(read["edges.json"]), "sidecar": sidecar}
+    _remember(_RAW, key, (digest, parsed))
+    _SHARDS.pop(key, None)
+    return parsed
 
 
 def load_graph_ir(graph_dir: str | Path) -> ResolvedShard:
     gd = resolve_graph(Path(graph_dir))
-    nodes_raw = json.loads((gd / "nodes.json").read_text(encoding="utf-8"))
-    edges_raw = json.loads((gd / "edges.json").read_text(encoding="utf-8"))
-    sidecar = _sidecar_edges(gd)
+    raw = raw_shard(gd)
+    hit = _SHARDS.get(str(gd))
+    if hit is not None and hit[0] == raw["digest"]:
+        _SHARDS.move_to_end(str(gd))
+        return hit[1]
+    shard = _resolve_shard(raw)
+    _remember(_SHARDS, str(gd), (raw["digest"], shard))
+    return shard
+
+
+def _resolve_shard(raw: dict[str, Any]) -> ResolvedShard:
+    nodes_raw = raw["nodes"]
+    edges_raw = raw["edges"]
+    sidecar = raw["sidecar"]
     if sidecar:
         edges_raw = (list(edges_raw.values()) if isinstance(edges_raw, dict) else list(edges_raw)) + sidecar
 
@@ -257,6 +334,7 @@ def load_graph_ir(graph_dir: str | Path) -> ResolvedShard:
             edge_residuals.append(e)
 
     return ResolvedShard(
+        input_digest=raw["digest"],
         nodes=tuple(valid_nodes),
         edges=tuple(valid_edges),
         residuals=tuple(
