@@ -3483,3 +3483,43 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before31.json r
 | the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical |
 | the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`_touch` moved the walk) |
 | the receipt | `measure.py run` then `diff recon.before31.json recon.json`: `tenants.sqlalchemy.seconds` 5.6 → 5.4, `pass.engine_hot_lanes` 1; two numbers the wrong way and neither the canvas's — `tenants.graphy.seconds` 2.1 → 2.8 (the same rebuild timed by hand right after: 1.98 · 1.98 · 2.07 s) and `index.verify_seconds` 0.5 → 0.6 (by hand: 0.54 · 0.56 · 0.54), the box's noise on a loaded afternoon. `MEASURE DIFF` exits 1 on those; closed on the engine lines by the standing ruling (§59) |
+
+## 68 · THE CROSSING SWEEPS STOP WHEN THE ORDER STOPS MOVING — 4 to 12 sweeps instead of 24, the same best order, sqlalchemy's atlas 1.27 → 1.10 s (2026-09-07 · graphyos issue 32)
+
+**What it was.** `_minimize_crossings` ran 24 sweeps on every picture — down, up, down, … — and
+recounted every layer pair's crossings after each, stopping early only at zero. A median-order
+sweep is a pure function of the order before it, so once an order repeats (a fixed point) every
+further sweep returns it, and once it equals the order two sweeps back (a two-cycle) the sweeps
+alternate the same two orders forever: `best` cannot improve after either. On sqlalchemy's six
+atlas pictures the order stopped moving after 4 · 7 · 7 · 9 · 7 · 12 sweeps; the remaining 12–20
+per picture recomputed the same orders and the same counts — `_minimize_crossings` 0.516 s of the
+atlas's profile, `_total_crossings` 150 calls · 0.28 s.
+
+**What it is.** The loop keeps the last two orders and stops when the new order equals either.
+`best` is the same order kept at the same iteration. Old code and new over the same store:
+sqlalchemy's 12 atlas files and fastapi's 13 byte-identical. The test runs `layout` over a
+14-node tangle that never reaches zero crossings (14 remain) with the 24-sweep loop copied
+verbatim beside it: the same layers, the crossing count called fewer than 25 times — 25 on the
+parent's code.
+
+```bash
+# from engine/
+for i in 1 2 3; do /usr/bin/time -f "atlas %e s" ../.venv/bin/graphy draw --tenant tenants/sqlalchemy/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --atlas /tmp/atlas --partition tenants/sqlalchemy/partition.json 2>&1 | grep '^atlas'; done
+git stash push graphy/sugiyama.py && ../.venv/bin/graphy draw … --atlas /tmp/atlas_old … && git stash pop && ../.venv/bin/graphy draw … --atlas /tmp/atlas_new … && diff -rq /tmp/atlas_old /tmp/atlas_new    # empty, sqlalchemy and fastapi
+python3 -m pytest -q tests/test_sugiyama.py -k sweeps_stop
+git show HEAD~1:engine/graphy/sugiyama.py > graphy/sugiyama.py && python3 -m pytest -q tests/test_sugiyama.py -k sweeps_stop    # RED: assert 25 < 25 (reverted after)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before32.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| sweeps per picture, sqlalchemy's six | 24 each | 4 · 7 · 7 · 9 · 7 · 12 |
+| `graphy draw --atlas` on sqlalchemy, three runs | 1.29 · 1.27 · 1.27 s (§67) | 1.11 · 1.10 · 1.11 s |
+| the atlas since §65 | 1.86 s | 1.10 s |
+
+| check | result |
+|---|---|
+| the floor | 492 passed · 3 skipped (491 + 1); the RED proof against the parent's code |
+| the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical |
+| the gate | `GRAPHY_STANDALONE_OK` |
+| the receipt | `measure.py run` then `diff recon.before32.json recon.json`: `tenants.sqlalchemy.seconds` 5.4 → 5.3, `pass.engine_hot_lanes` 1; one number the wrong way, `quickstart.express.eat_again_seconds` 1.2 → 1.6 — the eat, which no line of this change touches, timed by hand right after: 1.22 · 1.20 · 1.23 s (load 1.7). `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |

@@ -184,3 +184,64 @@ def test_GREEN_the_canvas_renders_the_drawing_not_the_rectangle_and_the_same_byt
     assert lines[0] == " " * 40 + "\033[0m" and lines[8] == lines[0], "an untouched row is full width, as before"
     assert "\033[0m" + " " * 9 + "\033[0m" in lines[3], "the colour resets before the blank tail"
     assert len(lines[7]) == 40 + len("\033[0m")
+
+
+def test_GREEN_the_crossing_sweeps_stop_when_the_order_stops_moving_with_the_same_best(monkeypatch):
+    """A sweep is a pure function of the order before it: at a fixed point or a two-cycle the
+    remaining sweeps recount the same orders, so the loop stops there — the same best order the
+    full 24 sweeps kept, counted fewer times (graphyos #32)."""
+    import graphy.sugiyama as S
+
+    def all_24(layers, adj, iters=24):          # the loop this replaced, verbatim
+        pred = {}
+        for u, vs in adj.items():
+            for v in vs:
+                pred.setdefault(v, set()).add(u)
+
+        def sweep_down(ls):
+            for i in range(1, len(ls)):
+                up = {n: j for j, n in enumerate(ls[i - 1])}
+                np_ = {v: [up[p] for p in pred.get(v, ()) if p in up] for v in ls[i]}
+                ls[i] = S._median_order(ls[i], np_)
+            return ls
+
+        def sweep_up(ls):
+            for i in range(len(ls) - 2, -1, -1):
+                low = {n: j for j, n in enumerate(ls[i + 1])}
+                np_ = {v: [low[s] for s in adj.get(v, ()) if s in low] for v in ls[i]}
+                ls[i] = _median_order_ref(ls[i], np_)
+            return ls
+        _median_order_ref = S._median_order
+        best = [list(l) for l in layers]
+        best_c = S._total_crossings(layers, adj)
+        for it in range(iters):
+            layers = sweep_down(layers) if it % 2 == 0 else sweep_up(layers)
+            c = S._total_crossings(layers, adj)
+            if c < best_c:
+                best_c, best = c, [list(l) for l in layers]
+            if best_c == 0:
+                break
+        return best
+
+    # a tangle that never reaches zero crossings, so only the fixed point or the cycle can end the loop
+    nodes = [f"n{i}" for i in range(14)]
+    edges = [("n0", "n5"), ("n0", "n6"), ("n1", "n4"), ("n1", "n7"), ("n2", "n5"), ("n2", "n8"), ("n3", "n4"),
+             ("n3", "n9"), ("n4", "n10"), ("n5", "n11"), ("n6", "n10"), ("n7", "n12"), ("n8", "n11"), ("n9", "n13"),
+             ("n4", "n12"), ("n8", "n13"), ("n0", "n9"), ("n2", "n7")]
+    counts = {"n": 0}
+    real = S._total_crossings
+    monkeypatch.setattr(S, "_total_crossings", lambda layers, adj: (counts.__setitem__("n", counts["n"] + 1), real(layers, adj))[1])
+    captured = {}
+    real_min = S._minimize_crossings
+
+    def spy(layers, adj, iters=24):
+        captured["ref"] = all_24([list(l) for l in layers], adj, iters)
+        counts["n"] = 0
+        out = real_min(layers, adj, iters)
+        captured["calls"] = counts["n"]
+        return out
+    monkeypatch.setattr(S, "_minimize_crossings", spy)
+    lo = S.layout(nodes, edges)
+    assert captured["calls"] < 25, captured
+    assert lo.layers == captured["ref"], "the early stop kept a different best order"
+    assert S._total_crossings(lo.layers, lo.adj) > 0

@@ -426,6 +426,11 @@ def _minimize_crossings(layers: list, adj: dict, iters: int = 24) -> list:
 
     best = [list(l) for l in layers]
     best_c = _total_crossings(layers, adj)
+    # A sweep is a pure function of the order before it: once an order repeats (a fixed point)
+    # every further sweep returns it, and once it equals the order two sweeps back (a two-cycle)
+    # the sweeps alternate the same two orders forever — best cannot improve after either, so the
+    # loop stops there with the same best it would have kept after all 24 (RECON.md §68).
+    prev, prev2 = [list(l) for l in layers], None
     for it in range(iters):
         layers = sweep_down(layers) if it % 2 == 0 else sweep_up(layers)
         c = _total_crossings(layers, adj)
@@ -433,6 +438,10 @@ def _minimize_crossings(layers: list, adj: dict, iters: int = 24) -> list:
             best_c, best = c, [list(l) for l in layers]
         if best_c == 0:
             break
+        now = [list(l) for l in layers]
+        if now == prev or now == prev2:
+            break
+        prev2, prev = prev, now
     return best
 
 
