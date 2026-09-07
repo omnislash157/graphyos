@@ -1647,7 +1647,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     handler = getattr(args, "handler", None)
@@ -1655,3 +1655,44 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_usage(sys.stderr)
         return 2
     return handler(args)
+
+
+def _profiled(argv: list[str] | None, prof_dir: str) -> int:
+    """GRAPHY_PROFILE_DIR names a directory: this verb runs under cProfile and leaves
+    ``<verb>-<pid>.prof`` (the stats) and ``<verb>-<pid>.json`` (verb · argv · seconds · rss_kb,
+    the process's own peak resident set) there. The receipt (measure.py) reads a lane's worth of
+    them and names the hottest function; nothing else reads them. Unset, this function never runs.
+    A process already under a profiler names itself in GRAPHY_PROFILE_PID, so a verb called
+    in-process by another (eat → smash, or a test under the floor's profiler) is not profiled twice
+    — cProfile does not nest — while a child process, with its own pid, still is."""
+    import cProfile
+    import os
+    import resource
+    import time
+    if os.environ.get("GRAPHY_PROFILE_PID") == str(os.getpid()):
+        return _main(argv)
+    os.environ["GRAPHY_PROFILE_PID"] = str(os.getpid())
+    args = list(sys.argv[1:] if argv is None else argv)
+    verb = next((a for a in args if not a.startswith("-")), "graphy")
+    os.makedirs(prof_dir, exist_ok=True)
+    stem = os.path.join(prof_dir, f"{verb}-{os.getpid()}")
+    prof, t0 = cProfile.Profile(), time.perf_counter()
+    try:
+        rc = prof.runcall(_main, argv)
+    except SystemExit as exc:
+        rc = exc.code if isinstance(exc.code, int) else 1
+    finally:
+        os.environ.pop("GRAPHY_PROFILE_PID", None)
+        prof.dump_stats(stem + ".prof")
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        rss_kb = rss // 1024 if sys.platform == "darwin" else rss
+        with open(stem + ".json", "w", encoding="utf-8") as fh:
+            json.dump({"verb": verb, "argv": args, "seconds": round(time.perf_counter() - t0, 3),
+                       "rss_kb": rss_kb}, fh)
+    return rc
+
+
+def main(argv: list[str] | None = None) -> int:
+    import os
+    prof_dir = os.environ.get("GRAPHY_PROFILE_DIR")
+    return _profiled(argv, prof_dir) if prof_dir else _main(argv)

@@ -7,6 +7,12 @@
     python3 measure.py diff OLD NEW [--time-tolerance 0.15] every number that moved, its direction; exit 1 on a
                                                             regression past tolerance (times) or any (counts)
 
+Every timed lane also carries `hot` (the three top self-time functions of every graphy verb the lane
+ran, from a second run under GRAPHY_PROFILE_DIR — the timed run is never the profiled one),
+`rss_kb` (the peak resident set of the heaviest verb, and its name), and `stdlib_hot` (true when the
+hottest function is not the engine's). `pass.engine_hot_lanes` counts the lanes whose hottest function
+lives under graphy/: the optimization pass ends when it reads 0. --no-profile skips the second runs.
+
 A number without the command that re-derives it is a lie waiting to happen; this file is the
 commands. The receipt is the before-and-after the improvement gate compares: a change is positive
 when a number moved the right way, and it regresses nothing past tolerance. Nothing here decides;
@@ -17,10 +23,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pstats
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -32,7 +40,25 @@ TENANTS = ("fastapi", "sqlalchemy", "hono", "express", "graphy")
 
 # direction: which way is better for a number; a number not listed is informational
 BETTER = {"floor.seconds": "down", "floor.failed": "down", "gate.seconds": "down", "wheel.bytes": "down", "sdist.bytes": "down",
-          "index.broken": "down", "floor.passed": "up", "index.names": "up"}
+          "index.broken": "down", "floor.passed": "up", "index.names": "up", "pass.engine_hot_lanes": "down"}
+HOT_N = 3
+PROFILE = True     # run() flips it off for --no-profile
+PROFILE_SECONDS = 0.0   # what the second runs cost; never a receipt number the diff judges
+
+# the floor run under the profiler, as one process: the stats and the sidecar the verbs also leave
+_FLOOR_DRIVER = """
+import cProfile, json, os, resource, sys, time
+import pytest
+d = os.environ["GRAPHY_PROFILE_DIR"]; os.makedirs(d, exist_ok=True); stem = os.path.join(d, "floor-%d" % os.getpid())
+os.environ["GRAPHY_PROFILE_PID"] = str(os.getpid())     # in-process cli.main calls are under this profiler already
+prof, t0 = cProfile.Profile(), time.perf_counter()
+rc = prof.runcall(pytest.main, ["-q", "-q", "-p", "no:cacheprovider"])
+prof.dump_stats(stem + ".prof")
+rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+json.dump({"verb": "floor", "argv": [], "seconds": round(time.perf_counter() - t0, 3),
+           "rss_kb": rss // 1024 if sys.platform == "darwin" else rss}, open(stem + ".json", "w"))
+sys.exit(int(rc))
+"""
 
 
 def _run(cmd, *, cwd=None, env=None, timeout=3600) -> tuple[int, str, float]:
@@ -53,10 +79,69 @@ def _num(pattern: str, text: str, cast=int, default=None):
     return cast(m.group(1)) if m else default
 
 
+def _engine_owned(file: str) -> bool:
+    """A frame is the engine's when its file lives under engine/graphy/ (this checkout, editable
+    installs) or under an installed graphy package — never tests/, never a venv beside the repo."""
+    return file.startswith(str(ENGINE / "graphy") + os.sep) or "/site-packages/graphy/" in file
+
+
+def _fmt_frame(file: str, line: int, func: str, secs: float) -> str:
+    owned = _engine_owned(file)
+    if owned:
+        rel = file.split("/graphy/", 1)[1] if "/site-packages/graphy/" in file else str(Path(file).relative_to(ENGINE))
+    elif file.startswith("<") or file == "~":
+        rel = file
+    else:
+        rel = "/".join(Path(file).parts[-2:])
+    return f"{rel}:{func} {secs:.2f}s" + ("  ENGINE" if owned else "")
+
+
+def summarize_profiles(prof_dir: Path) -> dict:
+    """One lane's worth of GRAPHY_PROFILE_DIR: the merged stats' top self-time frames, the heaviest
+    verb's peak RSS, and whether the hottest frame is the engine's own."""
+    profs = sorted(prof_dir.glob("*.prof"))
+    sides = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(prof_dir.glob("*.json"))]
+    out: dict = {"verbs": len(profs)}
+    st, skipped = None, []
+    for p in profs:                      # an empty or torn stats file is named, never a crash
+        try:
+            one = pstats.Stats(str(p))
+        except (TypeError, ValueError, EOFError, OSError):
+            skipped.append(p.name)
+            continue
+        st = one if st is None else st.add(one)
+    if skipped:
+        out["unreadable"] = skipped
+    if st is not None:
+        rows = sorted(((tt, file, line, func) for (file, line, func), (cc, nc, tt, ct, callers) in st.stats.items()),
+                      reverse=True)[:HOT_N]
+        out["hot"] = [_fmt_frame(f, l, fn, tt) for tt, f, l, fn in rows]
+        out["stdlib_hot"] = not _engine_owned(rows[0][1]) if rows else True
+    if sides:
+        top = max(sides, key=lambda r: r.get("rss_kb") or 0)
+        out["rss_kb"], out["rss_verb"] = top.get("rss_kb"), top.get("verb")
+    return out
+
+
+def _profiled(cmd, *, cwd=None, env=None, timeout=3600) -> dict:
+    """The lane again, every graphy verb under the profiler; the timed run above stays clean."""
+    if not PROFILE:
+        return {}
+    global PROFILE_SECONDS
+    d = Path(tempfile.mkdtemp(prefix="graphy-profile-"))
+    try:
+        _, _, secs = _run(cmd, cwd=cwd, env={**(env or {}), "GRAPHY_PROFILE_DIR": str(d)}, timeout=timeout)
+        PROFILE_SECONDS += secs
+        return summarize_profiles(d)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def measure_floor(py: str) -> dict:
     rc, out, secs = _run([py, "-m", "pytest"], cwd=ENGINE)      # pyproject already says -q; a second -q silences the summary
     return {"passed": _num(r"(\d+) passed", out, default=0), "failed": _num(r"(\d+) failed", out, default=0),
-            "skipped": _num(r"(\d+) skipped", out, default=0), "seconds": secs, "rc": rc}
+            "skipped": _num(r"(\d+) skipped", out, default=0), "seconds": secs, "rc": rc,
+            **_profiled([py, "-c", _FLOOR_DRIVER], cwd=ENGINE)}
 
 
 def measure_gate() -> dict:
@@ -83,7 +168,8 @@ def measure_tenant(name: str, py: str) -> dict:
     return {"ok": f"{name.upper()}_TENANT_OK" in out, "seconds": secs,
             "shards": len(re.findall(r"^MINT OK: |^PULL OK: ", out, re.M)),
             "nodes": _num(r"BUILD OK: compiled (\d+) nodes", out), "edges": _num(r"BUILD OK: compiled \d+ nodes / (\d+) edges", out),
-            "arms": _num(r"ARMS OK: (\d+) arm", out), "atlas": _num(r"ATLAS OK: (\d+) picture", out), "rc": rc}
+            "arms": _num(r"ARMS OK: (\d+) arm", out), "atlas": _num(r"ATLAS OK: (\d+) picture", out), "rc": rc,
+            **_profiled(["bash", str(ENGINE / "tenants" / name / "rebuild.sh")], env=env)}
 
 
 def measure_quickstart(url: str) -> dict:
@@ -91,7 +177,8 @@ def measure_quickstart(url: str) -> dict:
     shutil.rmtree(HERE / "staging" / "quickstart" / name, ignore_errors=True)
     rc, out, secs = _run(["bash", str(HERE / "quickstart.sh"), url])
     return {"repo": name, "ok": "GRAPHY_QUICKSTART_OK" in out, "seconds": secs,
-            "ring": _num(r"RING: (\d+) shard", out), "rc": rc}
+            "ring": _num(r"RING: (\d+) shard", out), "rc": rc,
+            **_profiled(["bash", str(HERE / "quickstart.sh"), url])}
 
 
 def measure_index(py: str) -> dict:
@@ -100,10 +187,22 @@ def measure_index(py: str) -> dict:
         return {"present": False}
     rc, out, secs = _run([py, "-m", "graphy", "index", "--index", str(idx), "--verify"], cwd=ENGINE)
     return {"present": True, "names": _num(r"INDEX OK: (\d+) named", out) or _num(r"(\d+) named shard", out),
-            "broken": _num(r"(\d+) broken", out, default=None), "verify_seconds": secs, "rc": rc}
+            "broken": _num(r"(\d+) broken", out, default=None), "verify_seconds": secs, "rc": rc,
+            **_profiled([py, "-m", "graphy", "index", "--index", str(idx), "--verify"], cwd=ENGINE)}
 
 
-def run(out: Path, quick: bool) -> dict:
+def pass_summary(r: dict) -> dict:
+    """The optimization pass's own number: how many lanes are hottest inside the engine."""
+    lanes = {"floor": r.get("floor", {}), **{f"tenants.{k}": v for k, v in r.get("tenants", {}).items()},
+             **{f"quickstart.{k}": v for k, v in r.get("quickstart", {}).items()}, "index": r.get("index", {})}
+    engine_hot = sorted(k for k, v in lanes.items() if v.get("stdlib_hot") is False)
+    return {"engine_hot_lanes": len(engine_hot), "engine_hot": engine_hot,
+            "profiled": bool(PROFILE), "rule": "the pass ends when engine_hot_lanes reads 0"}
+
+
+def run(out: Path, quick: bool, profile: bool = True) -> dict:
+    global PROFILE, PROFILE_SECONDS
+    PROFILE, PROFILE_SECONDS = profile, 0.0
     py = str(VENV_PY if VENV_PY.exists() else sys.executable)
     t0 = time.perf_counter()
     r = {"measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "host": os.uname().nodename, "python": py, "quick": quick,
@@ -112,7 +211,9 @@ def run(out: Path, quick: bool) -> dict:
         r["tenants"] = {t: measure_tenant(t, py) for t in TENANTS}
         r["quickstart"] = {q["repo"]: q for q in (measure_quickstart(u) for u in QUICKSTARTS)}
         r["index"] = measure_index(py)
-    r["seconds"] = round(time.perf_counter() - t0, 1)
+    r["pass"] = pass_summary(r)
+    r["profile_seconds"] = round(PROFILE_SECONDS, 1)
+    r["seconds"] = round(time.perf_counter() - t0 - PROFILE_SECONDS, 1)      # the timed runs alone
     out.write_text(json.dumps(r, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return r
 
@@ -136,12 +237,12 @@ def diff(old: dict, new: dict, time_tolerance: float = 0.15) -> tuple[list[str],
     a, b = flatten(old), flatten(new)
     lines, bad = [], []
     for k in sorted(set(a) | set(b)):
-        if k in ("measured_at",) or k.endswith(".rc"):
+        if k in ("measured_at", "profile_seconds") or k.endswith((".rc", ".verbs", ".profiled")):
             continue
         va, vb = a.get(k), b.get(k)
         if va == vb or va is None or vb is None:
             continue
-        better = BETTER.get(k) or ("down" if k.endswith(("seconds", "bytes", "broken", "failed")) else
+        better = BETTER.get(k) or ("down" if k.endswith(("seconds", "bytes", "broken", "failed", "_kb")) else
                                    "up" if k.endswith(("passed", "names", "shards", "nodes", "edges", "arms", "ring", "atlas")) else None)
         if isinstance(va, bool) or isinstance(vb, bool):
             lines.append(f"  {k}: {va} -> {vb}")
@@ -154,7 +255,7 @@ def diff(old: dict, new: dict, time_tolerance: float = 0.15) -> tuple[list[str],
         verdict = ""
         if better:
             good = (delta < 0) == (better == "down")
-            is_time = k.endswith(("seconds", "bytes"))
+            is_time = k.endswith(("seconds", "bytes", "_kb"))
             if not good and (not is_time or abs(rel) > time_tolerance):
                 verdict = "  REGRESSION"
                 bad.append(f"{k} {va} -> {vb} ({rel:+.0%})")
@@ -170,18 +271,19 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("--out", default=str(HERE / "recon.json"))
     r.add_argument("--quick", action="store_true", help="the floor, the gate and the wheel only (CI)")
+    r.add_argument("--no-profile", action="store_true", help="skip the second, profiled run of each lane (no hot · rss_kb)")
     d = sub.add_parser("diff")
     d.add_argument("old"), d.add_argument("new")
     d.add_argument("--time-tolerance", type=float, default=0.15)
     args = ap.parse_args(argv)
     if args.verb == "run":
-        rec = run(Path(args.out), args.quick)
+        rec = run(Path(args.out), args.quick, profile=not args.no_profile)
         f = rec["floor"]
         print(f"MEASURE OK: floor {f['passed']} passed / {f['failed']} failed in {f['seconds']}s · gate {'OK' if rec['gate']['ok'] else 'RED'} {rec['gate']['seconds']}s · "
               f"wheel {rec['wheel']['wheel_bytes']} B" + ("" if args.quick else
               " · tenants " + " ".join(f"{t}={'OK' if v['ok'] else 'RED'}/{v['seconds']}s" for t, v in rec['tenants'].items())
               + " · quickstart " + " ".join(f"{q}={'OK' if v['ok'] else 'RED'}/{v['seconds']}s" for q, v in rec['quickstart'].items()))
-              + f" · {rec['seconds']}s -> {args.out}")
+              + f" · engine-hot lanes {rec['pass']['engine_hot_lanes']}" + f" · {rec['seconds']}s -> {args.out}")
         red = [k for k, v in flatten(rec).items() if k.endswith(".ok") and v is False]
         return 1 if red else 0
     old, new = json.loads(Path(args.old).read_text()), json.loads(Path(args.new).read_text())

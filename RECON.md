@@ -2371,3 +2371,68 @@ git clone --depth 1 https://github.com/encode/httpx.git && cd httpx && graphy ea
 | the run | https://github.com/omnislash157/graphyos/actions/runs/34068845540 — build · publish, success |
 | PyPI | `graphyos 0.1.0`, the wheel listed |
 | a stranger's two lines | install from PyPI 1.1 s; eat a fresh httpx clone 5.2 s; the showcase page green |
+
+## 48 · THE OPTIMIZATION PASS — the contract, the instrument, the first profile table (2026-09-07 · graphyos issue 12)
+
+**The contract.** An `optimization` issue lands only when `burden.json` is unchanged or smaller
+(`python3 burden.py`), `measure.py diff BEFORE AFTER` exits 0 and names the mover, every pinned
+receipt (fixture parity · `graphy arms --verify` · the fanout and atlas receipts · the index verify)
+reads identical unless the issue says which bytes move and why, and the floor's count holds on both
+interpreters. **The termination** is mechanical: the pass ends when `pass.engine_hot_lanes` reads 0 —
+no lane's top self-time frame lives under `graphy/`.
+
+**The instrument.** `GRAPHY_PROFILE_DIR=<dir>` makes every `graphy` verb run under `cProfile` and
+leave `<verb>-<pid>.prof` + `.json` (verb · argv · seconds · `rss_kb`, its own peak resident set)
+there; unset, nothing is imported for it. A process under the profiler names itself in
+`GRAPHY_PROFILE_PID`, so a verb called in-process by another (eat → smash; a test under the floor's
+profiler) is not profiled twice — cProfile does not nest and the nested stats came back empty — while
+a child process still is. `measure.py run` runs every timed lane a second time under it (the timed
+run is never the profiled one; `profile_seconds` is carried and never judged) and lands per lane:
+`hot` (the three top self-time frames, engine-owned ones marked), `rss_kb` + `rss_verb`,
+`stdlib_hot`. `rss_kb` regresses like a time. `--no-profile` skips the second runs.
+
+**One caveat the table carries.** cProfile sees a compiled extension's method as its Python caller's
+self-time: `container._write_parquet` owns the seconds duckdb spends inside `con.execute`. That is
+still the engine's lane to answer for — the writer chose one connection, one JSON feed and one COPY
+per shard — so the rule stands as written and the caller is the target.
+
+```bash
+python3 measure.py run --out recon.json
+#   MEASURE OK: floor 455 passed / 0 failed in 14.9s · gate OK 24.4s · wheel 261058 B
+#     · tenants fastapi=OK/4.7s sqlalchemy=OK/8.8s hono=OK/2.9s express=OK/2.5s graphy=OK/2.9s
+#     · quickstart httpx=OK/5.9s express=OK/6.4s · engine-hot lanes 5 · 79.0s -> recon.json   (profile_seconds 77.1)
+python3 -c "import json;r=json.load(open('recon.json'));print(r['pass']);[print(k,v['hot'],v['rss_kb']) for k,v in r['tenants'].items()]"
+GRAPHY_PROFILE_DIR=/tmp/p python3 -m graphy explain sqlalchemy.orm.session.Session --tenant engine/tenants/sqlalchemy/tenant.json --tenant-id sqlalchemy; ls /tmp/p
+```
+
+The first profile table — the board for the pass, re-derived by the first command above:
+
+| lane | seconds | peak RSS (verb) | hottest frame | engine hot |
+|---|---|---|---|---|
+| floor | 14.9 | 156 MB (build) | `container._write_parquet` 4.83 s · `sqlite3.executescript` 4.53 s · `_thread.lock.acquire` 2.70 s | yes |
+| fastapi | 4.7 | 165 MB (build) | `container._write_parquet` 0.67 s · `ast.iter_child_nodes` 0.51 s · `isinstance` 0.50 s | yes |
+| sqlalchemy | 8.8 | 298 MB (build) | `json.raw_decode` 1.48 s · `container._write_parquet` 1.19 s · `ast.iter_child_nodes` 1.02 s | no |
+| hono | 2.9 | 148 MB (build) | `tree_sitter.Parser.parse` 0.50 s · `container._write_parquet` 0.38 s · `json.raw_decode` 0.22 s | no |
+| express | 2.5 | 129 MB (build) | `duckdb.connect` 0.36 s · `container._write_parquet` 0.22 s | no |
+| graphy | 2.9 | 155 MB (build) | `container._write_parquet` 0.38 s · `ast.iter_child_nodes` 0.34 s · `json.raw_decode` 0.31 s | yes |
+| quickstart httpx | 5.9 | 154 MB (eat) | `container._write_parquet` 2.81 s · `select.poll` 1.20 s (pip) | yes |
+| quickstart express | 6.4 | 146 MB (eat) | `container._write_parquet` 6.58 s over 85 ring shards | yes |
+| index verify | 2.5 | 175 MB | `sha256` 2.08 s | no |
+
+What it says: the parquet emit beside every shard is the engine's hottest frame in five of nine lanes
+and costs the express quickstart more than the mint did (graphyos issue 21, filed from this table);
+`json.raw_decode` in the sqlalchemy and graphy lanes is the freshness digest's parse (issue 13);
+`ast.iter_child_nodes` + `isinstance` is the producer's repeated walk (issue 14); the floor's
+`executescript` is the store's schema per test store and its `lock.acquire` is the seat-lock wait
+(issue 19). The gate's number spans 21.4–25.0 s across five runs this session with no code change
+between them: its `pip install` into a fresh venv is network-bound, so its 15% tolerance sits inside
+that noise on this box; on CI the base and the head run on one runner back to back, which is the
+diff that gates.
+
+| check | result |
+|---|---|
+| the hook | one `.prof` + `.json` per verb; two in-process calls under one profiler leave one; unset leaves nothing (`tests/test_measure.py`) |
+| the summarizer | the hot frames, the heaviest verb's RSS, engine-owned marked; an empty stats file is named under `unreadable`, never a crash |
+| the pass number | `pass.engine_hot_lanes` 5 of 9 lanes, with the lanes named; `stdlib_hot` flipping to false is a regression |
+| the receipt | 79.0 s timed + 77.1 s profiled; the graphy tenant's CLI arm re-rendered (the walk moved: `_main` · `_profiled`), ARMS OK |
+| found on the way | `CHANGELOG.md` had stopped at §38: every section since the split says `graphyos issue N` and `release.sh` read only `issue N`; the pattern widened, 38 entries, the public board's sections tagged `graphyos #N` |
