@@ -61,7 +61,7 @@ scrub.py              the prose scrub that never names what it scrubs: tokens ha
 census.sh             where the private language sits, per tracked directory → CENSUS OK is the public cut's tripwire
 burden.py             the burden invariants (burden.json): zero runtime dependencies, the extras by name, the wheel under its cap, every host and every subprocess program on the list, every tracked engine doc declared or an arm region, the scrub — the gate refuses growth by name
 measure.py            the receipt: every RECON number re-derived into recon.json by `run` (--quick for CI); `diff OLD NEW` names every number that moved and exits 1 on a regression — the improvement gate's before and after
-release.sh            the release made mechanical: wheel + sdist into dist/, twine check, CHANGELOG.md derived from RECON's section titles (--check in the gate); publishing is the operator's printed command
+release.sh            the release made mechanical: wheel + sdist into dist/, twine check, CHANGELOG.md derived from RECON's section titles (--check in the gate); a `v<version>` tag on the public repo publishes to PyPI by trusted publishing (release.yml), no token
 CHANGELOG.md          derived from RECON.md by release.sh — a build product the gate verifies, the one generated doc in git besides the arm regions
 .private_markers.sha256  the hashes of the words that must not travel (the words live in no tracked file)
 .mcp.json             Claude Code's pointer at the FastAPI tenant's MCP server (engine/tenants/fastapi/mcp.sh)

@@ -2350,3 +2350,24 @@ pr 11     "dry run: the gate on a pull request"  run 34038105991 success — BUR
 | the issue lane | https://github.com/omnislash157/graphyos/issues/10 — the showcase posted from a fresh runner |
 | the PR gate | https://github.com/omnislash157/graphyos/pull/11 — burden and receipt posted; the check green |
 | what a PR carries now | the blast radius, the burden verdict, the receipt diff — three comments from the tool |
+
+## 47 · PUBLISHED — graphyos 0.1.0 on PyPI by trusted publishing (2026-09-07 · graphyos issue 1)
+
+The operator registered a pending publisher on pypi.org (owner `omnislash157`, repository
+`graphyos`, workflow `release.yml`, environment `pypi`); `release.yml` builds the wheel and the
+sdist from `engine/` on a `v<version>` tag, refuses a tag that is not the version in
+`pyproject.toml`, checks both with twine, and publishes by OIDC — no token exists anywhere.
+The tag `v0.1.0` on the public repo ran it: build success, publish success, the project created.
+
+```bash
+python3 -m venv venv && venv/bin/pip install 'graphyos[estate,typescript]'      # from PyPI, 1.1 s
+git clone --depth 1 https://github.com/encode/httpx.git && cd httpx && graphy eat . && graphy showcase .
+#   PROVISION OK: pip install httpx into …/.graphy/venv · EAT OK: httpx + 6 ring shard(s)        5.2 s
+#   SHOWCASE OK: httpx · 3 arm(s) (MODELS, CLIENT, EXCEPTIONS) · 6 ring shard(s) · CHECK GREEN
+```
+
+| check | result |
+|---|---|
+| the run | https://github.com/omnislash157/graphyos/actions/runs/34068845540 — build · publish, success |
+| PyPI | `graphyos 0.1.0`, the wheel listed |
+| a stranger's two lines | install from PyPI 1.1 s; eat a fresh httpx clone 5.2 s; the showcase page green |
