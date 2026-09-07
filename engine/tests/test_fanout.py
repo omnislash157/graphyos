@@ -433,6 +433,17 @@ def test_fanout_windows_seat_lock_serializes(tmp_path, monkeypatch):
             return real_write(self, data)
 
         monkeypatch.setattr(Path, "write_bytes", _pausing_write)
+        real_acquire = fanout_mod._acquire_publish_lock
+        b_acquired = threading.Event()
+        order: list[str] = []
+
+        def _noting_acquire(lock_f):
+            real_acquire(lock_f)
+            if threading.current_thread().name == "writer-b":
+                order.append("b-acquired")
+                b_acquired.set()
+
+        monkeypatch.setattr(fanout_mod, "_acquire_publish_lock", _noting_acquire)
         done: dict[str, dict] = {}
         ta = threading.Thread(
             name="writer-a",
@@ -443,12 +454,18 @@ def test_fanout_windows_seat_lock_serializes(tmp_path, monkeypatch):
             name="writer-b",
             target=lambda: done.update(b=fanout_mod.compile_fanout(graph_b, out)))
         tb.start()
-        tb.join(timeout=2.0)
-        b_published_inside_window = not tb.is_alive()
+        # B says when it holds the lock; a no-op lock admits it at once, a real one
+        # not until A releases — 0.2 s is the ceiling on "still blocked", never a sleep
+        b_acquired_inside_window = b_acquired.wait(timeout=0.2)
+        if b_acquired_inside_window:
+            tb.join(timeout=30)  # B's publish lands inside A's window — the overlap the control wants
+        order.append("a-released")
         release.set()
         ta.join(timeout=30)
         tb.join(timeout=30)
         assert not ta.is_alive() and not tb.is_alive(), "a writer never finished"
+        assert b_acquired.is_set(), "writer B never took the lock"
+        b_published_inside_window = b_acquired_inside_window or order.index("b-acquired") < order.index("a-released")
         assert "a" in done and "b" in done, "a writer died instead of returning"
         receipt = json.loads((out / "receipt.json").read_text(encoding="utf-8"))
         lies = []

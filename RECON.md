@@ -2747,3 +2747,57 @@ cd .. && python3 measure.py run --out recon.json && python3 measure.py diff reco
 | the layout does not move | the sqlalchemy atlas drawn before and after: 12 files byte-identical by `cmp`; every tenant's `atlas.json` `files` map identical before and after the rebuild — fastapi 12 · sqlalchemy 12 · hono 14 · express 12 · graphy 16 |
 | the five rebuilds | `ARMS OK` fastapi 4 · sqlalchemy 5 · hono 5 · express 4 · graphy 6 (the graphy tenant named `ARMS DRIFT` once — `_count_crossings_pairwise` is a new function of `sugiyama`; the CUT region re-rendered); `ATLAS OK` on all five |
 | the receipt | two full runs: the first read gate RED — its changelog check ran in the minute between this section's append and the gate's own regenerate, `standalone_check.sh` run directly after is `GRAPHY_STANDALONE_OK` with `changelog OK`; the clean run: floor 468 passed (467, the one test added) in 18.2 s (30.3 — the §53 box noise gone), gate OK 24.6 s (37.4), fastapi 3.5 → 3.3 s, sqlalchemy 6.6 → 6.1 s, hono 2.7 → 2.6, express 2.6 → 2.5, graphy 2.5 → 2.4 with `ARMS OK` and every door green, index verify 2.6 → 2.5 with 0 broken, wheel 268,759 → 269,249 B under the cap, the whole receipt 108.3 → 84.9 s; the diff names three regressions and none is this lane's — `pass.engine_hot_lanes` 5 → 6 because the floor's two top frames swapped places (`container._write_parquet` 7.3 s ahead of `sqlite3.executescript` 6.7 s, both there before at 13.8 and 14.8 s; no `sugiyama` frame in any lane's hot three), and quickstart express `eat_seconds` 5.8 → 8.3 with its profiled frames unchanged (`container.emit` 5.86 → 5.81 s) — the eat run directly on two fresh clones after the receipt read 5.8 · 5.7 s, the delta is `npm install` under the receipt; `container._write_parquet` is the top engine frame of every lane that emits parquet — the next lane |
+
+## 55 · THE FLOOR WAITS FOR EVENTS, NEVER SLEEPS — the same tests, the same RED proofs, 3 s less (2026-09-07 · graphyos issue 19)
+
+**What it was.** The floor is most of the gate, and the slowest test was a fixed wait:
+`test_fanout_windows_seat_lock_serializes` held `tb.join(timeout=2.0)` twice to prove writer B
+stays blocked while writer A holds the publish lock — 2.0 s of a 15–18 s floor, on every run, on
+both interpreters in CI. Two more tests proved a lock the same way with a 0.4 s and a 0.3 s join.
+The issue named the next eleven as subprocess round trips; the profiler disagrees — only one
+floor test spawns `python -m graphy` (the entry-point proof, `test_python_m_graphy_wire_subprocess`)
+and the three `refresh` tests pay the refresh lane's own design (it proves the sibling by running
+`converge · build · check` as processes). What the eleven actually paid: `test_pull_over_http_is_byte_identical`
+0.5 s in `serve_forever`'s default 0.5 s poll interval, which `shutdown()` waits out; and two tests
+that delete a shard directory on purpose then walk it (`test_check_could_not_tell_absent_roster_dir`,
+`test_RED_unmeasurable_input_raises_never_serves`) paid `cartograph.resolve_graph`'s transient-ENOENT
+retry — five sleeps of 0.05 s per resolve, ten resolves, 0.75 s of nothing.
+
+**What it is.** The three lock tests prove "still blocked" by an event the blocked side sets the
+moment it is past the lock — the seat-lock test wraps `_acquire_publish_lock` so writer B says when
+it holds it; the journal test's B sets it when it reaches the (already trapped) tail; the mesh
+worker sets it inside `_index_lock`. The wait is `event.wait(timeout=0.2)`, the ceiling on "still
+blocked", and the seat-lock control (the no-op lock) joins B the moment it holds the lock so its
+publish lands inside A's window, exactly the overlap the control wants. The http test serves with
+`poll_interval=0.01`. The two deleting tests stub `cartograph.time.sleep`, and
+`test_transient_enoint_retry_materializes_on_first_sleep` still counts the retry's one sleep.
+No engine line moved; no xdist; no extra; 468 tests before and after.
+
+```bash
+cd engine
+../.venv/bin/python -m pytest -q --durations=12                       # the twelve slowest, after
+git stash; for i in 1 2; do /usr/bin/time -f "%e s" ../.venv/bin/python -m pytest -q -p no:cacheprovider; done; git stash pop
+# the RED proofs: each lock removed, its test fails
+sed -i 's/_f.flock(fd, _f.LOCK_EX if mode == self.LK_LOCK else _f.LOCK_UN)/pass/' tests/test_fanout.py && ../.venv/bin/python -m pytest -q tests/test_fanout.py::test_fanout_windows_seat_lock_serializes; git checkout tests/test_fanout.py
+sed -i '239s/_flock.flock(fh.fileno(), _flock.LOCK_EX)/pass/' graphy/journal.py && ../.venv/bin/python -m pytest -q tests/test_journal.py::test_concurrent_appends_never_mint_duplicate_seq; git checkout graphy/journal.py
+sed -i '183s/fcntl.flock(lf.fileno(), fcntl.LOCK_EX)/pass/' graphy/mesh_federation_gate.py && ../.venv/bin/python -m pytest -q tests/test_mesh_federation.py::test_one_lock_build_index_concurrent_observer_loses_no_row; git checkout graphy/mesh_federation_gate.py
+cd .. && python3 measure.py run && python3 measure.py diff recon.before19.json recon.json
+```
+
+| test | before | after |
+|---|---|---|
+| `test_fanout_windows_seat_lock_serializes` | 2.00 s | 0.21 s (the real-lock window's 0.2 s ceiling; the control returns at once) |
+| `test_pull_over_http_is_byte_identical` | 0.52 s | 0.02 s |
+| `test_check_could_not_tell_absent_roster_dir` | 0.60 s | 0.11 s |
+| `test_RED_unmeasurable_input_raises_never_serves` | 0.34 s | 0.09 s |
+| `test_concurrent_appends_never_mint_duplicate_seq` | 0.40 s | 0.20 s |
+| `test_one_lock_build_index_concurrent_observer_loses_no_row` | 0.30 s | 0.20 s |
+| the floor, direct, two runs each (`pytest -q -p no:cacheprovider`) | 18.5 · 17.8 s | 15.5 · 15.0 s |
+| the slowest after | `test_GREEN_fixture_is_re_minted_by_the_engine_after_a_green_check` 0.85 s — the refresh lane's three `python -m graphy` processes, by design; the three refresh tests are the top three now |
+
+| check | result |
+|---|---|
+| the RED proofs | the shim's real lock removed → `writer B published inside writer A's locked window`; the journal's flock removed → `worker B must BLOCK at the journal lock while A holds it`; the mesh gate's flock removed → `the worker must BLOCK at the index lock while it is held`; the no-op control still fails the seat-lock test when B's publish does not land inside A's window (found while landing: the event alone let A resume before B published, the control read a truthful receipt; B is joined once it holds the lock) |
+| the floor | 468 passed · 3 skipped on 3.12, before and after |
+| the receipt | `measure.py run` then `diff recon.before19.json recon.json`: `MEASURE DIFF OK: 37 number(s) moved, none the wrong way past tolerance` — floor 468 passed · 3 skipped before and after, 18.2 → 17.7 s under the receipt (the direct runs above read 18.5 · 17.8 → 15.5 · 15.0 s; the receipt's floor ran beside a stale watcher loop from the previous session), gate OK 24.6 → 21.9 s, the whole receipt 84.9 → 82.3 s; every tenant's doors green within the tolerance |
+| CI | red on every push since 6e47127 (30 pushes) with zero jobs: the receipt step's name `the receipt (quick: the floor, the gate, the wheel)` held an unquoted `: ` and the file did not parse (`yaml.safe_load`: line 43, column 33) — quoted here, every file under `.github/workflows/` parses; the floor on 3.10 and 3.12 reads from the push of this section; the gate reads no workflow file → graphyos issue 22 |

@@ -132,7 +132,7 @@ def test_pull_over_http_is_byte_identical(tmp_path: Path) -> None:
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(idx))
     handler.log_message = lambda *a, **k: None  # type: ignore[attr-defined]
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t = threading.Thread(target=lambda: srv.serve_forever(poll_interval=0.01), daemon=True)
     t.start()
     try:
         base = f"http://127.0.0.1:{srv.server_address[1]}"

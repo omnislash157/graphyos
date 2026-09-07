@@ -179,12 +179,16 @@ def test_concurrent_appends_never_mint_duplicate_seq(tmp_path, monkeypatch):
     first = threading.Lock()
     trapped = {"done": False}
 
+    b_in_section = threading.Event()
+
     def trapping_tail(content):
         with first:
             if not trapped["done"]:
                 trapped["done"] = True
                 in_section.set()
                 assert release.wait(timeout=10), "release never came"
+            else:
+                b_in_section.set()
         return real_tail(content)
 
     monkeypatch.setattr(gj, "_tail_state", trapping_tail)
@@ -199,8 +203,8 @@ def test_concurrent_appends_never_mint_duplicate_seq(tmp_path, monkeypatch):
     assert in_section.wait(timeout=10)
     tb = threading.Thread(target=worker, args=("bb", "aacursor"))
     tb.start()
-    tb.join(timeout=0.4)
-    assert tb.is_alive(), "worker B must BLOCK at the journal lock while A holds it"
+    # B reaches the tail only past the journal lock; 0.2 s is the ceiling on "still blocked"
+    assert not b_in_section.wait(timeout=0.2), "worker B must BLOCK at the journal lock while A holds it"
     release.set()
     ta.join(timeout=10)
     tb.join(timeout=10)

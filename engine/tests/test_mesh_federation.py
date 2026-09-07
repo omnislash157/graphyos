@@ -186,9 +186,12 @@ def test_one_lock_build_index_concurrent_observer_loses_no_row(tmp_path, monkeyp
     monkeypatch.setattr(gate, "_index_lock", tracking_lock)
     monkeypatch.setattr(gate, "build_index", real_build_index)
 
+    entered = threading.Event()
+
     def worker():
         try:
             with gate._index_lock(tenant):
+                entered.set()
                 idx = gate.build_index(tenant)
                 gate._write_index(idx, tenant)
             results["ok"] = True
@@ -198,7 +201,7 @@ def test_one_lock_build_index_concurrent_observer_loses_no_row(tmp_path, monkeyp
     with gate._index_lock(tenant):
         t = threading.Thread(target=worker)
         t.start()
-        t.join(timeout=0.3)
+        assert not entered.wait(timeout=0.2), "the worker must BLOCK at the index lock while it is held"
         assert "ok" not in results
         assert not results.get("err")
     t.join(timeout=10)

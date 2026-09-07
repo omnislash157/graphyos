@@ -268,7 +268,9 @@ def test_check_could_not_tell_missing_override_registry(tmp_path, capsys):
     assert "registry" in out.err
 
 
-def test_check_could_not_tell_absent_roster_dir(tmp_path, capsys):
+def test_check_could_not_tell_absent_roster_dir(tmp_path, capsys, monkeypatch):
+    # the directory is gone on purpose: the transient-ENOENT retry has nothing to wait for
+    monkeypatch.setattr("graphy.cartograph.time.sleep", lambda _seconds: None)
     descriptor = _single_node_fixture(tmp_path)
     assert cli.main(["build", "--tenant", str(descriptor),
                      "--tenant-id", "cli-build"]) == 0

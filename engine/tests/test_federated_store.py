@@ -285,10 +285,12 @@ def test_RED_stale_store_refuses_naming_the_digest_mismatch(tmp_path):
                     db_path=db, on_stale="refuse")
 
 
-def test_RED_unmeasurable_input_raises_never_serves(tmp_path):
+def test_RED_unmeasurable_input_raises_never_serves(tmp_path, monkeypatch):
     tenant, data_home = _walk_fixture(tmp_path)
     db = _compile(tenant, tmp_path)
     shutil.rmtree(data_home / "widgets_graph")
+    # the shard is gone on purpose: the transient-ENOENT retry has nothing to wait for
+    monkeypatch.setattr("graphy.cartograph.time.sleep", lambda _seconds: None)
     with pytest.raises(fs.StoreError, match="could not tell"):
         fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="t",
                     db_path=db, on_stale="warn")

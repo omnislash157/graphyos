@@ -40,7 +40,7 @@ jobs:
         run: bash standalone_check.sh
       - name: the census
         run: bash census.sh
-      - name: the receipt (quick: the floor, the gate, the wheel)
+      - name: "the receipt (quick: the floor, the gate, the wheel)"
         run: |
           python -m venv .venv && .venv/bin/pip install -q -e "engine[dev,typescript,estate]" build twine
           python3 measure.py run --quick --out recon.json
