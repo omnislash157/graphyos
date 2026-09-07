@@ -2491,3 +2491,53 @@ process each, on the tenant's first pillar's module id (`tenants.<name>.doors.{e
 | the receipt | five full runs this session; the last: floor 459 passed in 16.5 s (the direct floor 15.2–15.8 s on three runs, `before` 14.9), gate OK 22.8 s, `pass.engine_hot_lanes` 5 → 4 (the graphy and sqlalchemy lanes' hottest frame is now the producer's `ast.iter_child_nodes` — issue 14), fastapi 4.7 → 3.7 s, sqlalchemy 8.8 → 7.4 s, hono 2.9 → 2.7 s, graphy 2.9 → 2.6 s |
 | the doors lane | `tenants.<name>.doors.seconds` on the last run: express 0.085 · fastapi 0.098 · graphy 0.084 · hono 0.085 · sqlalchemy 0.136 (its `explain`; `descend` 0.091) — the SQLAlchemy `explain` sits above the issue's 0.1 s line by the `graphy.cli` import (~60 ms, issue 20), not by any load |
 | noise, named | `quickstart.express.seconds` read 6.2 · 6.5 · 9.1 · 9.7 · 9.8 across the five runs with the engine's own frames identical in every profile (`container.emit` 6.5 s): its clone and `npm install` are network-bound, like the gate's pip in §48; `tenants.express.seconds` 2.5 → 2.6 on four runs and 2.9 on the fifth at load average 1.5 — the diff on this box names them, CI's back-to-back diff on one runner is the gate |
+
+## 50 · THE PRODUCER WALKS ONCE — one level-order pass per file, byte-identical shard (2026-09-07 · graphyos issue 14)
+
+**What it was.** `python_ast` read every file about twice: `_emit_import_edges` walked the whole
+tree with `ast.walk` for the import statements, then `_calls_in` walked each tracked definition's
+subtree again for its calls — on SQLAlchemy (256 files, 735,877 AST nodes) 1,384,656 visits over
+10,747 `ast.walk` calls, and every visit through `ast.iter_child_nodes`, a generator over a
+generator (`iter_fields`) per node — §49's hottest frame in the graphy and sqlalchemy lanes.
+
+**What it is.** `_scan` is ONE level-order pass per file — the order `ast.walk` yields, so every
+record lands where it did. It collects the import statements wherever they sit and, keyed by the
+tracked definition that owns them, every call: a definition is tracked when `_defs_in` reaches it
+(a module, a class body, a compound statement, never a function body), and a call belongs to the
+outermost tracked function around it — the one whose subtree the old per-definition walk read. The
+children come straight off each class's `_fields`; the generator `iter_child_nodes` builds cost
+three times the walk. `_walk_stmt` reads its calls from the map. Nothing else moved: the record
+order, the ids, the dialect. The TypeScript producer already walks once (its `_calls_in` skips
+nested definitions; on hono the tree-sitter parse is 0.24 s of a 0.42 s `build_ir`) — no change.
+
+```bash
+cd engine && SP=$(ls -d ../staging/corpora/sqlalchemy/venv/lib/python*/site-packages)
+../.venv/bin/python - "$SP" <<'PY'
+import sys, time, ast
+from pathlib import Path
+from graphy.adapters import python_ast as P
+trees = [ast.parse(f.read_text()) for f in P.walk_files(Path(sys.argv[1]) / "sqlalchemy")]
+print("nodes", sum(1 for t in trees for _ in ast.walk(t)))
+t = time.perf_counter(); [P._scan(tr) for tr in trees]; print("_scan %.2fs" % (time.perf_counter() - t))
+t = time.perf_counter(); [ast.parse(f.read_text()) for f in P.walk_files(Path(sys.argv[1]) / "sqlalchemy")]; print("parse %.2fs" % (time.perf_counter() - t))
+t = time.perf_counter(); P.build_ir(Path(sys.argv[1]) / "sqlalchemy"); print("build_ir %.2fs" % (time.perf_counter() - t))
+PY
+../.venv/bin/python -m graphy smash --package fastapi --site-packages ../staging/corpora/venv/lib/python3.12/site-packages --out /tmp/fa --parity tests/fixtures/fastapi_graph | grep PARITY
+python3 -m pytest -q tests/test_adapters.py -k visits_every_node
+cd .. && python3 measure.py run --out recon.json && python3 measure.py diff recon.before14.json recon.json
+```
+
+| on SQLAlchemy (256 files · 735,877 nodes) | before | after |
+|---|---|---|
+| node visits per mint | 1,384,656 (1.9 per node) | 735,877 (1 per node; the floor test counts the pops) |
+| the traversal alone (`_scan` vs the two walks) | 0.94 s | 0.29 s |
+| `build_ir` | 1.39 s | 1.05 s — `ast.parse` is 0.80 s of it, the stdlib's floor |
+| `graphy smash` wall (mint + ring) | 2.06–2.24 s · 129 MB (the old producer run from a scratch copy of the package) | 1.68–1.71 s · 130 MB — the ring's shards byte-identical (`cmp` on nodes.json · edges.json) |
+
+| check | result |
+|---|---|
+| parity | `PARITY OK: fastapi_graph.records@sha256:21ed3ce1…` — 507 nodes / 3715 edges identical to the fixture; the old producer (from `git show HEAD~1`) and the new one produce byte-identical records on sqlalchemy (11,959 nodes / 56,604 edges) and on graphy itself |
+| the floor test | `test_python_ast_visits_every_node_of_a_file_exactly_once`: pops == `ast.walk`'s node count on a sample file; an import in a function body is the module's, a nested def's calls are the outer function's, a class body's own calls are nobody's, a def under `match` is not a node and its calls are not edges — the old attribution, pinned |
+| hono · express | rebuilt `ARMS OK`, `atlas.json` byte-identical before and after (`cmp`) |
+| the receipt | two full runs this session; the clean one: floor 460 passed in 14.6 s (16.5 before), gate OK 23.4 s, fastapi 3.7 → 3.5 s, sqlalchemy 7.4 → 6.8 s (RSS 301 → 288 MB), graphy 2.6 → 2.5 s, express 2.9 → 2.6 s, hono 2.7 → 2.7, quickstart httpx 5.7 → 5.1 s, express 9.8 → 6.3 s, the whole receipt 81.3 → 74.7 s. `pass.engine_hot_lanes` reads 4 → 6, which is the metric telling the truth: the producer's stdlib frame (`ast.iter_child_nodes`) no longer sits on top of the graphy and sqlalchemy lanes, so their hottest frame is the engine's `container._write_parquet` (0.32 s · 1.06 s), and the floor's hottest frame is the same `_write_parquet` at 4.89 s over `sqlite3.executescript` 4.09 s — the parquet writer is the next lane, the producer is done: its share of a sqlalchemy mint is `_scan` 0.76 s under the profiler against `ast.parse`, the stdlib's floor |
+| noise, named | `floor.seconds` read 20.1 in the first receipt of this session against 16.5 before; the direct floor read 14.5 and 15.2 on two runs straight after — the same network- and load-bound noise §49 names |

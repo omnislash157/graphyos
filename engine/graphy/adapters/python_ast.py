@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections import deque
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -60,10 +61,51 @@ def _expr_repr(node: ast.AST) -> str:
         return f"<{type(node).__name__}>"
 
 
-def _calls_in(func: ast.AST) -> Iterator[tuple[str, int]]:
-    for node in ast.walk(func):
-        if isinstance(node, ast.Call):
-            yield _expr_repr(node.func), getattr(node, "lineno", 0)
+_COMPOUND = (ast.If, ast.Try, ast.With, ast.AsyncWith, ast.For, ast.AsyncFor, ast.While)
+if hasattr(ast, "TryStar"):
+    _COMPOUND = _COMPOUND + (ast.TryStar,)
+# the nodes _defs_in descends through on its way to a definition: a module, a class body, a
+# compound statement and its handlers — a definition under anything else is not tracked
+_SCOPE = _COMPOUND + (ast.Module, ast.ClassDef, ast.ExceptHandler)
+_FUNC = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, int]]]]:
+    """One level-order pass over every node of a file — the order ``ast.walk`` yields them, so the
+    records read the same — visiting no node twice. It collects the import statements wherever
+    they sit and, keyed by the tracked definition that owns them, every call: a definition is
+    tracked when ``_defs_in`` reaches it (never inside a function body), and a call belongs to the
+    outermost tracked function around it, the one whose subtree the old per-definition walk read.
+    The children come straight off each class's ``_fields`` — the generator ``ast.iter_child_nodes``
+    builds costs three times the walk."""
+    imports: list[ast.AST] = []
+    calls: dict[ast.AST, list[tuple[str, int]]] = {}
+    todo: deque[tuple[ast.AST, ast.AST | None, bool]] = deque([(tree, None, True)])
+    pop, push = todo.popleft, todo.append
+    Call, Imports, Func, Scope, Node = ast.Call, (ast.Import, ast.ImportFrom), _FUNC, _SCOPE, ast.AST
+    while todo:
+        node, owner, tracked = pop()
+        cls = type(node)
+        if cls is Call:
+            if owner is not None:
+                calls.setdefault(owner, []).append((_expr_repr(node.func), getattr(node, "lineno", 0)))
+        elif cls in Imports:
+            imports.append(node)
+        elif cls in Func:
+            if owner is None and tracked:
+                owner = node
+            tracked = False
+        elif not issubclass(cls, Scope):
+            tracked = False
+        for name in cls._fields:
+            value = getattr(node, name, None)
+            if isinstance(value, Node):
+                push((value, owner, tracked))
+            elif isinstance(value, list):
+                for child in value:
+                    if isinstance(child, Node):
+                        push((child, owner, tracked))
+    return imports, calls
 
 
 
@@ -78,14 +120,14 @@ def _resolve_module_dst(raw: str, package: str, local_packages: frozenset[str]) 
 
 
 def _emit_import_edges(
-    tree: ast.AST,
+    imports: list[ast.AST],
     module_id: str,
     module_dotted: str,
     package: str,
     local_packages: frozenset[str],
     is_package: bool = False,
 ) -> Iterator[dict]:
-    for node in ast.walk(tree):
+    for node in imports:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 yield {
@@ -122,9 +164,6 @@ def _emit_import_edges(
                 }
 
 
-_COMPOUND = (ast.If, ast.Try, ast.With, ast.AsyncWith, ast.For, ast.AsyncFor, ast.While)
-if hasattr(ast, "TryStar"):
-    _COMPOUND = _COMPOUND + (ast.TryStar,)
 
 
 def _defs_in(body: list) -> Iterator[ast.AST]:
@@ -151,7 +190,9 @@ def _walk_stmt(
     container_class: str | None = None,
     package: str = "",
     local_packages: frozenset[str] = frozenset(),
+    calls: dict[ast.AST, list[tuple[str, int]]] | None = None,
 ) -> Iterator[dict]:
+    calls = calls if calls is not None else {}
     if isinstance(stmt, ast.ClassDef):
         class_dotted = f"{parent_dotted}.{stmt.name}"
         class_id = _node_id("class", class_dotted)
@@ -185,7 +226,7 @@ def _walk_stmt(
         for sub in _defs_in(stmt.body):
             yield from _walk_stmt(sub, class_id, class_dotted, file_rel,
                                   container_class=stmt.name, package=package,
-                                  local_packages=local_packages)
+                                  local_packages=local_packages, calls=calls)
     elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
         kind = "method" if container_class else "func"
         func_dotted = f"{parent_dotted}.{stmt.name}"
@@ -213,7 +254,7 @@ def _walk_stmt(
                 "dst": func_id,
                 "line": stmt.lineno,
             }
-        for call_repr, line in _calls_in(stmt):
+        for call_repr, line in calls.get(stmt, ()):
             yield {
                 "kind": "edge",
                 "edge_type": "calls",
@@ -273,13 +314,14 @@ def _emit_raw_records_for_file(
         "docstring": (ast.get_docstring(tree) or "")[:200],
     }
 
-    yield from _emit_import_edges(tree, module_id, module_dotted, package,
+    imports, calls = _scan(tree)
+    yield from _emit_import_edges(imports, module_id, module_dotted, package,
                                   local_packages,
                                   is_package=file.name == "__init__.py")
 
     for stmt in _defs_in(tree.body):
         yield from _walk_stmt(stmt, module_id, module_dotted, file_rel,
-                              package=package, local_packages=local_packages)
+                              package=package, local_packages=local_packages, calls=calls)
 
 
 
