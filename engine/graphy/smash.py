@@ -75,14 +75,33 @@ def locate(scheme: str, site_packages: Path) -> Path | None:
     return f if f.is_file() else None
 
 
+_NODE_DIRS: dict[Path, dict[str, Path]] = {}
+
+
+def node_dirs_of(node_modules: Path) -> dict[str, Path]:
+    """slug → package directory for every entry of a node_modules, read once and cached by path:
+    the ring asks for one scheme at a time and used to scan every entry per ask — 86 schemes ×
+    343 entries and 37,000 ``relative_to`` calls on express, 432 ms of a 2.2 s eat (RECON.md §65).
+    The first directory in sorted order wins a slug, as the scan did."""
+    key = node_modules.resolve()
+    dirs = _NODE_DIRS.get(key)
+    if dirs is None:
+        dirs = {}
+        if key.is_dir():
+            entries = [(d.name, d) for d in sorted(key.glob("*"))] + \
+                      [(f"{d.parent.name}/{d.name}", d) for d in sorted(key.glob("@*/*"))]
+            for spec, d in entries:
+                if d.is_dir() and not d.name.startswith("."):
+                    slug = slug_for_specifier(spec)
+                    if slug is not None:
+                        dirs.setdefault(slug, d)
+        _NODE_DIRS[key] = dirs
+    return dirs
+
+
 def node_dir_for(scheme: str, node_modules: Path) -> Path | None:
     """The package directory under node_modules whose name slugs to ``scheme``, TypeScript or not."""
-    if not node_modules.is_dir():
-        return None
-    for d in sorted(node_modules.glob("*")) + sorted(node_modules.glob("@*/*")):
-        if d.is_dir() and not d.name.startswith(".") and slug_for_specifier(d.relative_to(node_modules).as_posix()) == scheme:
-            return d
-    return None
+    return node_dirs_of(node_modules).get(scheme)
 
 
 def locate_node(scheme: str, node_modules: Path) -> Path | None:

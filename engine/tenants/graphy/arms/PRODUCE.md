@@ -6,7 +6,7 @@
 A producer maps a parse tree onto the nine words (`adapters.python_ast`, `adapters.typescript_ast`); `ir` validates; `smash` mints a package into a shard and follows its imports into the ring; `index` pushes and pulls content-addressed shards; `refresh` follows upstream into a sibling; `farm` mints many; `provision` installs a repo's own dependencies for `eat`; `release` enforces one release per scheme.
 
 <!-- graphy:arm PRODUCE generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=2597b4715e5acf6f cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:e88963eee2404ec3e1d0235723eb5cbcd6536823d884f7eab2082f235abb2e56 -->
+     store=7653589b89b1ef86 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:04c01d0298b7b92bd18667d84f4e981b5fb3e889b9d175600a715e50f740ffe9 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -23,7 +23,7 @@ Every symbol the partition places in this arm, by module; a class carries its me
 **`graphy.provision`** — classes: `Provisioned`; functions: `_declaration` · `_run` · `provision`
 **`graphy.refresh`** — classes: `CheckFailed` · `Plan` · `RefreshError`; functions: `_declare` · `_descriptor` · `_fetch_pypi` · `_ids` · `_prove` · `_remint_fixture` · `_run` · `_shards` · `_sibling_tenant` · `_version_in` · `current_provenance` · `diff_shards` · `is_final` · `is_newer` · `latest_release` · `parse_version` · `plan_for` · `provision` · `refresh` · `render_pages`
 **`graphy.release`** — classes: `Release` (1) · `ReleaseError`; functions: `_owned_schemes` · `collisions` · `release_of` · `require_one_release` · `roster_releases`
-**`graphy.smash`** — classes: `Producer` (1) · `SmashError`; functions: `_counts` · `_file_receipt` · `_graphy_version` · `_import_schemes` · `_license_of` · `_reuse_from` · `_schemes` · `_write_json` · `_write_records` · `corpus_digest` · `distributions` · `distributions_node` · `divergence` · `git_head` · `golden_from_shard` · `locate` · `locate_node` · `mint` · `mint_command_for` · `node_dir_for` · `parity` · `portable` · `shard_payload` · `slug_for` · `slug_for_specifier` · `smash` · `stdlib_names`
+**`graphy.smash`** — classes: `Producer` (1) · `SmashError`; functions: `_counts` · `_file_receipt` · `_graphy_version` · `_import_schemes` · `_license_of` · `_reuse_from` · `_schemes` · `_write_json` · `_write_records` · `corpus_digest` · `distributions` · `distributions_node` · `divergence` · `git_head` · `golden_from_shard` · `locate` · `locate_node` · `mint` · `mint_command_for` · `node_dir_for` · `node_dirs_of` · `parity` · `portable` · `shard_payload` · `slug_for` · `slug_for_specifier` · `smash` · `stdlib_names`
 
 ## The inherits joins out — generated
 

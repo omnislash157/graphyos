@@ -102,15 +102,12 @@ def excludes_for(root: Path) -> tuple[str, ...]:
 
 
 def walk_files(root: Path, exclude: tuple[str, ...] | None = None) -> Iterator[Path]:
-    exclude = excludes_for(root) if exclude is None else exclude
+    excluded = set(excludes_for(root) if exclude is None else exclude)
+    depth = len(root.parts)                  # rglob yields under root: the prefix is cut by parts, never relative_to
     for f in sorted(root.rglob("*")):
         if not f.is_file() or f.suffix not in _SOURCE_SUFFIXES or f.name.endswith((".d.ts", ".d.mts", ".d.cts", ".min.js")):
             continue
-        try:
-            parts = set(f.relative_to(root).parts)
-        except ValueError:
-            parts = set(f.parts)
-        if parts & set(exclude):
+        if excluded.intersection(f.parts[depth:]):
             continue
         yield f
 

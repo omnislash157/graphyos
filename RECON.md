@@ -3349,3 +3349,47 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before28.json r
 | the same answer | the same 718 rows in the same order; the flipped byte named by file and address |
 | the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`_verify_one` moved the walk) |
 | the receipt | `measure.py run` then `diff recon.before28.json recon.json`: **`index.verify_seconds` 2.6 → 0.5 (−81 %) · `index.rss_kb` 169,256 → 40,120 (−76 %)**, the receipt 57.4 → 54.5 s; the first receipt of the pooled loop over whole reads read `index.rss_kb` → 560,060 (+231 %) — the streaming digest above is what that number bought; one number the wrong way, `quickstart.httpx.seconds` 4.5 → 5.2 (the cold clone and pip over the network, §59). `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |
+
+## 65 · THE NODE_MODULES SLUG MAP IS READ ONCE — 86 × 343 entry visits become one pass, the express eat 2.2 → 1.2 s, every shard byte-identical (2026-09-07 · graphyos issue 29)
+
+**What it was.** `smash.node_dir_for(scheme, node_modules)` answered one scheme by scanning every
+entry of node_modules — `sorted(glob("*")) + sorted(glob("@*/*"))`, an `is_dir()` and a
+`relative_to(node_modules).as_posix()` per entry, then `slug_for_specifier` — and the ring asked it
+once per scheme: on express 86 schemes × 343 entries, 26,402 `relative_to` calls from this one
+function (on 3.12 `relative_to` walks `self.parents`, a Path per ancestor: 519,325 `Path.__init__`
+calls in one eat). `typescript_ast.walk_files` paid `f.relative_to(root).parts` per file, where
+`f.parts[len(root.parts):]` is the same tuple. The profiled eat read `relative_to` 3.01 s cumulative
+of 6.01; in-process on the wall clock, `locate_node` over the 86 schemes cost 432 ms of a 2.2 s eat.
+
+**What it is.** `node_dirs_of(node_modules)` builds the slug → directory map in one pass over the
+entries — the specifier is `d.name`, or `f"{d.parent.name}/{d.name}"` under a scope — and caches it
+by resolved path; `node_dir_for` is a dict lookup. The first directory in sorted order wins a slug,
+as the scan did; a dotfile and a name with no slug are not entries. `walk_files` cuts the prefix by
+parts. The same 85 directories, the same files in the same order: express's 86 shards re-minted
+cold — 581 of 581 files parsed — carry the same `nodes.json` and `edges.json` sha256 as before,
+172 files; hono's four the same after a rebuild.
+
+```bash
+# from engine/
+../.venv/bin/python -c "import json, time; from pathlib import Path; from graphy import smash; nm = Path('../staging/quickstart/express/node_modules').resolve(); schemes = list(json.load(open('../staging/quickstart/express/.graphy/substrate/ring.json'))['minted']); t0 = time.perf_counter(); found = [smash.locate_node(s, nm) for s in schemes]; print(f'locate_node × {len(schemes)}: {(time.perf_counter()-t0)*1000:.0f} ms, {sum(f is not None for f in found)} located')"
+(cd ../staging/quickstart/express && sha256sum .graphy/substrate/*_graph/nodes.json .graphy/substrate/*_graph/edges.json | awk '{print $1}' > /tmp/before.sha && rm -rf .graphy && ../../../.venv/bin/graphy eat . | tail -1 && sha256sum .graphy/substrate/*_graph/nodes.json .graphy/substrate/*_graph/edges.json | awk '{print $1}' > /tmp/after.sha && diff /tmp/before.sha /tmp/after.sha && echo identical)
+(cd ../staging/quickstart/express && for i in 1 2 3; do /usr/bin/time -f "eat %e s" ../../../.venv/bin/graphy eat . 2>&1 | grep '^eat '; done)
+python3 -m pytest -q tests/test_typescript.py -k slug_map     # six asks, one scan (glob called with "*" and "@*/*" once), a scoped package keyed by its specifier, the dotfile and the stray file not entries
+git show HEAD~1:engine/graphy/smash.py > graphy/smash.py && python3 -m pytest -q tests/test_typescript.py -k slug_map    # RED: no attribute '_NODE_DIRS' (reverted after)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before29.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `locate_node` over express's 86 schemes, in-process | 432 ms, 85 located | 10 ms, 85 located |
+| `graphy eat .` on the express clone, three runs | 2.21 · 2.26 · 2.24 s (§61) | 1.20 · 1.22 · 1.19 s |
+| the cold re-mint of express (581 files parsed) | — | 1.59 s |
+| `walk_files` over the 85 package roots | 22 ms | 10 ms, the same 483 files |
+| `hono` rebuild | 2.3 s (§64's receipt) | 2.30 s, four shards byte-identical |
+
+| check | result |
+|---|---|
+| the floor | 489 passed · 3 skipped (488 + 1); the RED proof against the parent's code |
+| the same answer | express: 172 `nodes.json` · `edges.json` the same sha256 after a cold re-mint; hono: 4 the same after a rebuild |
+| the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`node_dirs_of` moved the walk) |
+| the receipt | `measure.py run` then `diff recon.before29.json recon.json`: **`quickstart.express.eat_again_seconds` 2.2 → 1.2 (−45 %)** — the eat over the eaten clone, the engine's own number in this lane — `tenants.express.seconds` 1.7 → 1.5, hono's doors and RSS down; three numbers the wrong way and none the locator's: `quickstart.express.eat_seconds` 4.4 → 6.1 and `.seconds` 5.0 → 6.6 (the cold eat's `npm install` over the network — the same lane read 7.7 · 8.4 · 8.1 · 5.0 · 6.6 across the last receipts), `tenants.fastapi.seconds` 2.7 → 3.3 (by hand under §61: 2.85 · 3.32 · 6.89, the box's noise). `MEASURE DIFF` exits 1 on those; closed on the engine lines by the standing ruling (§59) |

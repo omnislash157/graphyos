@@ -121,3 +121,28 @@ def test_RED_smash_refuses_an_unknown_producer_and_names_the_extra(tmp_path):
         smash.smash("app", site_packages=nm, out=tmp_path / "o", corpus=src, producer="rust_ast")
     assert ts.slug_of_specifier("@hono/node-server/vercel") == "hono__node_server"
     assert ts.slug_of_specifier("node:fs/promises") == "fs" and ts.slug_of_specifier("../x") is None
+
+
+def test_GREEN_the_node_modules_slug_map_is_read_once_and_answers_every_scheme(tmp_path, monkeypatch):
+    """The ring asks the locator one scheme at a time; it used to scan every node_modules entry per
+    ask (86 × 343 on express). The map is built in one pass and cached by path: a scoped package
+    is keyed by its ``@scope/name`` specifier, the first directory in sorted order wins a slug, and
+    a name with no slug is not an entry (graphyos #29)."""
+    from pathlib import Path
+    _, nm = _corpus(tmp_path)
+    (nm / "@acme" / "tool" / "src").mkdir(parents=True)
+    (nm / "@acme" / "tool" / "package.json").write_text(json.dumps({"name": "@acme/tool", "version": "1.0.0"}))
+    (nm / ".bin").mkdir()
+    (nm / "stray.txt").write_text("not a package")
+    smash._NODE_DIRS.clear()
+    globs: list[str] = []
+    real_glob = Path.glob
+    monkeypatch.setattr(Path, "glob", lambda self, pat: (globs.append(pat), real_glob(self, pat))[1])
+    scoped = smash.slug_for_specifier("@acme/tool")
+    asks = ["lib", "dist_only", "no_source", scoped, "absent", "lib"]
+    got = [smash.node_dir_for(s, nm) for s in asks]
+    assert got == [nm / "lib", nm / "dist-only", nm / "no-source", nm / "@acme" / "tool", None, nm / "lib"]
+    assert globs == ["*", "@*/*"], f"the entries were scanned {len(globs) // 2} time(s) for {len(asks)} asks"
+    assert ".bin" not in smash.node_dirs_of(nm).values() and all(d.is_dir() for d in smash.node_dirs_of(nm).values())
+    files = list(ts.walk_files(nm / "dist-only"))
+    assert [f.name for f in files] == ["index.js", "util.js"]
