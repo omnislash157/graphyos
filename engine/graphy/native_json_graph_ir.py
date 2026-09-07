@@ -208,6 +208,20 @@ def shard_input_digest(graph_dir: str | Path) -> str:
     return h.hexdigest()[:16]
 
 
+def ring_source_digest(data_home: str | Path, slugs) -> str:
+    """sha256 (16 hex) over the BYTES of every named shard's sources — nodes.json and edges.json,
+    never the sidecar — folded in slug order. What a resolve is a function of: the sidecar carries
+    it as ``resolved_over``, so two resolves over the same shards are the same bytes and a reader
+    can tell which shards a sidecar was resolved against (RECON.md §63). Never a parse."""
+    home = Path(data_home)
+    h = hashlib.sha256(b"ring-source\x00")
+    for slug in sorted(slugs):
+        gd = home / f"{slug}_graph"
+        for name in SHARD_INPUTS[:2]:
+            _fold(h, f"{slug}/{name}", _file_sha256(gd / name))
+    return h.hexdigest()[:16]
+
+
 _RAW: OrderedDict[str, tuple[str, dict[str, Any]]] = OrderedDict()
 _SHARDS: OrderedDict[str, tuple[str, ResolvedShard]] = OrderedDict()
 MEMO_SHARDS = 16          # the memo is bounded: the most recent directories, least recently loaded evicted;

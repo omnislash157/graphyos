@@ -149,3 +149,22 @@ def test_GREEN_the_cli_measures_and_resolves_a_tenant(tmp_path, capsys):
 def test_RED_converge_refuses_without_a_tenant(capsys):
     assert cli.main(["converge", "--tenant-id", "t"]) == 2
     assert "CONVERGE REFUSED" in capsys.readouterr().err
+
+
+def test_GREEN_the_sidecar_carries_the_ring_digest_never_a_clock_and_two_resolves_are_the_same_bytes(tmp_path):
+    """The sidecar used to stamp ``resolved_at`` — a wall clock — so no two rebuilds were byte-identical
+    on it. It carries ``resolved_over`` now: the digest of every ring shard's nodes.json and edges.json,
+    what the resolve is a function of, so two resolves over the same shards write the same bytes and a
+    byte moved in any ring shard moves the stamp (graphyos #27)."""
+    from graphy.native_json_graph_ir import ring_source_digest
+    home, slugs = _ring(tmp_path)
+    first = cv.resolve(cv.load_ring(home, slugs), "alpha", write=True)
+    sidecar = home / "alpha_graph" / "wormhole_edges.json"
+    bytes_one = sidecar.read_bytes()
+    assert "resolved_at" not in first and first["resolved_over"] == ring_source_digest(home, slugs)
+    assert len(first["resolved_over"]) == 16 and json.loads(bytes_one)["summary"]["resolved_over"] == first["resolved_over"]
+    second = cv.resolve(cv.load_ring(home, slugs), "alpha", write=True)
+    assert sidecar.read_bytes() == bytes_one and second["resolved_over"] == first["resolved_over"]
+    edges = home / "beta_graph" / "edges.json"
+    edges.write_bytes(edges.read_bytes().replace(b"\n", b" \n", 1) if b"\n" in edges.read_bytes() else edges.read_bytes() + b" ")
+    assert ring_source_digest(home, slugs) != first["resolved_over"], "a byte moved in a ring shard moves the stamp"

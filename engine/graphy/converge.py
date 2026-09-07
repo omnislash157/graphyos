@@ -12,11 +12,10 @@ import builtins
 import json
 import os
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 
 from graphy.ir import NODE_TYPES
-from graphy.native_json_graph_ir import WORMHOLE_SIDECAR, load_graph_ir
+from graphy.native_json_graph_ir import WORMHOLE_SIDECAR, load_graph_ir, ring_source_digest
 
 __all__ = ["converge", "resolve", "load_ring", "Ring", "WORMHOLE_SIDECAR"]
 
@@ -39,6 +38,7 @@ class Ring:
         self.parent: dict[str, str] = {}
         self.stdlib = _standard_of(data_home)
         self.schemes: set[str] = set()
+        self._source_digest: str | None = None
         for slug in self.slugs:
             gd = self.data_home / f"{slug}_graph"
             if not (gd / "edges.json").is_file():
@@ -60,6 +60,14 @@ class Ring:
                     self.parent[e["dst"]] = e["src"]
                 elif e.get("edge_type") == "imports" and isinstance(e.get("dst"), str) and e.get("via") is None:
                     self._bind_import(e)
+
+
+    def source_digest(self) -> str:
+        """The bytes every resolve over this ring is a function of (``ring_source_digest``),
+        computed once per ring and stamped into every sidecar as ``resolved_over``."""
+        if self._source_digest is None:
+            self._source_digest = ring_source_digest(self.data_home, self.slugs)
+        return self._source_digest
 
     def _bind_import(self, e: dict) -> None:
         src, dst = e["src"], e["dst"]
@@ -282,7 +290,7 @@ def resolve(ring: Ring, slug: str, *, write: bool = True) -> dict:
         "shard": slug, "labels": len(labels), "resolved": tally["resolved"], "cross_shard": cross,
         "via": dict(sorted(by_via.items())),
         "unresolved": {k: v for k, v in sorted(tally.items()) if k != "resolved"},
-        "resolved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "resolved_over": ring.source_digest(),
     }
     if write:
         path = ring.data_home / f"{slug}_graph" / WORMHOLE_SIDECAR

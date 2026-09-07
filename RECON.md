@@ -3270,3 +3270,38 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before26.json r
 | the same answer | the rows as a set unchanged; `check` green on every tenant; the graphy tenant's arms re-rendered once and verify; the atlas 8 pictures checked |
 | the gate | `GRAPHY_STANDALONE_OK` |
 | the receipt | `measure.py run` then `diff recon.before26.json recon.json`: every tenant faster or flat (fastapi 3.5 → 2.7 · sqlalchemy 6.0 → 5.5 · hono 2.4 → 2.3 · graphy 2.0), the receipt 68.2 → 60.4 s, `pass.engine_hot_lanes` 1 (the floor); one number the wrong way — `quickstart.httpx.eat_seconds` 4.0 → 4.7, the cold eat's venv and pip over the network (§59: 4.2 · 4.5 · 5.3 · 4.3 · 4.0 · 4.7 across the last receipts), the eat itself untouched by a sort of the edge rows at build. `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |
+
+## 63 · THE SIDECAR CARRIES THE RING'S DIGEST, NEVER A CLOCK — two rebuilds of one commit are the same bytes on every shard (2026-09-07 · graphyos issue 27)
+
+**What it was.** `converge.resolve` stamped `"resolved_at": datetime.now(...)` into every
+`wormhole_edges.json`, so two rebuilds of the fastapi tenant on one commit — every `nodes.json` and
+`edges.json` the same sha256 — differed on all ten sidecars. Found under §60 while proving a scanner
+change byte-identical: the proof had to fall back to `nodes.json` · `edges.json` and an in-process
+comparison, and eat-again's splice (§53) could never compare a sidecar.
+
+**What it is.** `ring_source_digest(data_home, slugs)` — sha256 (16 hex) over the bytes of every
+ring shard's `nodes.json` and `edges.json`, never a sidecar, folded in slug order; `Ring` computes it
+once and every sidecar's summary carries it as `resolved_over`: what the resolve is a function of,
+so a reader can tell which shards a sidecar was resolved against — the freshness the clock was
+standing in for, mechanically — and two resolves over the same shards are the same bytes. On the
+express ring (86 shards, 2.1 MB of sources) the digest costs 4 ms once. `rg resolved_at engine/graphy`
+finds nothing; nothing read it.
+
+```bash
+# from engine/
+SP=$(ls -d ../staging/corpora/venv/lib/python*/site-packages | head -1)
+PYTHON=$(pwd)/../.venv/bin/python GRAPHY_CORPUS_SITE_PACKAGES=$SP bash tenants/fastapi/rebuild.sh >/dev/null && sha256sum tenants/fastapi/substrate/*_graph/wormhole_edges.json > /tmp/w1.sha
+PYTHON=$(pwd)/../.venv/bin/python GRAPHY_CORPUS_SITE_PACKAGES=$SP bash tenants/fastapi/rebuild.sh >/dev/null && sha256sum tenants/fastapi/substrate/*_graph/wormhole_edges.json > /tmp/w2.sha && diff /tmp/w1.sha /tmp/w2.sha   # empty (was: all ten differ)
+rg -c resolved_at graphy/ | wc -l                                          # 0
+python3 -m pytest -q tests/test_converge.py -k ring_digest                 # two resolves the same bytes; the stamp is the ring digest; a byte moved in a ring shard moves it
+git show HEAD~1:engine/graphy/converge.py > graphy/converge.py && python3 -m pytest -q tests/test_converge.py -k ring_digest    # RED: 'resolved_at' in the summary (reverted after)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before27.json recon.json
+```
+
+| check | result |
+|---|---|
+| two rebuilds, ten sidecars | `diff` empty (was ten of ten different) |
+| the floor | 487 passed · 3 skipped (486 + 1); the RED proof against the parent's code names `resolved_at` in the summary |
+| the same answer | the sidecar's edges and counts unchanged — only the stamp's key and value; `check` green on every tenant; the graphy tenant's arms re-rendered (`ring_source_digest` · `source_digest` moved the walk) and verify |
+| the gate | `GRAPHY_STANDALONE_OK` |
+| the receipt | `measure.py run` then `diff recon.before27.json recon.json`: every engine number flat or better (the receipt 60.4 → 60.3 s, `quickstart.httpx.seconds` 5.3 → 4.5, `pass.engine_hot_lanes` 1 — the floor); one number the wrong way, `wheel.seconds` 2.8 → 3.5 (pip, build and twine). `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |
