@@ -329,6 +329,42 @@ def _median_order(nodes: list, neigh_pos: dict) -> list:
 
 
 def _count_crossings(a: list, b: list, adj: dict) -> int:
+    """Crossings between two adjacent layers, as an inversion count.
+
+    Two edges (u1, v1) · (u2, v2) cross exactly when their endpoints are ordered oppositely on
+    the two layers. Sorting the edges by (upper position, lower position) makes every crossing a
+    pair whose lower positions are inverted — a Fenwick tree over the lower layer's positions
+    counts those in O(E log E). Same integer as the pairwise count for every bilayer.
+    """
+    pos_b = {v: i for i, v in enumerate(b)}
+    seq = []
+    for i, u in enumerate(a):
+        seq.extend((i, pos_b[v]) for v in adj.get(u, ()) if v in pos_b)
+    if len(seq) < 2:
+        return 0
+    seq.sort()
+    n = len(b)
+    tree = [0] * (n + 1)
+    crossings = 0
+    seen = 0
+    for _, j in seq:
+        # edges seen so far with a lower position at most j; the rest sit to its right and cross
+        k = j + 1
+        le = 0
+        while k > 0:
+            le += tree[k]
+            k -= k & -k
+        crossings += seen - le
+        k = j + 1
+        while k <= n:
+            tree[k] += 1
+            k += k & -k
+        seen += 1
+    return crossings
+
+
+def _count_crossings_pairwise(a: list, b: list, adj: dict) -> int:
+    """The quadratic count the inversion count replaced — the floor's oracle, never called by layout."""
     pos_a = {v: i for i, v in enumerate(a)}
     pos_b = {v: i for i, v in enumerate(b)}
     seq = []

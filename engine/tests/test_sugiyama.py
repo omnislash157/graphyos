@@ -112,3 +112,33 @@ def test_sugiyama_imports_no_host_package():
         elif isinstance(node, ast.ImportFrom):
             assert not (node.module or "").startswith(hosts), \
                 f"sugiyama imports the host package {node.module!r}"
+
+
+def test_GREEN_inversion_crossing_count_equals_the_pairwise_count_on_random_bilayers():
+    """graphyos #18: the bilayer crossing count is an inversion count. Random bilayers — sparse,
+    dense, with parallel edges, with nodes that reach nothing, upper nodes absent from adj — fed to
+    both counters, the same integer every time; the layout that decides on it cannot move."""
+    import random
+    from graphy.sugiyama import _count_crossings, _count_crossings_pairwise
+    rng = random.Random(18)
+    for trial in range(400):
+        na, nb = rng.randint(0, 14), rng.randint(0, 14)
+        a = [f"u{i}" for i in range(na)]
+        b = [f"v{i}" for i in range(nb)]
+        rng.shuffle(a)
+        rng.shuffle(b)
+        p = rng.choice((0.05, 0.3, 0.8))
+        adj = {}
+        for u in a:
+            vs = [v for v in b if rng.random() < p]
+            if rng.random() < 0.2 and vs:
+                vs.append(rng.choice(vs))          # a parallel edge
+            if rng.random() < 0.2:
+                vs.append("elsewhere")             # a target outside the lower layer
+            if vs or rng.random() < 0.5:
+                adj[u] = vs
+        assert _count_crossings(a, b, adj) == _count_crossings_pairwise(a, b, adj), (trial, a, b, adj)
+    # the textbook bilayer: two edges that cross, one that does not
+    assert _count_crossings(["x", "y"], ["p", "q"], {"x": ["q"], "y": ["p"]}) == 1
+    assert _count_crossings(["x", "y"], ["p", "q"], {"x": ["p"], "y": ["q"]}) == 0
+    assert _count_crossings(["x", "y"], ["p", "q"], {"x": ["p", "q"], "y": ["p", "q"]}) == 1

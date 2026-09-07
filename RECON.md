@@ -2705,3 +2705,45 @@ cd .. && python3 measure.py run --out recon.json && python3 measure.py diff reco
 | eat twice | `test_GREEN_eat_again_keeps_the_shards_parses_nothing_and_prunes_a_shard_the_ring_dropped` — the second eat parses 0 with every shard's bytes unchanged and the resolver's sidecar rewritten; a root that stops importing a ring package sees that shard pruned. `test_provision`: the second provision under the same declaration skips pip, a moved `pyproject.toml` runs it, a failed install leaves no receipt |
 | the five rebuilds | `ARMS OK` on all five (the graphy tenant named `ARMS DRIFT` twice on the way — `_reuse_from` · `_clear_substrate`, then the `_receipt` module — the regions re-rendered) |
 | the receipt | four full runs this session, the last two clean: floor 467 passed (464, three tests added), gate OK 24.0 · 37.4 s (24.6 — its pip is the network), fastapi 3.3 → 3.3–3.5 s, sqlalchemy 6.4 → 6.4–6.6 s, hono 2.6 → 2.7, express 2.6 → 2.6, graphy 2.4 → 2.4–2.5 with `ARMS OK`, index verify 2.5 → 2.6 with 0 broken, `pass.engine_hot_lanes` 5 → 5 (`container._write_parquet` on top of the same lanes — the next lane), wheel 263,903 → 268,759 B under the cap; **quickstart httpx `eat_seconds` 4.3 · `eat_again_seconds` 0.8 · `eat_again_parsed` 0; express 5.8 · 3.6 · 0** — the done check, in the receipt. `floor.seconds` under `measure.py run` read 18.2 · 17.5 · 29.1 · 33.5 · 30.3 across the five runs with `sqlite3.executescript` the frame that swelled and no engine frame moving; the floor run directly read 17.0 · 17.6 · 17.6 · 17.8 · 19.1 s with the change and 18.3 s at the previous commit with the change stashed (`git stash -u && python3 -m pytest -q && git stash pop`), `measure.measure_floor` alone 17.8 s — the box's own noise this session, the kind §49 names, and the diff's three named regressions (`floor.seconds`, `gate.seconds`, the whole receipt's `seconds`) are those times and nothing else |
+
+## 54 · THE CROSSING COUNT IS AN INVERSION COUNT — same integer, same layout, every atlas byte-identical (2026-09-07 · graphyos issue 18)
+
+**What it was.** `sugiyama._count_crossings` counted a bilayer's crossings pairwise: every edge
+against every later edge, a product of position differences per pair. `_minimize_crossings`
+asks for the total after every median sweep, so drawing the SQLAlchemy atlas called it 2,650
+times through 300 `_total_crossings` — 0.41 s of the atlas's 1.17 s under the profiler, the top
+frame once §52 took `json.loads` off the store.
+
+**What it is.** The same count as an inversion count. Two edges cross exactly when their
+endpoints sit in opposite order on the two layers, so the edges sorted by (upper position, lower
+position) cross exactly where the lower positions are inverted, and a Fenwick tree over the lower
+layer's positions counts those in `O(E log E)` — a parallel edge or two edges from one upper node
+sort adjacent and count nothing, as before. The count is exact, so every sweep makes the decision
+it made and the layout does not move. The pairwise count stays as `_count_crossings_pairwise`, the
+floor's oracle, called by no layout. stdlib only.
+
+```bash
+cd engine && T=tenants/sqlalchemy
+python3 -m cProfile -s tottime -m graphy draw --tenant $T/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --partition $T/partition.json --atlas /tmp/atlas --lr --min-weight 2 | grep -E "ncalls|crossings"
+/usr/bin/time -f "atlas %es %MKB" python3 -m graphy draw --tenant $T/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --partition $T/partition.json --atlas /tmp/atlas --lr --min-weight 2
+python3 -m pytest -q tests/test_sugiyama.py -k inversion
+for t in fastapi sqlalchemy hono express graphy; do bash tenants/$t/rebuild.sh 2>&1 | grep -E "ARMS OK|ATLAS OK|_OK$"; done   # hono · express under PYTHON=../.venv/bin/python, fastapi under GRAPHY_CORPUS_SITE_PACKAGES
+python3 - <<'PY'   # the atlas receipts, before against after, per tenant: the file hashes are the pictures
+import json; a = json.load(open("/tmp/atlas.sqlalchemy.before.json")); b = json.load(open("tenants/sqlalchemy/substrate/atlas/atlas.json"))
+print("identical" if a["files"] == b["files"] else "moved", a["generation"], "->", b["generation"])
+PY
+cd .. && python3 measure.py run --out recon.json && python3 measure.py diff recon.before18.json recon.json
+```
+
+| on the SQLAlchemy atlas (six pictures, 2,650 bilayer counts) | before | after |
+|---|---|---|
+| `_count_crossings` self time (profiled) | 0.411 s | 0.092 s (0.165 s cumulative with the edge list's build) |
+| `_minimize_crossings` cumulative (profiled) | 0.60 s | 0.31 s |
+| `graphy draw --atlas` wall (two runs) | 1.17 · 1.16 s · 43.7 MB | 0.83 · 0.82 s · 43.7 MB — the store's `edges()` is the top frame now (0.19 s), `owned()` second (0.12 s) |
+
+| check | result |
+|---|---|
+| the floor test | `test_GREEN_inversion_crossing_count_equals_the_pairwise_count_on_random_bilayers` — 400 random bilayers (0–14 nodes a side, three densities, parallel edges, targets outside the lower layer, upper nodes absent from `adj`), the two counters equal on every one, and the textbook three by hand |
+| the layout does not move | the sqlalchemy atlas drawn before and after: 12 files byte-identical by `cmp`; every tenant's `atlas.json` `files` map identical before and after the rebuild — fastapi 12 · sqlalchemy 12 · hono 14 · express 12 · graphy 16 |
+| the five rebuilds | `ARMS OK` fastapi 4 · sqlalchemy 5 · hono 5 · express 4 · graphy 6 (the graphy tenant named `ARMS DRIFT` once — `_count_crossings_pairwise` is a new function of `sugiyama`; the CUT region re-rendered); `ATLAS OK` on all five |
+| the receipt | two full runs: the first read gate RED — its changelog check ran in the minute between this section's append and the gate's own regenerate, `standalone_check.sh` run directly after is `GRAPHY_STANDALONE_OK` with `changelog OK`; the clean run: floor 468 passed (467, the one test added) in 18.2 s (30.3 — the §53 box noise gone), gate OK 24.6 s (37.4), fastapi 3.5 → 3.3 s, sqlalchemy 6.6 → 6.1 s, hono 2.7 → 2.6, express 2.6 → 2.5, graphy 2.5 → 2.4 with `ARMS OK` and every door green, index verify 2.6 → 2.5 with 0 broken, wheel 268,759 → 269,249 B under the cap, the whole receipt 108.3 → 84.9 s; the diff names three regressions and none is this lane's — `pass.engine_hot_lanes` 5 → 6 because the floor's two top frames swapped places (`container._write_parquet` 7.3 s ahead of `sqlite3.executescript` 6.7 s, both there before at 13.8 and 14.8 s; no `sugiyama` frame in any lane's hot three), and quickstart express `eat_seconds` 5.8 → 8.3 with its profiled frames unchanged (`container.emit` 5.86 → 5.81 s) — the eat run directly on two fresh clones after the receipt read 5.8 · 5.7 s, the delta is `npm install` under the receipt; `container._write_parquet` is the top engine frame of every lane that emits parquet — the next lane |
