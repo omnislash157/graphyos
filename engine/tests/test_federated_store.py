@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import shlex
 import shutil
 from pathlib import Path
@@ -518,3 +519,51 @@ def test_GREEN_the_parse_memo_is_bounded(tmp_path):
         nj.load_graph_ir(gd)
     assert len(nj._RAW) == nj.MEMO_SHARDS and len(nj._SHARDS) == nj.MEMO_SHARDS
     assert str(tmp_path / "s0_graph") not in nj._RAW and str(tmp_path / f"s{nj.MEMO_SHARDS + 4}_graph") in nj._RAW
+
+
+def test_GREEN_owned_reads_the_columns_and_decodes_no_record(tmp_path, monkeypatch):
+    """The aggregates' whole-corpus read is the columns: owned() decodes no JSON, yields exactly
+    COLUMNS per node, and every value equals the full record's — the record is record()'s alone."""
+    tenant, _ = _walk_fixture(tmp_path)
+    db = _compile(tenant, tmp_path)
+    store = fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
+    real_loads, calls = json.loads, []
+
+    def spy_loads(s, *a, **k):
+        calls.append(s)
+        return real_loads(s, *a, **k)
+    monkeypatch.setattr(fs.json, "loads", spy_loads)
+    rows = list(store.owned("fastapi"))
+    assert rows and not calls, f"owned() decoded {len(calls)} record(s); the columns are the read"
+    for nid, cols in rows:
+        assert tuple(cols) == fs.COLUMNS
+        full = store.record(nid)
+        assert cols == {k: full.get(k) for k in fs.COLUMNS}
+    assert calls, "record() is the one decode"
+    assert any(c["module"] for _n, c in rows) and any(c["node_type"] == "module" for _n, c in rows)
+    con = sqlite3.connect(db)
+    idx = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    con.close()
+    assert {"idx_nodes_owner_module", "idx_nodes_owner_type"} <= idx
+
+
+def test_GREEN_shard_store_owned_yields_the_same_columns(tmp_path):
+    """Both readers speak one shape: ShardStore.owned() projects the mesh record to COLUMNS."""
+    tenant, _ = _walk_fixture(tmp_path)
+    db = _compile(tenant, tmp_path)
+    shard = fs.ShardStore(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test")
+    sqlite_rows = dict(fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test",
+                                   db_path=db).owned("fastapi"))
+    assert dict(shard.owned("fastapi")) == sqlite_rows
+
+
+def test_RED_store_under_the_blob_only_schema_refuses_naming_recompile(tmp_path):
+    """A store compiled before the columns (format 3) is not this build's: refused, naming recompile."""
+    tenant, _ = _walk_fixture(tmp_path)
+    db = _compile(tenant, tmp_path)
+    con = sqlite3.connect(db)
+    con.execute("UPDATE meta SET v='3' WHERE k='generation_format'")
+    con.commit()
+    con.close()
+    with pytest.raises(fs.StoreError, match="generation format"):
+        fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)

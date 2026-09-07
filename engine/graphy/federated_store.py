@@ -30,9 +30,15 @@ from graphy.tenant import Tenant
 
 SCHEMA = """
 CREATE TABLE nodes (
-    id     TEXT PRIMARY KEY,
-    owner  TEXT NOT NULL,
-    record TEXT
+    id        TEXT PRIMARY KEY,
+    owner     TEXT NOT NULL,
+    node_type TEXT,
+    dotted    TEXT,
+    module    TEXT,
+    role      TEXT,
+    file      TEXT,
+    line      INTEGER,
+    record    TEXT
 );
 CREATE TABLE edges (
     src TEXT NOT NULL,
@@ -42,6 +48,8 @@ CREATE TABLE edges (
 CREATE INDEX idx_edges_src ON edges(src);
 CREATE INDEX idx_edges_dst ON edges(dst);
 CREATE INDEX idx_nodes_owner ON nodes(owner);
+CREATE INDEX idx_nodes_owner_module ON nodes(owner, module);
+CREATE INDEX idx_nodes_owner_type ON nodes(owner, node_type);
 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -66,7 +74,18 @@ class Neighbour:
     direction: str
 
 
-GENERATION_FORMAT = 3
+GENERATION_FORMAT = 4
+
+# The fields every aggregate reads (pillars · arms · draw): columns of the nodes table, so a
+# whole-corpus read never decodes a record. The full record is decoded only by record().
+COLUMNS = ("node_type", "dotted", "module", "role", "file", "line")
+
+
+def _columns(record: dict | None) -> dict | None:
+    """The aggregate view of a record: its COLUMNS and nothing else; None for an absent record."""
+    if record is None:
+        return None
+    return {k: record.get(k) for k in COLUMNS}
 
 
 def _generation_digest(mesh, substrates: list[str]) -> str:
@@ -245,10 +264,11 @@ class ShardStore:
         return [Neighbour(n, r, d) for (n, r), d in seen.items()]
 
     def owned(self, owner: str):
-        """Every (id, record) one corpus owns — the whole-corpus read an aggregate takes."""
+        """Every (id, columns) one corpus owns — the whole-corpus read an aggregate takes. The
+        columns are COLUMNS; the full record is record()'s."""
         for nid, own in self._mesh.node_owner.items():
             if own == owner:
-                yield nid, self._mesh.node_records.get(nid)
+                yield nid, _columns(self._mesh.node_records.get(nid))
 
     def edges(self):
         """Every directed (src, dst, rel) the store carries."""
@@ -330,9 +350,12 @@ class SQLiteStore:
         return [Neighbour(node, rel, d) for (node, rel), d in seen.items()]
 
     def owned(self, owner: str):
-        """Every (id, record) one corpus owns — the whole-corpus read an aggregate takes."""
-        for nid, rec in self._db.execute("SELECT id, record FROM nodes WHERE owner=? ORDER BY id", (owner,)):
-            yield nid, (json.loads(rec) if rec is not None else None)
+        """Every (id, columns) one corpus owns — the whole-corpus read an aggregate takes, straight
+        off the columns: no record is decoded. The full record is record()'s."""
+        for row in self._db.execute(
+                "SELECT id, node_type, dotted, module, role, file, line, record IS NULL "
+                "FROM nodes WHERE owner=? ORDER BY id", (owner,)):
+            yield row[0], (None if row[7] else dict(zip(COLUMNS, row[1:7])))
 
     def edges(self):
         """Every directed (src, dst, rel) the store carries."""
@@ -375,12 +398,15 @@ def compile_store(substrates: list[str], db_path: str | Path,
     db = sqlite3.connect(tmp)
     try:
         db.executescript(SCHEMA)
+        def _rows():
+            for nid, owner in mesh.node_owner.items():
+                rec = mesh.node_records.get(nid)
+                cols = tuple(rec.get(k) for k in COLUMNS) if rec is not None else (None,) * len(COLUMNS)
+                yield (nid, owner or "", *cols,
+                       json.dumps(rec, default=str) if rec is not None else None)
         db.executemany(
-            "INSERT OR REPLACE INTO nodes(id, owner, record) VALUES (?,?,?)",
-            ((nid, owner or "",
-              json.dumps(mesh.node_records[nid], default=str)
-              if nid in mesh.node_records else None)
-             for nid, owner in mesh.node_owner.items()))
+            "INSERT OR REPLACE INTO nodes(id, owner, node_type, dotted, module, role, file, line, record) "
+            "VALUES (?,?,?,?,?,?,?,?,?)", _rows())
         db.executemany("INSERT INTO edges(src, dst, rel) VALUES (?,?,?)",
                        ((s, d, r) for (s, d, r) in mesh.directed))
         db.executemany("INSERT INTO meta(k, v) VALUES (?,?)", [

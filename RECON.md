@@ -2599,3 +2599,47 @@ cd .. && python3 measure.py run --out recon.json && python3 measure.py diff reco
 | the index | `INDEX OK: 718 named shard(s), 0 broken` with the compact six pushed by `--force` (address `471e49c8…`) beside the indented one (`0bc16aee…`); verify 2.6 s before and after — one shard of 718 moved, and the verify's cost is the hash (`_hashlib.openssl_sha256` 2.08 s in both profiles), which is what fewer bytes will cut when the farm is re-run (issue 15's own done line names that run; it is a `--force` farm of 718 releases, hours, not this lane) |
 | the fixture parity | fastapi rebuild `PARITY OK: fastapi_graph.records@sha256:21ed3ce1…` against the re-minted fixture |
 | the receipt | one full run: floor 461 passed in 14.4 s (14.6 before), gate OK 22.4 s (23.4), fastapi 3.5 → 3.3 s, sqlalchemy 6.8 → 6.5 s (RSS 288 → 277 MB), graphy 2.5 → 2.1 s (RED on the run — `ARMS DRIFT` naming `_write_records` in PRODUCE, the region re-rendered, `GRAPHY_TENANT_OK` straight after), hono 2.7 → 2.7, express 2.6 → 2.6, index verify 2.6 → 2.6 with 0 broken, `pass.engine_hot_lanes` 6 → 6 (`container._write_parquet` still on top of the graphy · sqlalchemy · fastapi lanes — the next lane), the whole receipt 74.7 → 75.1 s; `quickstart.express.seconds` 6.3 → 8.8 and httpx 5.1 → 5.5 are the clone-and-install noise §49 names (express read 6.2–9.8 across five runs there), the engine frames identical. The estate re-emitted over the moved catalog: 718 shards, the compact six read beside 717 indented ones, 51.2 s |
+
+## 52 · THE AGGREGATE FIELDS ARE COLUMNS — owned() reads the table, never a record (2026-09-07 · graphyos issue 16)
+
+**What it was.** The store's `nodes` table was `(id, owner, record)`: one JSON blob per node, and
+`SQLiteStore.owned()` — the whole-corpus read every aggregate takes — decoded every blob to hand
+`pillars` · `arms` · `draw` the four fields they read (`module` · `role` · `node_type` · `dotted`).
+Drawing the SQLAlchemy atlas decoded 83,719 records: `json.loads` 0.27 s of `owned()`'s 0.46 s
+under the profiler, for a `.get("module")`.
+
+**What it is.** The `nodes` table carries the aggregate fields as columns — `COLUMNS =
+(node_type, dotted, module, role, file, line)` — beside the blob, with indexes on `(owner, module)`
+and `(owner, node_type)`. `owned()` yields `(id, {the six columns})` straight off the row and decodes
+nothing; `record()` is the one decode, and only `explain` · the doors · `draw --symbol` ask for it.
+`ShardStore.owned()` projects the mesh record to the same six, so both readers speak one shape.
+The schema is an input, so `GENERATION_FORMAT` is 4: a store compiled under 3 refuses to serve,
+naming recompile, and every tenant rebuilt once — the arms, the atlas and the fanout receipts read
+identical after (the generation moved; the pictures did not). `sqlite3` only.
+
+```bash
+cd engine && T=tenants/sqlalchemy
+python3 -m cProfile -s cumtime -m graphy draw --tenant $T/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --partition $T/partition.json --atlas /tmp/atlas --lr --min-weight 2 | grep -E "owned|decoder"
+/usr/bin/time -f "atlas %es %MKB" python3 -m graphy draw --tenant $T/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --partition $T/partition.json --atlas /tmp/atlas --lr --min-weight 2
+python3 -m pytest -q tests/test_federated_store.py -k "owned_reads or same_columns or blob_only"
+for t in fastapi sqlalchemy hono express graphy; do bash tenants/$t/rebuild.sh 2>&1 | grep -E "ARMS OK|ATLAS OK|_OK$"; done
+python3 - <<'PY'   # the atlas receipts, before against after: the file hashes are the pictures
+import json; a = json.load(open("/tmp/atlas.sqlalchemy.before.json")); b = json.load(open("tenants/sqlalchemy/substrate/atlas/atlas.json"))
+print("identical" if a["files"] == b["files"] else "moved", a["generation"], "->", b["generation"])
+PY
+cd .. && python3 measure.py run --out recon.json && python3 measure.py diff recon.before16.json recon.json
+```
+
+| on SQLAlchemy (11,964 owned nodes) | before | after |
+|---|---|---|
+| `json.loads` under `owned()` drawing the atlas (profiled) | 83,719 calls · 0.27 s | 0 (six decodes in the run: the meta rows and the receipts) |
+| `owned()` cumulative (profiled) | 0.46 s | 0.17 s — what is left is the 83,755 row tuples and the dict per row |
+| `graphy draw --atlas` wall, six pictures (two runs) | 1.22–1.23 s · 43.8 MB | 1.08 s · 43.8 MB — `sugiyama._count_crossings` is the top frame now (0.39 s), the store's `edges()` second (0.19 s) |
+| `graphy pillars --against` wall | 0.18 s | 0.17 s |
+| `graphy arms --verify` wall | 0.21 s | 0.19 s |
+
+| check | result |
+|---|---|
+| the floor tests | `test_GREEN_owned_reads_the_columns_and_decodes_no_record` (`json.loads` patched, `owned()` over the fixture calls it zero times, each row is exactly `COLUMNS` and equals the full record's projection, both indexes present) · `test_GREEN_shard_store_owned_yields_the_same_columns` (the two readers' `owned()` equal) · `test_RED_store_under_the_blob_only_schema_refuses_naming_recompile` (a format-3 meta row refuses naming the generation format) |
+| the five rebuilds | `ARMS OK` fastapi 4 · sqlalchemy 5 · hono 5 · express 4 · graphy 6 (the receipt's first run named `ARMS DRIFT` in SEAM — `_columns` is a new function of `federated_store`; the region re-rendered, `GRAPHY_TENANT_OK`); `ATLAS OK` on all five, and every atlas receipt's `files` map identical before and after on all five tenants (the sqlalchemy atlas drawn before and after: 13 files byte-identical by `sha256sum`) |
+| the receipt | the first run with the floor and the gate running beside it read floor 19.2 s and graphy RED (the drift); the clean run: floor 464 passed (461) in 16.2 s (14.4 — three store-compiling tests added, and `executescript` — the schema's two new indexes — 4.2 → 6.3 s profiled, now the floor's top frame ahead of `_write_parquet`), gate OK 24.6 s (22.4), fastapi 3.3 → 3.3 s, sqlalchemy 6.5 → 6.4 s (RSS 277 → 277 MB; the store file 19.9 MB), hono 2.7 → 2.6, express 2.6 → 2.6, graphy 2.1 → 2.4 with `ARMS OK` and every door green, index verify 2.6 → 2.5 with 0 broken, `pass.engine_hot_lanes` 6 → 5 (the floor's hottest frame is sqlite's now; `container._write_parquet` still on top of the graphy · sqlalchemy · fastapi lanes — the next lane), the whole receipt 75.1 → 76.5 s, `measure.py diff` exit 0; quickstart express 8.8 → 6.3 and httpx 5.5 → 5.1, the network noise §49 names |
