@@ -3612,4 +3612,4 @@ git show HEAD~1:engine/graphy/cli.py > graphy/cli.py && python3 -m pytest -q tes
 |---|---|
 | the floor | 494 passed · 3 skipped (493 + 1); the RED proof against the parent's code |
 | the gate | `GRAPHY_STANDALONE_OK` — `graphy resolves OK (0.2.0)` |
-| the release | `bash release.sh` → `graphyos-0.2.0-py3-none-any.whl` · `.tar.gz`, twine check green, the changelog under `## 0.2.0`; the tag's workflow run and PyPI's answer in the section below when they land |
+| the release | `bash release.sh` → `graphyos-0.2.0-py3-none-any.whl` · `.tar.gz`, twine check green, the changelog under `## 0.2.0`; the `v0.2.0` tag's run 34158170572: build success · publish success; PyPI answers 0.2.0; a fresh venv's `pip install graphyos==0.2.0` imports 0.2.0 and `graphy --help` runs; CI on the public commit (bcd9a98): gate success · floor (3.12) success · floor (3.10) success; the badge renders `passing` |
