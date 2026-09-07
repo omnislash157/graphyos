@@ -3666,4 +3666,4 @@ gh run list --repo omnislash157/graphyos --workflow showcase-on-issue.yml --limi
 |---|---|
 | the floor | 495 passed · 3 skipped (494 + 1); the RED proof against the old workflow |
 | the gate | `GRAPHY_STANDALONE_OK` |
-| the live run | LIVE_RUN |
+| the live run | issue #45 named `pallets/click`: run 34168519445 — `showcase` success (no token, no checkout, `permissions: {}`), `post` success; the comment on #45 carries click's page (the pillars, the units, the ring, the MCP block); CI green on the public commit 1447015 |
