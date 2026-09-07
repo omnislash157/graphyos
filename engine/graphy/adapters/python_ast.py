@@ -71,6 +71,30 @@ if hasattr(ast, "TryStar"):
 _SCOPE = _COMPOUND + (ast.Module, ast.ClassDef, ast.ExceptHandler)
 _FUNC = (ast.FunctionDef, ast.AsyncFunctionDef)
 
+# The leaves the scan never queues: a Constant, an expression context, an operator — none holds an
+# import, a call or a scope, and on sqlalchemy they are 56 % of every node (RECON.md §60). ``_VISITED``
+# is every other AST class: one set lookup on a child's type decides the push. The fields that never
+# hold a visited node — the identifiers and ints of the grammar, ``ctx`` · ``op`` · ``ops`` — are
+# left out of a class's child fields, computed once per class with its kind.
+_LEAF = frozenset(c for c in vars(ast).values() if isinstance(c, type)
+                  and issubclass(c, (ast.expr_context, ast.operator, ast.boolop, ast.unaryop, ast.cmpop))) | {ast.Constant}
+_VISITED = frozenset(c for c in vars(ast).values() if isinstance(c, type) and issubclass(c, ast.AST)) - _LEAF
+_NEVER_CHILD = frozenset({"ctx", "op", "ops", "type_comment", "id", "arg", "attr", "name", "asname", "module",
+                          "level", "is_async", "conversion", "kind", "simple"})
+_CALL, _IMPORT, _FUNC_KIND, _SCOPE_KIND, _OTHER = 0, 1, 2, 3, 4
+_CLASS_INFO: dict[type, tuple[int, tuple[str, ...]]] = {}
+
+
+def _class_info(cls: type) -> tuple[int, tuple[str, ...]]:
+    """What the scan does at a node of this class and which of its fields can hold a visited node —
+    computed once per class, so the loop pays one dict lookup where it paid four class tests."""
+    info = _CLASS_INFO.get(cls)
+    if info is None:
+        kind = (_CALL if cls is ast.Call else _IMPORT if cls in (ast.Import, ast.ImportFrom)
+                else _FUNC_KIND if cls in _FUNC else _SCOPE_KIND if issubclass(cls, _SCOPE) else _OTHER)
+        info = _CLASS_INFO[cls] = (kind, tuple(f for f in cls._fields if f not in _NEVER_CHILD))
+    return info
+
 
 def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, int]]]]:
     """One level-order pass over every node of a file — the order ``ast.walk`` yields them, so the
@@ -78,35 +102,40 @@ def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, i
     they sit and, keyed by the tracked definition that owns them, every call: a definition is
     tracked when ``_defs_in`` reaches it (never inside a function body), and a call belongs to the
     outermost tracked function around it, the one whose subtree the old per-definition walk read.
-    The children come straight off each class's ``_fields`` — the generator ``ast.iter_child_nodes``
-    builds costs three times the walk."""
+    The children come straight off each class's child fields (``_class_info``, once per class) —
+    the generator ``ast.iter_child_nodes`` builds costs three times the walk — and a leaf
+    (``_LEAF``) is never queued: it has nothing the scan reads and no children."""
     imports: list[ast.AST] = []
     calls: dict[ast.AST, list[tuple[str, int]]] = {}
     todo: deque[tuple[ast.AST, ast.AST | None, bool]] = deque([(tree, None, True)])
     pop, push = todo.popleft, todo.append
-    Call, Imports, Func, Scope, Node = ast.Call, (ast.Import, ast.ImportFrom), _FUNC, _SCOPE, ast.AST
+    visited, cached, class_info = _VISITED, _CLASS_INFO.get, _class_info
     while todo:
         node, owner, tracked = pop()
         cls = type(node)
-        if cls is Call:
+        kind, fields = cached(cls) or class_info(cls)
+        if kind == _CALL:
             if owner is not None:
                 calls.setdefault(owner, []).append((_expr_repr(node.func), getattr(node, "lineno", 0)))
-        elif cls in Imports:
+        elif kind == _IMPORT:
             imports.append(node)
-        elif cls in Func:
+        elif kind == _FUNC_KIND:
             if owner is None and tracked:
                 owner = node
             tracked = False
-        elif not issubclass(cls, Scope):
+        elif kind == _OTHER:
             tracked = False
-        for name in cls._fields:
-            value = getattr(node, name, None)
-            if isinstance(value, Node):
-                push((value, owner, tracked))
-            elif isinstance(value, list):
+        values = node.__dict__
+        for name in fields:
+            value = values.get(name)
+            if value is None:
+                continue
+            if type(value) is list:
                 for child in value:
-                    if isinstance(child, Node):
+                    if type(child) in visited:
                         push((child, owner, tracked))
+            elif type(value) in visited:
+                push((value, owner, tracked))
     return imports, calls
 
 

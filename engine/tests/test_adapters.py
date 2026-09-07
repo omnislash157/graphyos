@@ -188,8 +188,10 @@ def test_python_ast_mints_defs_guarded_by_module_and_class_level_compound_statem
 
 
 def test_python_ast_visits_every_node_of_a_file_exactly_once(tmp_path, monkeypatch):
-    """The producer is one level-order pass per file (graphyos #14): every AST node is popped
-    once — the count of pops is the count of nodes — and no subtree is read twice. The pass keeps
+    """The producer is one level-order pass per file (graphyos #14): every AST node that can hold
+    an import, a call or a scope is popped once — the count of pops is the count of nodes minus the
+    leaves (a Constant, an expression context, an operator: never queued, graphyos #24) — and no
+    subtree is read twice. The pass keeps
     the old attribution: an import inside a function body is the module's; a call inside a
     nested def belongs to the outermost tracked function; a class body's own calls are nobody's;
     a def under a statement ``_defs_in`` does not descend (``match``) is not a node and its calls
@@ -225,8 +227,9 @@ def test_python_ast_visits_every_node_of_a_file_exactly_once(tmp_path, monkeypat
 
     monkeypatch.setattr(python_ast, "deque", Counting)
     records = list(python_ast._emit_records_for_file(mod, tmp_path, "sample"))
-    total = sum(1 for _ in ast.walk(ast.parse(mod.read_text(encoding="utf-8"))))
-    assert pops["n"] == total, (pops["n"], total)
+    nodes = list(ast.walk(ast.parse(mod.read_text(encoding="utf-8"))))
+    leaves = sum(1 for n in nodes if type(n) in python_ast._LEAF)
+    assert leaves and pops["n"] == len(nodes) - leaves, (pops["n"], len(nodes), leaves)
 
     calls = {(r["src"].rsplit("/", 1)[1], r["dst_repr"]) for r in records if r.get("edge_type") == "calls"}
     assert calls == {("sample.outer", "json.dumps"), ("sample.outer", "inner"), ("sample.K.m", "helper")}

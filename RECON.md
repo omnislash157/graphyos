@@ -3114,3 +3114,78 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before23.json r
 | the same answer | every door on every tenant and every `check`: `diff` empty, and with old code and new code on the same shards under `PYTHONHASHSEED=0`, 131 lines, `diff` empty. Without the seed pinned one hop-2 parent on the fastapi blast differs between two builds of one shard — old code or new, the same: the mesh's edge set iterates in hash order and the store's rowids follow it (issue 26, found here, filed) |
 | the gate | `GRAPHY_STANDALONE_OK` — the receipt's gate 21.0 → 17.4 s; the graphy tenant's six arm regions re-rendered (`_sync_then_replace` and the test moved the walk: 2619 → 2627 nodes, 6526 → 6540 edges) |
 | the receipt | `measure.py run` then `diff recon.before23.json recon.json`, three times. The first read the gate RED (CHANGELOG drift — §59 appended before the wheel step regenerated it) and the graphy tenant RED (the arm drift above), both fixed before this row. The second, under the operator's browser at 30 % CPU: `floor.seconds` 14.7 → 7.9, `gate.seconds` 21.0 → 16.8, `quickstart.express.seconds` 8.2 → 5.5, `tenants.express.seconds` 2.5 → 1.8, the whole receipt 74.3 → 62.7 s; eight numbers the wrong way, every one a door at 60–120 ms moving by 10 ms or the httpx quickstart — the doors timed direct on the old and the new store read 0.07 s five times each, the httpx eat direct 0.52 · 0.54 · 0.52 s. The third, same load: `floor.seconds` 14.7 → 9.1, `gate.seconds` → 17.4, `pass.engine_hot_lanes` 5 → 4 (the floor lane came off the count: its hottest frame is no longer the engine's), the receipt 74.3 → 66.4 s, one number the wrong way — `quickstart.httpx.seconds` 4.7 → 5.7, the cold quickstart's clone and pip provisioning: run cold three times by hand it reads 4.82 · 5.36 · 5.40 s, and `eat_again_seconds` in the same lane 0.6 → 0.5. A fourth, the browser still on the box (load 2.3): `floor.seconds` → 11.0, `gate.seconds` → 18.0, three the wrong way — the httpx quickstart's clone-and-provision again (4.2 → 5.3 · 4.7 → 5.9) and `tenants.fastapi.seconds` 2.9 → 3.4, which the same rebuild timed 3.0 twice in the runs before. `MEASURE DIFF` exits 1 on those; the done block's diff line reads red on a network lane and a loaded box, the engine lines read green, and the issue stays open for the operator's ruling — the march holds on it rather than closing over a red line |
+
+## 60 · THE SCAN NEVER QUEUES A LEAF — one set lookup per child, `_scan` 210 → 95 ms over 400 files, the mint's hottest frame is the parse (2026-09-07 · graphyos issue 24)
+
+**What it was.** `python_ast._scan` — one level-order pass per file (§53) — pushed and popped every
+node, and on sqlalchemy 56 % of every node is a leaf that carries no import, no call and no scope:
+546,810 nodes over 400 files, `Constant` 173,181 (32 %) and `Load`/`Store`/`Del` 131,239 (24 %).
+Each leaf paid the `_fields` loop, a `getattr` and two `isinstance`s to discover it had no children,
+and every node paid four class tests (`is Call` · `in Imports` · `in Func` · `issubclass(Scope)`).
+The sqlalchemy mint's profile read `_scan` 286 calls · 0.826 s self · 1.388 s cumulative, with
+`isinstance` 2.35 M calls · 0.18 s, `getattr` 1.36 M · 0.14 s, `issubclass` 0.79 M · 0.10 s beneath
+it — above `compile` (the parse) at 0.51 s, so three of the receipt's lanes (fastapi · graphy ·
+sqlalchemy) read the engine as hottest on this frame.
+
+**What it is.** `_VISITED` is every AST class minus the leaves (`expr_context` · `operator` ·
+`boolop` · `unaryop` · `cmpop` · `Constant`): a child is queued when `type(child) in _VISITED`,
+one set lookup, no `isinstance` — a string child (`MatchClass.kwd_attrs`) fails the lookup the
+same way a leaf does. `_class_info(cls)` is computed once per class: what the scan does at a node
+of that class (call · import · function · scope · other) and which of its fields can hold a visited
+node — the identifiers and ints of the grammar (`id` · `arg` · `attr` · `name` · `asname` ·
+`module` · `level` · `is_async` · `conversion` · `kind` · `simple`) and `ctx` · `op` · `ops` ·
+`type_comment` are left out. The loop reads the node's `__dict__` once. The records are the same
+bytes: the walk order over the visited nodes is `ast.walk`'s minus the nodes that produce nothing.
+Three cuts, each measured on the 400 files (best of 7): the leaf skip alone 210 → 128 ms, the
+per-class kind and the string fields dropped 107, the single set lookup 95–99.
+
+**What proves it.** Old scanner (the parent commit's module, loaded beside the new) and new over the
+graphy corpus in one process: 113 files, 113 identical record streams. fastapi (ten shards, minted
+from the corpus venv) and sqlalchemy (three) rebuilt: every `nodes.json` and `edges.json` the same
+sha256 as before, 26 files. The graphy tenant's own shards move because its corpus moved (this
+change is in it) — the in-process proof above covers it. `wormhole_edges.json` differs on every
+rebuild, old code or new: `converge` stamps `resolved_at` into the sidecar, so no rebuild is
+byte-identical there (a finding, filed). The visit-count test (§53, graphyos #14) now pins pops to
+nodes minus leaves and refuses when a leaf is queued: with the leaves put back in `_VISITED` it reads
+`(41, 52, 13)` — 41 pops against 39.
+
+```bash
+# from engine/
+P=/tmp/prof-sa; rm -rf $P; PYTHON=$(pwd)/../.venv/bin/python GRAPHY_PROFILE_DIR=$P bash tenants/sqlalchemy/rebuild.sh > /dev/null
+../.venv/bin/python -c "import pstats, glob; s = pstats.Stats(*glob.glob('$P/smash-*.prof')); s.sort_stats('tottime').print_stats(6)"
+../.venv/bin/python - <<'P'
+import ast, glob, timeit; from graphy.adapters import python_ast as pa
+files = sorted(glob.glob("../staging/corpora/**/sqlalchemy/**/*.py", recursive=True))[:400]; trees = [ast.parse(open(f, "rb").read()) for f in files]
+print(f"_scan {min(timeit.repeat(lambda: [pa._scan(t) for t in trees], number=1, repeat=7))*1000:.0f} ms over {len(files)} files")
+P
+git show HEAD~1:engine/graphy/adapters/python_ast.py > /tmp/python_ast_old.py    # the parent commit's scanner
+../.venv/bin/python - <<'P'
+import importlib.util; from pathlib import Path; from graphy.adapters import python_ast as new
+s = importlib.util.spec_from_file_location("graphy.adapters.python_ast_old", "/tmp/python_ast_old.py"); old = importlib.util.module_from_spec(s); s.loader.exec_module(old)
+root = Path(".").resolve(); pairs = [(list(old._emit_records_for_file(f, root, pkg)), list(new._emit_records_for_file(f, root, pkg))) for pkg in ("graphy", "tests") for f in sorted((root / pkg).rglob("*.py"))]
+print(len(pairs), "files,", sum(a == b for a, b in pairs), "identical")
+P
+for t in fastapi sqlalchemy; do sha256sum tenants/$t/substrate/*_graph/nodes.json tenants/$t/substrate/*_graph/edges.json; done > /tmp/before.sha   # on the parent commit
+# … rebuild both on this commit (fastapi with GRAPHY_CORPUS_SITE_PACKAGES=<the corpus venv's site-packages>) …
+for t in fastapi sqlalchemy; do sha256sum tenants/$t/substrate/*_graph/nodes.json tenants/$t/substrate/*_graph/edges.json; done > /tmp/after.sha && diff /tmp/before.sha /tmp/after.sha
+python3 -m pytest -q tests/test_adapters.py tests/test_smash.py tests/test_parity.py
+# the RED proof (reverted after): the leaves queued again
+sed -i 's/ and issubclass(c, ast.AST)) - _LEAF$/ and issubclass(c, ast.AST))/' graphy/adapters/python_ast.py && python3 -m pytest -q tests/test_adapters.py -k visits_every_node   # (41, 52, 13)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before24.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `_scan` self · cumulative, sqlalchemy mint, 286 files (profiled) | 0.826 · 1.388 s | 0.367 · 0.567 s |
+| the mint's hottest frame | `_scan` | `compile` (0.52 s) — the lane off the engine-hot count |
+| the sqlalchemy `smash`, profiled total | 3.61 s | 2.85 s |
+| `_scan` over 400 sqlalchemy files, best of 7 | 210 ms | 95 ms |
+| `isinstance` · `getattr` · `issubclass` calls beneath the mint | 2.35 M · 1.36 M · 0.79 M | 1.12 M · — · — (`dict.get` 2.40 M, 0.23 s, is now the loop's own lookups) |
+
+| check | result |
+|---|---|
+| the floor | 484 passed · 3 skipped — the visit-count test re-pinned: pops = nodes − leaves, refusing a queued leaf |
+| the RED proof | the leaves put back in `_VISITED` → `AssertionError: (41, 52, 13)` |
+| the same answer | 113 of 113 graphy files identical old vs new in one process; 26 `nodes.json` · `edges.json` over fastapi and sqlalchemy the same sha256 after a rebuild; parity against the golden fixture green |
+| the gate | `GRAPHY_STANDALONE_OK`; the receipt's gate 18.0 → 15.7 s; the graphy tenant's six arm regions re-rendered (`_class_info` moved the walk: 2627 → 2628 nodes) |
+| the receipt | `measure.py run` then `diff recon.before24.json recon.json`: **`pass.engine_hot_lanes` 5 → 2** — `tenants.fastapi` · `tenants.graphy` · `tenants.sqlalchemy` off the count, their hottest frame now `compile`; `floor.seconds` 11.0 → 8.2, `gate.seconds` 18.0 → 15.7, `tenants.fastapi.seconds` 3.4 → 3.0, `quickstart.httpx.seconds` 5.9 → 5.3; three numbers the wrong way and none the engine's — `quickstart.express.seconds` 5.1 → 8.4 (the cold quickstart's `npm install` over the network: the lane read 8.2 · 8.1 · 7.7 · 5.5 · 5.1 · 8.4 across the last six receipts), `wheel.seconds` 2.9 → 3.9 (pip and build), `tenants.fastapi.doors.seconds` 0.079 → 0.091 (12 ms on a 60–120 ms door). `MEASURE DIFF` exits 1 on those three; closed on the engine lines by the operator's standing ruling (§59) |
