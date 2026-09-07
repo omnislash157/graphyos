@@ -2804,3 +2804,68 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before19.json r
 | CI, the first run with jobs | 34079133673: gate green (the receipt step ran, 1 m 29 s) · floor (3.12) green in 23 s · floor (3.10) red at collection — `burden.py` imported `tomllib` (3.11+) at module level and `test_burden.py` loads it; hidden by the same silent CI since the burden landed. `tomllib` is imported inside `check_dependencies` now (the gate's interpreter is 3.12; a 3.10 caller is refused by name) and the one test that needs it does `pytest.importorskip("tomllib")` — proven with `sys.modules["tomllib"] = None` after pytest's own config: `s..` and the skip named |
 | CI, the second run | 34079362498: gate and floor (3.12) green; floor (3.10) one red — `test_GREEN_open_for_hashes_shard_bytes_and_never_parses_them` saw no shard open: the engine hashes through `Path.open("rb")`, and 3.10's pathlib opens through an accessor bound to `io.open` at import, past the test's spy on `io.open`. The spy covers `Path.open` too; the engine did not move |
 | CI, green | 34079577664: gate · floor (3.10) · floor (3.12) all green — the first green push since 34036590127 on 2026-09-06 13:36. The floor step on the runner: 3.10 13.2 s, 3.12 11.7 s (`Run cd engine && pytest -q` to its last line); the floor jobs whole, checkout and install included, 3.10 24 → 23 s and 3.12 25 → 22 s against that last green run (its step log has expired; the job spans are what GitHub still holds). Re-derive: `gh run view <id> --repo omnislash157/graphyos --json jobs` and `--log` for the step's first and last timestamp |
+
+## 56 · EVERY VERB PAYS FOR ITSELF — the verb modules import inside their handlers, `--help` 78 → 45 ms, the surface untouched (2026-09-07 · graphyos issue 20)
+
+**What it was.** `graphy/cli.py` imported fourteen verb modules at the top — `fanout` ·
+`federated_store` · `journal` · `container` · `doors` · `index` · `mcp` · `pillars` · `refresh` ·
+`release` · `traversal` · `converge` · `smash` · `parity.ParityError` — so `python -m graphy --help`
+loaded 29 `graphy.*` modules and 192 modules in all, `graphy.index` dragging `urllib.request` →
+`http.client` → `email.parser` (10 ms of import time) for a verb that never fetches. Every
+`python -m graphy` a rebuild spawns (about twelve) and every farm worker paid the same.
+
+**What it is.** Each handler (and each helper that reaches a verb module: `_roster`,
+`_descriptor_dict`, `_clear_substrate`, `_eat_run`, `_scheme_index_from_ring`, `_eat_typescript`)
+imports what it uses on its first line; `_build_parser` imports only `pillars` (its five
+`DEFAULT_*` values, 1.4 ms) and lists the producers from `_PRODUCER_NAMES`, a tuple the floor pins
+to `smash.PRODUCERS` so the parser never loads the minting lane (12 ms: `email.parser` ·
+`subprocess` · the adapters). `index._Source.read` imports `urllib` under `if self.remote:` — a
+directory index never loads it. Importing `graphy.cli` now loads exactly the surface —
+`graphy` · `graphy.ir` · `graphy.parity` · `graphy.tenant` · `graphy.cli` — 113 modules, none of
+`urllib.request` · `http.client` · `email.parser`. `import graphy` and every documented
+`from graphy import X` are untouched (`test_exports_the_parity_surface`). Stdlib only, nothing added.
+
+**Why not 30 ms.** The issue's target was `--help` under 30 ms. The floor is the import surface
+the issue pins: `import graphy` alone is 32 ms wall on this box (the bare interpreter 11 ms;
+`graphy.ir` 13 ms of import time, 8.7 of it `dataclasses` → `inspect` → `ast`, and `parity`'s
+`pathlib` → `urllib.parse`). `--help` is 13 ms above that: `argparse` 3.5 ms and the parser's
+own construction. Under 30 needs the surface to move — `ir` without `dataclasses`, or a package
+`__init__` that resolves its names lazily — which is a different change with a different blast
+radius; it is not this one.
+
+```bash
+cd engine
+python3 - <<'PY'                                                       # the medians (n=25 each)
+import subprocess, sys, time, statistics
+def med(cmd):
+    ts = []
+    for _ in range(25):
+        t = time.perf_counter(); subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); ts.append((time.perf_counter() - t) * 1000)
+    return statistics.median(ts)
+for label, cmd in [("bare", [sys.executable, "-c", "pass"]), ("import graphy", [sys.executable, "-c", "import graphy"]),
+                   ("import graphy.cli", [sys.executable, "-c", "import graphy.cli"]), ("--help", [sys.executable, "-m", "graphy", "--help"]),
+                   ("check, no args", [sys.executable, "-m", "graphy", "check"])]:
+    print(f"{label}: {med(cmd):.1f} ms")
+PY
+python3 -X importtime -m graphy --help 2>&1 >/dev/null | sort -t'|' -k2 -rn | head          # what --help still loads, by cost
+python3 -c "import sys, graphy.cli; print(len(sys.modules), sorted(m for m in sys.modules if m.startswith('graphy')))"
+# the RED proofs
+sed -i '4i import urllib.request' graphy/cli.py && python3 -m pytest -q tests/test_cli.py -k loads_no_verb; sed -i '4d' graphy/cli.py
+sed -i '4i from graphy import smash as smash_lane' graphy/cli.py && python3 -m pytest -q tests/test_cli.py -k loads_no_verb; sed -i '4d' graphy/cli.py
+sed -i 's/^_PRODUCER_NAMES = ("python_ast", "typescript_ast")/_PRODUCER_NAMES = ("python_ast",)/' graphy/cli.py && python3 -m pytest -q tests/test_cli.py -k producer_names; git checkout graphy/cli.py
+cd .. && python3 measure.py run && python3 measure.py diff recon.before20.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| `python -m graphy --help`, median of 25 | 78.3 · 78.2 ms | 46.0 · 44.0 ms |
+| the bare interpreter · `import graphy` · `import graphy.cli` · `--help` · `check` with no args | — | 11.1 · 32.4 · 37.9 · 45.2 · 63.4 ms |
+| modules loaded by `import graphy.cli` · of them `graphy.*` | 192 · 29 | 113 · 5 (the surface and `cli`) |
+| the costliest import under `--help` (`-X importtime`, cumulative) | `graphy.cli` 35.1 ms: `graphy.ir` 13.0 · `graphy.index` 11.2 (`urllib.request` 9.9) · `federated_store` 5.6 · `fanout` 4.5 · `parity` 4.4 | `graphy` 18.7 ms: `graphy.ir` 13.3 · `parity` 4.3; `graphy.cli` itself 5.1 (`argparse`) |
+
+| check | result |
+|---|---|
+| the floor | 470 passed · 3 skipped (468 + the two below) |
+| the RED proofs | `urllib.request` at cli's top → `test_GREEN_cli_loads_no_verb_module_and_no_http_client` fails naming `email.parser …`; `from graphy import smash` at the top → fails naming the adapters; a producer dropped from `_PRODUCER_NAMES` → `test_GREEN_parser_producer_names_pin_the_minting_registry` fails naming `typescript_ast` |
+| the gate | `GRAPHY_STANDALONE_OK` — burden: wheel 269,249 B under the cap, 0 runtime deps |
+| the receipt | `measure.py run` then `diff recon.before20.json recon.json`: `MEASURE REGRESSION: 1 number(s) moved the wrong way — tenants.express.seconds 2.5 -> 2.9 (+16%)`, 45 others moved and every door on every tenant faster (fastapi · sqlalchemy · hono · express · graphy, 16–25 % off each `descend` · `blast` · `explain`, one process each), the floor 17.7 → 14.0 s under the receipt, the whole receipt 82.3 → 79.8 s, fastapi's rebuild RSS 183 → 166 MB, the wheel 269,605 B. The express number is noise: `bash tenants/express/rebuild.sh` timed directly, three runs each with the receipt's interpreter, reads before 2.61 · 2.58 · 2.60 s and after 2.39 · 2.36 · 2.37 s — faster, as every other tenant. Re-derive: `PYTHON=../.venv/bin/python; for i in 1 2 3; do /usr/bin/time -f %e bash tenants/express/rebuild.sh >/dev/null; done` on each side of `git stash` |

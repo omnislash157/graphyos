@@ -591,3 +591,23 @@ def test_python_m_graphy_wire_subprocess():
         cwd=str(graphy_os), capture_output=True, text=True)
     assert proc.returncode == 0
     assert "usage" in proc.stdout.lower()
+
+
+def test_GREEN_cli_loads_no_verb_module_and_no_http_client():
+    """Every verb's module is imported inside its handler: a fresh interpreter that imports
+    graphy.cli holds the import surface (ir · parity · tenant) and nothing else of graphy, and
+    none of urllib.request · http.client · email.parser — the index's fetch pays for those only
+    when a remote base is read. Checked in a subprocess so pytest's own imports are not in the way."""
+    probe = ("import sys, json, graphy.cli\n"
+             "print(json.dumps(sorted(m for m in sys.modules if m.startswith('graphy')"
+             " or m in ('urllib.request', 'urllib.error', 'http.client', 'email.parser'))))")
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True).stdout
+    loaded = json.loads(out)
+    assert loaded == ["graphy", "graphy.cli", "graphy.ir", "graphy.parity", "graphy.tenant"], loaded
+
+
+def test_GREEN_parser_producer_names_pin_the_minting_registry():
+    """The parser lists the producers by name so --help never loads the minting lane; the
+    tuple is the registry's keys, or this fails by name when a producer is added."""
+    from graphy import smash
+    assert cli._PRODUCER_NAMES == tuple(sorted(smash.PRODUCERS))

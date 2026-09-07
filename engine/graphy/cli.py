@@ -10,21 +10,13 @@ import sys
 import time
 from pathlib import Path
 
-from graphy import fanout
-from graphy import federated_store as fstore
-from graphy import journal
-from graphy import container
-from graphy import doors
-from graphy import index as shard_index
-from graphy import mcp as mcp_server
-from graphy import pillars as pillars_lane
-from graphy import refresh as refresh_lane
-from graphy import release as release_lane
-from graphy import traversal
-from graphy import converge as converge_lane
-from graphy import smash as smash_lane
-from graphy.parity import ParityError
 from graphy.tenant import Tenant, TenantError
+
+# Every verb's module is imported inside its handler, never here: `graphy --help` and every
+# `python -m graphy` a rebuild spawns pay for the verb they run, not for all of them. The
+# parser lists the producers by name so it never loads the minting lane; the floor pins this
+# tuple to smash.PRODUCERS.
+_PRODUCER_NAMES = ("python_ast", "typescript_ast")
 
 __all__ = ["main", "_load_tenant"]
 
@@ -77,6 +69,7 @@ def _load_tenant(descriptor: str) -> Tenant:
 
 
 def _roster(tenant: Tenant) -> list[str]:
+    from graphy import journal
     slugs = {journal._names(key)[1] for key in tenant.build_lanes}
     return sorted(slugs)
 
@@ -94,6 +87,7 @@ def _parse_lanes(lanes: list[str] | None) -> dict:
 
 
 def _descriptor_dict(tenant: Tenant) -> dict:
+    from graphy import journal
     return {
         "root": str(tenant.root),
         "data_home": str(tenant.data_home),
@@ -109,6 +103,7 @@ def _descriptor_dict(tenant: Tenant) -> dict:
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
+    from graphy import journal
     if not args.tenant:
         print("INIT REFUSED: --tenant is required — graphy never guesses the path to create",
               file=sys.stderr)
@@ -167,6 +162,9 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_build(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import container
+    from graphy import release as release_lane
     if not args.tenant:
         print("BUILD REFUSED: --tenant is required — graphy resolves identity only "
               "through a declared Tenant", file=sys.stderr)
@@ -215,6 +213,8 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
 
 def _cmd_walk(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import traversal
     if not args.tenant:
         print("WALK REFUSED: --tenant is required — graphy resolves identity only "
               "through a declared Tenant", file=sys.stderr)
@@ -265,6 +265,8 @@ def _cmd_walk(args: argparse.Namespace) -> int:
 
 
 def _cmd_bridge(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import traversal
     from graphy import bridge as bridge_lane
     descs, ids = list(args.tenant or ()), list(args.tenant_id or ())
     if len(descs) != 2 or len(ids) != 2:
@@ -303,6 +305,8 @@ def _cmd_bridge(args: argparse.Namespace) -> int:
 
 
 def _cmd_arms(args: argparse.Namespace) -> int:
+    from graphy import fanout
+    from graphy import federated_store as fstore
     from graphy import arms as arms_lane
     for flag in ("tenant", "tenant_id", "partition", "dir"):
         if not getattr(args, flag):
@@ -352,6 +356,7 @@ def _cmd_arms(args: argparse.Namespace) -> int:
 
 
 def _cmd_farm(args: argparse.Namespace) -> int:
+    from graphy import index as shard_index
     from graphy import farm as farm_lane
     if not args.index or not args.work:
         print("FARM REFUSED: --index and --work are required — the farm lands shards in a declared index from a "
@@ -389,6 +394,10 @@ def _cmd_farm(args: argparse.Namespace) -> int:
 
 
 def _cmd_draw(args: argparse.Namespace) -> int:
+    from graphy import fanout
+    from graphy import federated_store as fstore
+    from graphy import doors
+    from graphy import traversal
     from graphy import draw as draw_lane
     from graphy import sugiyama as sugi
     if args.check:
@@ -465,6 +474,7 @@ def _cmd_draw(args: argparse.Namespace) -> int:
 
 
 def _cmd_showcase(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
     from graphy import showcase as showcase_lane
     if not args.target:
         print("SHOWCASE REFUSED: name a git url or a repo path (`.` for the one you stand in)", file=sys.stderr)
@@ -483,6 +493,9 @@ def _cmd_showcase(args: argparse.Namespace) -> int:
 
 
 def _cmd_door(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import doors
+    from graphy import traversal
     verb = args.door.upper()
     if not args.tenant or not args.tenant_id:
         print(f"{verb} REFUSED: --tenant and --tenant-id are required — graphy resolves identity "
@@ -521,6 +534,9 @@ def _cmd_door(args: argparse.Namespace) -> int:
 
 
 def _cmd_pillars(args: argparse.Namespace) -> int:
+    from graphy import fanout
+    from graphy import federated_store as fstore
+    from graphy import pillars as pillars_lane
     if not args.tenant or not args.tenant_id:
         print("PILLARS REFUSED: --tenant and --tenant-id are required — graphy resolves identity "
               "only through a declared Tenant", file=sys.stderr)
@@ -577,6 +593,8 @@ def _cmd_pillars(args: argparse.Namespace) -> int:
 
 
 def _cmd_refresh(args: argparse.Namespace) -> int:
+    from graphy import refresh as refresh_lane
+    from graphy import smash as smash_lane
     if not args.tenant or not args.tenant_id or not args.package:
         print("REFRESH REFUSED: --tenant, --tenant-id and --package are required — graphy never guesses "
               "which tenant, which receipt, or which shard is the root", file=sys.stderr)
@@ -598,6 +616,8 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import mcp as mcp_server
     if not args.tenant or not args.tenant_id:
         print("MCP REFUSED: --tenant and --tenant-id are required — graphy resolves identity only "
               "through a declared Tenant", file=sys.stderr)
@@ -618,6 +638,8 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
 
 
 def _cmd_traversals(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import traversal
     dirs, rc = _tenant_dirs(args, "TRAVERSALS")
     if dirs is None:
         return rc
@@ -714,6 +736,10 @@ def _torn_line(jfile: Path) -> tuple[str, str] | None:
 
 
 def _cmd_check(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import journal
+    from graphy import container
+    from graphy import release as release_lane
     if not args.tenant:
         print("CHECK REFUSED: --tenant is required — graphy resolves identity only "
               "through a declared Tenant", file=sys.stderr)
@@ -851,6 +877,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
 
 def _cmd_fanout(args: argparse.Namespace) -> int:
+    from graphy import fanout
     if not args.out:
         print("FANOUT REFUSED: --out is required — the fan-out needs a place to "
               "land", file=sys.stderr)
@@ -895,6 +922,8 @@ def _cmd_fanout(args: argparse.Namespace) -> int:
 
 
 def _cmd_smash(args: argparse.Namespace) -> int:
+    from graphy import smash as smash_lane
+    from graphy.parity import ParityError
     for flag in ("package", "site_packages", "out"):
         if not getattr(args, flag):
             print(f"SMASH REFUSED: --{flag.replace('_', '-')} is required — graphy never guesses "
@@ -926,6 +955,7 @@ def _cmd_smash(args: argparse.Namespace) -> int:
 
 
 def _cmd_converge(args: argparse.Namespace) -> int:
+    from graphy import converge as converge_lane
     if not args.tenant or not args.tenant_id:
         print("CONVERGE REFUSED: --tenant and --tenant-id are required — graphy resolves identity "
               "only through a declared Tenant", file=sys.stderr)
@@ -984,6 +1014,7 @@ def _tenant_dirs(args: argparse.Namespace, verb: str) -> tuple[list[Path] | None
 
 
 def _cmd_container(args: argparse.Namespace) -> int:
+    from graphy import container
     dirs, rc = _tenant_dirs(args, "CONTAINER")
     if dirs is None:
         return rc
@@ -1005,6 +1036,7 @@ def _cmd_container(args: argparse.Namespace) -> int:
 
 
 def _cmd_estate_index(args: argparse.Namespace) -> int:
+    from graphy import container
     from graphy import index_estate
     index = Path(args.index)
     if not index.is_absolute():
@@ -1054,6 +1086,8 @@ def _cmd_estate_index(args: argparse.Namespace) -> int:
 
 
 def _cmd_estate(args: argparse.Namespace) -> int:
+    from graphy import container
+    from graphy import traversal
     if args.index:
         return _cmd_estate_index(args)
     dirs, rc = _tenant_dirs(args, "ESTATE")
@@ -1102,6 +1136,7 @@ def _package_candidates(repo: Path) -> list[Path]:
 
 
 def _scheme_index_from_ring(sub: Path, description: str) -> None:
+    from graphy import smash as smash_lane
     ring = json.loads((sub / smash_lane.RING_NAME).read_text(encoding="utf-8"))
     index = {"_meta": {"description": description, "standard": ring.get("standard", [])}, **ring["scheme_index"]}
     (sub / ".federation_scheme_index.json").write_text(json.dumps(index, indent=1, sort_keys=True) + "\n",
@@ -1112,6 +1147,7 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
     """The bolt-on over a TypeScript repo: the corpus is ``src/`` (or the package.json ``source``
     dir, or the repo), the scheme is the package.json name as a slug, the ring is resolved from
     ``--site-packages`` (its node_modules)."""
+    from graphy import smash as smash_lane
     try:
         meta = json.loads((repo / "package.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -1143,6 +1179,7 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
 def _cmd_eat(args: argparse.Namespace) -> int:
     """The bolt-on in one verb: mint the repo's package and its import ring into <repo>/.graphy,
     declare the tenant, resolve the labels, compile the store, emit the container, audit."""
+    from graphy import container
     target = args.repo or args.repo_pos
     if not target:
         print("EAT REFUSED: name the codebase to eat — `graphy eat .` for the one you stand in", file=sys.stderr)
@@ -1194,6 +1231,9 @@ def _clear_substrate(sub: Path) -> None:
     stored walks keep their directory, so they diff against the new generation. Everything
     else under the substrate (the registry, the journal, the resolver's sidecars, the store,
     the parquet, the atlas) is a build product and is rebuilt."""
+    from graphy import journal
+    from graphy import traversal
+    from graphy import smash as smash_lane
     kept = sub.parent / f".{traversal.DIRNAME}.keep"
     shutil.rmtree(kept, ignore_errors=True)
     if (sub / traversal.DIRNAME).is_dir():
@@ -1214,6 +1254,8 @@ def _clear_substrate(sub: Path) -> None:
 
 
 def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, producer: str) -> int:
+    from graphy import journal
+    from graphy import smash as smash_lane
     home = Path(args.home).expanduser().resolve() if args.home else repo / ".graphy"
     sub = home / "substrate"
     desc = home / "tenant.json"
@@ -1296,6 +1338,7 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path) ->
 
 
 def _cmd_push(args: argparse.Namespace) -> int:
+    from graphy import index as shard_index
     if not args.index or not args.shard:
         print("PUSH REFUSED: --index and at least one shard directory are required — graphy never "
               "guesses where an index lives", file=sys.stderr)
@@ -1316,6 +1359,7 @@ def _cmd_push(args: argparse.Namespace) -> int:
 
 
 def _cmd_pull(args: argparse.Namespace) -> int:
+    from graphy import index as shard_index
     if not args.index or not args.ref or not args.out:
         print("PULL REFUSED: <name|address>, --index and --out are required — graphy never guesses "
               "where a shard comes from or lands", file=sys.stderr)
@@ -1332,6 +1376,7 @@ def _cmd_pull(args: argparse.Namespace) -> int:
 
 
 def _cmd_index(args: argparse.Namespace) -> int:
+    from graphy import index as shard_index
     if not args.index:
         print("INDEX REFUSED: --index is required", file=sys.stderr)
         return 2
@@ -1376,6 +1421,7 @@ def _cmd_shell(args: argparse.Namespace) -> int:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    from graphy import pillars as pillars_lane
     parser = argparse.ArgumentParser(
         prog="graphy",
         description="graphy — compile any codebase into a walkable substrate. "
@@ -1394,7 +1440,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_eat.add_argument("--package", default=None,
                        help="the importable package to mint when the repo carries more than one")
     p_eat.add_argument("--home", default=None, help="where the tenant lands (default: <repo>/.graphy)")
-    p_eat.add_argument("--producer", default=None, choices=sorted(smash_lane.PRODUCERS),
+    p_eat.add_argument("--producer", default=None, choices=_PRODUCER_NAMES,
                        help="the ecosystem door (default: python_ast; typescript_ast when the repo carries a package.json and no importable Python package)")
     p_eat.set_defaults(handler=_cmd_eat)
 
@@ -1426,7 +1472,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_smash.add_argument("--parity", default=None, metavar="GOLDEN_DIR",
                          help="after minting, prove the root shard record-for-record against a "
                               "golden shard (nodes.json + edges.json + PROVENANCE.json); exit 1 on divergence")
-    p_smash.add_argument("--producer", default="python_ast", choices=sorted(smash_lane.PRODUCERS),
+    p_smash.add_argument("--producer", default="python_ast", choices=_PRODUCER_NAMES,
                          help="the ecosystem door: python_ast over site-packages (default) or typescript_ast over node_modules")
     p_smash.set_defaults(handler=_cmd_smash)
 
@@ -1526,7 +1572,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_farm.add_argument("--skip", action="append", default=None, help="a distribution to leave out (repeatable)")
     p_farm.add_argument("--jobs", type=int, default=1, help="parallel jobs (default 1)")
     p_farm.add_argument("--python", default=None, help="the interpreter that provisions each venv (default: this one)")
-    p_farm.add_argument("--producer", default="python_ast", choices=sorted(smash_lane.PRODUCERS))
+    p_farm.add_argument("--producer", default="python_ast", choices=_PRODUCER_NAMES)
     p_farm.add_argument("--max-wheel-mb", type=float, default=200.0, help="refuse a release whose smallest file is over this (default 200)")
     p_farm.add_argument("--timeout", type=int, default=900, help="seconds a pip install may take (default 900)")
     p_farm.add_argument("--keep-venv", action="store_true", help="keep each job's venv (default: deleted after the mint)")

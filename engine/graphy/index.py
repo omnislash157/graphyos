@@ -27,9 +27,6 @@ import os
 import re
 import shutil
 import tempfile
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -219,6 +216,9 @@ class _Source:
 
     def read(self, rel: str) -> bytes | None:
         if self.remote:
+            import urllib.error
+            import urllib.parse
+            import urllib.request                    # http.client · email behind it: only a remote base pays
             url = self.base.rstrip("/") + "/" + urllib.parse.quote(rel)
             try:
                 with urllib.request.urlopen(url, timeout=60) as r:  # noqa: S310 — the operator named the base
