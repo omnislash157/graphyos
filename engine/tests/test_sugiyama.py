@@ -142,3 +142,45 @@ def test_GREEN_inversion_crossing_count_equals_the_pairwise_count_on_random_bila
     assert _count_crossings(["x", "y"], ["p", "q"], {"x": ["q"], "y": ["p"]}) == 1
     assert _count_crossings(["x", "y"], ["p", "q"], {"x": ["p"], "y": ["q"]}) == 0
     assert _count_crossings(["x", "y"], ["p", "q"], {"x": ["p", "q"], "y": ["p", "q"]}) == 1
+
+
+def test_GREEN_the_canvas_renders_the_drawing_not_the_rectangle_and_the_same_bytes():
+    """Every writer records the row's last written column and render stops there, emitting the
+    blank tail as one run — the same text a walk over every cell produced, including the full-width
+    rows and the colour reset before a blank tail (graphyos #31)."""
+    import graphy.sugiyama as S
+
+    def reference(cv):                     # the cell-by-cell render this replaced, verbatim
+        rows = []
+        for r in range(cv.h):
+            out, last = [], None
+            for c in range(cv.w):
+                if cv.cont[r][c]:
+                    continue
+                g = cv.glyph[r][c]
+                if g == " " and cv.bits[r][c]:
+                    table = S.THEMES["heavy" if cv.weight[r][c] == 2 else "light"]
+                    g = table.get(cv.bits[r][c], " ")
+                col = cv.color[r][c]
+                if col != last:
+                    out.append("\033[0m" + S._ansi(col))
+                    last = col
+                out.append(g)
+            out.append("\033[0m")
+            rows.append("".join(out).rstrip())
+        return "\n".join(rows)
+
+    cv = S.Canvas(40, 9)
+    cv.tile(1, 2, "wide 🌉 glyph", color=3)          # a wide glyph: a continuation cell
+    cv.hroad(3, 1, 30, color=5)                       # a coloured road, then blank to the edge: the reset comes first
+    cv.vroad(10, 2, 6, weight=2)                      # a heavy vertical road crossing it
+    cv.cross(3, 10, color=7)
+    cv.bridge(5, 20)
+    cv.hroad(7, 0, 39)                                # a road to the last column: no tail
+    assert cv.last == [-1, 14, 10, 30, 10, 21, 10, 39, -1], cv.last
+    text = cv.render()
+    assert text == reference(cv)
+    lines = text.split("\n")
+    assert lines[0] == " " * 40 + "\033[0m" and lines[8] == lines[0], "an untouched row is full width, as before"
+    assert "\033[0m" + " " * 9 + "\033[0m" in lines[3], "the colour resets before the blank tail"
+    assert len(lines[7]) == 40 + len("\033[0m")

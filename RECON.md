@@ -3435,3 +3435,51 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before30.json r
 | the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical (`diff -rq` empty) |
 | the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`_place` moved the walk) |
 | the receipt | `measure.py run` then `diff recon.before30.json recon.json`: **`MEASURE DIFF OK: 45 number(s) moved, none the wrong way past tolerance`** — the first clean receipt since §57; `tenants.fastapi.seconds` 3.3 → 2.8, `tenants.sqlalchemy.seconds` 5.5 → 5.6 (the atlas's 0.36 s inside a rebuild the box times to ±0.3), `pass.engine_hot_lanes` 1 (the floor) |
+
+## 67 · THE CANVAS RENDERS THE DRAWING, NOT THE RECTANGLE — ORM's ascii 515 → 216 ms, the atlas 1.50 → 1.27 s, the same bytes (2026-09-07 · graphyos issue 31)
+
+**What it was.** `Canvas.render` walked every cell of the rectangle: ORM's canvas is 625 rows ×
+3,477 columns, 2.2 M cells, 678,327 `list.append`s and 215,583 `dict.get`s for a drawing that
+touches a few percent of it — 0.217 s of the picture's 0.515 s ascii render. The road drawers
+(`hseg` 11,460 calls · 0.148 s, `vseg` 3,501 · 0.079 s) wrote one dict entry per cell of every
+road under a `(row, column)` tuple built per cell, for the crossing check.
+
+**What it is.** The canvas records, per row, the last column any writer touched (`tile` · `hroad`
+· `vroad` · `cross`), and `render` stops there: the blank tail is one run of spaces, preceded by
+the colour reset the first blank cell would have emitted when the row's colour was still on, so
+the text is the same bytes — the full-width rows included (a row ends in the reset, which `rstrip`
+never strips, so every row was and is `w` wide). The road cells are keyed by row for the
+horizontal roads and by column for the vertical ones: one lookup per cell, no tuple per cell, the
+same crossing set. Old code and new over the same store: sqlalchemy's 12 atlas files and fastapi's
+13 byte-identical. The test renders a canvas with a wide glyph, a coloured road that ends before
+the edge, a heavy crossing road, a bridge and a road to the last column against the cell-by-cell
+render copied verbatim into the test.
+
+```bash
+# from engine/
+../.venv/bin/python - <<'P'
+import time; from graphy import draw, federated_store as fs, fanout, sugiyama as S; from graphy.cli import _load_tenant
+ten = _load_tenant("tenants/sqlalchemy/tenant.json"); subs = sorted(k[:-6] for k in ten.build_lanes)
+store = fs.open_for(subs, tenant=ten, tenant_id="sqlalchemy", db_path=fs.store_path_for(subs, tenant=ten)); cut = fanout.load_partition("tenants/sqlalchemy/partition.json")
+pic = draw.arm(store, "sqlalchemy", cut, "ORM"); lo = S.layout(pic.nodes, pic.edges, pic.labels); S._placed(lo, "LR")
+t0 = time.perf_counter(); S.render(lo, title="ORM", orient="LR"); print(f"ORM ascii render {(time.perf_counter()-t0)*1000:.0f} ms")
+P
+for i in 1 2 3; do /usr/bin/time -f "atlas %e s" ../.venv/bin/graphy draw --tenant tenants/sqlalchemy/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --atlas /tmp/atlas --partition tenants/sqlalchemy/partition.json 2>&1 | grep '^atlas'; done
+git stash push graphy/sugiyama.py && ../.venv/bin/graphy draw … --atlas /tmp/atlas_old … && git stash pop && ../.venv/bin/graphy draw … --atlas /tmp/atlas_new … && diff -rq /tmp/atlas_old /tmp/atlas_new    # empty, sqlalchemy and fastapi
+python3 -m pytest -q tests/test_sugiyama.py -k not_the_rectangle
+git show HEAD~1:engine/graphy/sugiyama.py > graphy/sugiyama.py && python3 -m pytest -q tests/test_sugiyama.py -k not_the_rectangle    # RED: 'Canvas' object has no attribute 'last' (reverted after)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before31.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| ORM's ascii render, layout and placement done | 515 ms | 267 ms with the row bound; 216 ms with the road cells keyed by row and column |
+| `graphy draw --atlas` on sqlalchemy, three runs | 1.51 · 1.49 · 1.50 s (§66) | 1.29 · 1.27 · 1.27 s |
+| the atlas since §65 | 1.86 s | 1.27 s |
+
+| check | result |
+|---|---|
+| the floor | 491 passed · 3 skipped (490 + 1); the RED proof against the parent's code |
+| the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical |
+| the gate | `GRAPHY_STANDALONE_OK`; the graphy tenant's arms re-rendered (`_touch` moved the walk) |
+| the receipt | `measure.py run` then `diff recon.before31.json recon.json`: `tenants.sqlalchemy.seconds` 5.6 → 5.4, `pass.engine_hot_lanes` 1; two numbers the wrong way and neither the canvas's — `tenants.graphy.seconds` 2.1 → 2.8 (the same rebuild timed by hand right after: 1.98 · 1.98 · 2.07 s) and `index.verify_seconds` 0.5 → 0.6 (by hand: 0.54 · 0.56 · 0.54), the box's noise on a loaded afternoon. `MEASURE DIFF` exits 1 on those; closed on the engine lines by the standing ruling (§59) |

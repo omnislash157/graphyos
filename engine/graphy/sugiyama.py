@@ -72,6 +72,11 @@ class Canvas:
         self.weight = [[1] * w for _ in range(h)]
         self.color = [[None] * w for _ in range(h)]
         self.cont = [[False] * w for _ in range(h)]
+        self.last = [-1] * h              # per row, the last column ever written: render stops there (RECON.md §67)
+
+    def _touch(self, r: int, c: int) -> None:
+        if c > self.last[r]:
+            self.last[r] = c
 
     def tile(self, r: int, c: int, s: str, color: int | None = None) -> None:
         col = c
@@ -80,10 +85,12 @@ class Canvas:
             if 0 <= r < self.h and 0 <= col < self.w:
                 self.glyph[r][col] = ch
                 self.color[r][col] = color
+                self._touch(r, col)
                 for k in range(1, cw):
                     if col + k < self.w:
                         self.cont[r][col + k] = True
                         self.glyph[r][col + k] = ""
+                        self._touch(r, col + k)
             col += cw
 
     def hroad(self, r: int, c0: int, c1: int, weight: int = 1,
@@ -94,6 +101,7 @@ class Canvas:
             self.color[r][c] = color
         self.bits[r][c0] &= ~W
         self.bits[r][c1] &= ~E
+        self._touch(r, max(c0, c1))
 
     def vroad(self, c: int, r0: int, r1: int, weight: int = 1,
               color: int | None = None) -> None:
@@ -101,32 +109,43 @@ class Canvas:
             self.bits[r][c] |= N | S
             self.weight[r][c] = weight
             self.color[r][c] = color
+            self._touch(r, c)
         self.bits[r0][c] &= ~N
         self.bits[r1][c] &= ~S
 
     def cross(self, r: int, c: int, color: int | None = None) -> None:
         self.glyph[r][c] = "╪"
         self.color[r][c] = color
+        self._touch(r, c)
 
     def bridge(self, r: int, c: int, color: int | None = None) -> None:
         self.tile(r, c, "🌉", color)
 
     def render(self) -> str:
+        """The same text as a walk over every cell — the blank tail of a row past its last written
+        column is one run of spaces (a colour reset first when the row's colour was still on, as
+        the first blank cell would have done), so the work is the drawing, not the rectangle."""
         rows = []
         for r in range(self.h):
             out, last = [], None
-            for c in range(self.w):
-                if self.cont[r][c]:
+            stop = self.last[r] + 1
+            glyph, bits, weight, color, cont = self.glyph[r], self.bits[r], self.weight[r], self.color[r], self.cont[r]
+            for c in range(stop):
+                if cont[c]:
                     continue
-                g = self.glyph[r][c]
-                if g == " " and self.bits[r][c]:
-                    table = THEMES["heavy" if self.weight[r][c] == 2 else "light"]
-                    g = table.get(self.bits[r][c], " ")
-                col = self.color[r][c]
+                g = glyph[c]
+                if g == " " and bits[c]:
+                    table = THEMES["heavy" if weight[c] == 2 else "light"]
+                    g = table.get(bits[c], " ")
+                col = color[c]
                 if col != last:
                     out.append("\033[0m" + _ansi(col))
                     last = col
                 out.append(g)
+            if stop < self.w:
+                if last is not None:
+                    out.append("\033[0m")
+                out.append(" " * (self.w - stop))
             out.append("\033[0m")
             rows.append("".join(out).rstrip())
         return "\n".join(rows)
@@ -643,25 +662,39 @@ def render(lo: Layout, *, color: bool = True, title: str | None = None,
     def to_rc(along, cross):
         return (along, cross) if TB else (cross, along)
 
-    vcells, hcells, crossings, arrowheads = {}, {}, set(), []
+    # the cells each road owns, keyed by row for the horizontal roads and by column for the
+    # vertical ones — one dict lookup per cell and no tuple built per cell (RECON.md §67)
+    vcells: dict = {}                    # column → {row: eid}
+    hcells: dict = {}                    # row → {column: eid}
+    crossings, arrowheads = set(), []
 
     def vseg(c, r0, r1, eid, clr):
         if r1 < r0:
             r0, r1 = r1, r0
         cv.vroad(c, r0, r1, color=clr)
+        col = vcells.get(c)
+        if col is None:
+            col = vcells[c] = {}
         for r in range(r0, r1 + 1):
-            if r0 < r < r1 and hcells.get((r, c), eid) != eid:
-                crossings.add((r, c))
-            vcells[(r, c)] = eid
+            if r0 < r < r1:
+                row = hcells.get(r)
+                if row is not None and row.get(c, eid) != eid:
+                    crossings.add((r, c))
+            col[r] = eid
 
     def hseg(r, c0, c1, eid, clr):
         if c1 < c0:
             c0, c1 = c1, c0
         cv.hroad(r, c0, c1, color=clr)
+        row = hcells.get(r)
+        if row is None:
+            row = hcells[r] = {}
         for c in range(c0, c1 + 1):
-            if c0 < c < c1 and vcells.get((r, c), eid) != eid:
-                crossings.add((r, c))
-            hcells[(r, c)] = eid
+            if c0 < c < c1:
+                col = vcells.get(c)
+                if col is not None and col.get(r, eid) != eid:
+                    crossings.add((r, c))
+            row[c] = eid
 
     def along_seg(cross, a0, a1, eid, clr):
         (vseg if TB else hseg)(cross, a0, a1, eid, clr)

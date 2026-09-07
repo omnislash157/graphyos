@@ -6,7 +6,7 @@
 `fanout` cuts a shard by a partition with a receipt; `pillars` deduces the arms from the module graph; `arms` renders the generated region into each arm file and verifies it; `sugiyama` lays out and renders; `draw` draws from the store; `showcase` writes the page.
 
 <!-- graphy:arm CUT generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=6d9b91abababbda3 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:6f779365019f5f80c1aca5cbccd5d4f4974cf65a30c5dba3c79d67322b92d95a -->
+     store=355eed7c596bdba6 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:c1490cd00231dd9da611a27b53c42fa29c25d4d4e8fd5bf31da99fd06f3e37fe -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -16,7 +16,7 @@ Every symbol the partition places in this arm, by module; a class carries its me
 **`graphy.fanout`** — classes: `Cut` (5) · `FanoutError`; functions: `_acquire_publish_lock` · `_cut_flaw` · `_edge_endpoint` · `_edge_flaw` · `_endpoint_flaw` · `_node_flaw` · `_node_group` · `_read_pinned_entry` · `_receipt_flaw` · `_release_publish_lock` · `_render_node_line` · `_render_section` · `_render_toc` · `_section_filename` · `_sha256` · `compile_fanout` · `load_partition` · `verify_fanout`
 **`graphy.pillars`** — classes: `ModuleGraph` (5) · `PillarsError` · `Proposal` (1) · `Ruling`; functions: `_arm_name` · `_module_of` · `diff` · `module_graph` · `propose` · `render` · `render_diff` · `to_partition` · `write_partition`
 **`graphy.showcase`** — classes: `ShowcaseError`; functions: `_clone` · `_esc` · `compose` · `showcase`
-**`graphy.sugiyama`** — classes: `Canvas` (7) · `Layout` (2); functions: `_adj_json` · `_all_nodes` · `_ansi` · `_apply_fas` · `_assign_cross` · `_beacon` · `_build_layers` · `_center` · `_count_crossings` · `_count_crossings_pairwise` · `_dedupe` · `_disp_w` · `_edge_from_to` · `_edge_path` · `_esc` · `_fas` · `_greedy_fas` · `_insert_dummies` · `_longest_path_layering` · `_median_order` · `_minimize_crossings` · `_place` · `_placed` · `_render_iso` · `_tarjan_sccs` · `_total_crossings` · `_wcswidth` · `check_artifact` · `draw` · `emit_html` · `emit_svg` · `from_dsl` · `from_graph` · `layout` · `layout_json` · `render` · `wcswidth`
+**`graphy.sugiyama`** — classes: `Canvas` (8) · `Layout` (2); functions: `_adj_json` · `_all_nodes` · `_ansi` · `_apply_fas` · `_assign_cross` · `_beacon` · `_build_layers` · `_center` · `_count_crossings` · `_count_crossings_pairwise` · `_dedupe` · `_disp_w` · `_edge_from_to` · `_edge_path` · `_esc` · `_fas` · `_greedy_fas` · `_insert_dummies` · `_longest_path_layering` · `_median_order` · `_minimize_crossings` · `_place` · `_placed` · `_render_iso` · `_tarjan_sccs` · `_total_crossings` · `_wcswidth` · `check_artifact` · `draw` · `emit_html` · `emit_svg` · `from_dsl` · `from_graph` · `layout` · `layout_json` · `render` · `wcswidth`
 
 ## The inherits joins out — generated
 
