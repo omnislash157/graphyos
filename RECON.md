@@ -3564,3 +3564,52 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before33.json r
 | the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical; every tenant's `arms --verify` green in the receipt |
 | the gate | `GRAPHY_STANDALONE_OK` |
 | the receipt | `measure.py run` then `diff recon.before33.json recon.json`: **`MEASURE DIFF OK: 41 number(s) moved, none the wrong way past tolerance`** — the receipt 58.4 → 55.9 s, `tenants.sqlalchemy.rss_kb` 255,176 → 263,756 (+3 %, within tolerance: the rows kept), every other lane's RSS flat or down, `pass.engine_hot_lanes` 1 |
+
+## 70 · 0.2.0 — THE STRANGER'S PATH, RUN AS A STRANGER — a fresh venv, the wheel, a repo graphy never saw, and a company repo with ten packages; eat settles the package before it installs anything (2026-09-07)
+
+**Why a release.** 0.1.0 went to PyPI on the morning of the 7th; twenty-seven commits followed —
+§48–§69, the whole optimization pass — and `pip install graphyos` handed none of it out. The README's
+CI badge pointed at the private repo (`omnislash157/graphy`), a broken image on the public page.
+Both fixed here; the version is 0.2.0 in `pyproject.toml` and `graphy.__version__`, the changelog
+derives it, and the `v0.2.0` tag on the public repo publishes by trusted publishing.
+
+**The stranger's path, run as written.** A fresh venv, `pip install` of the 0.2.0 wheel with both
+extras, `git clone pallets/click` — a repo no tenant or quickstart had touched — then the README's
+two commands and nothing else:
+
+```text
+graphy eat .          PROVISION OK (a venv beside the repo, pip install click) · MINT OK: click 608 nodes / 3174 edges · RESOLVE OK 2136 labels → 536 edges · BUILD OK · CHECK OK · EAT OK  — 3.0 s
+                      then the MCP block to paste, SEE IT (pillars · draw), ASK IT (blast · descend · walk), every line an absolute path
+graphy showcase .     SHOWCASE OK: click · 3 arm(s) (CORE, TERMUI, COMPAT) · CHECK GREEN — 0.06 s; the page: .graphy/showcase/index.html (32 KB, self-contained: no script or stylesheet fetched)
+git status --short    empty — .graphy/ carries a .gitignore of `*` and ignores itself
+```
+
+**A company repo.** A local clone of the operator's private application (never a tenant, nothing
+of it travels): a pyproject, a requirements file, a package.json, ten importable top-level
+packages. The first `graphy eat .` provisioned for 66 s (a venv and `pip install` of the whole
+application; the box's disk, at 93 %, ran out under it) and then refused: `10 importable package(s)
+under <repo> — auth, core, …; name one with --package`. The refusal is right; its place was wrong.
+`_cmd_eat` now settles the package — the named one, the only one, or the refusal by name — before
+`provision` runs: a test with two packages and no `--package` proves the provisioner is never
+called and no `.graphy/` is made; on the parent's code the spy is reached first. Then, as the
+refusal says, from the application's existing venv: `graphy eat . --package <its sdk package>
+--site-packages <venv>/site-packages` → `MINT OK: <the package> 5349 nodes / 59966 edges`, a
+165-shard ring (numpy 11,959 nodes, networkx 7,921, livekit 3,979 …), 15,456 files parsed, `EAT OK`
+in 97.9 s; `graphy showcase .` in 1.26 s, `CHECK GREEN`, the page where it says; `git status`
+clean; `.graphy/` 1.1 GB. The README's two-line block now carries the `--package` form and the
+page's path, and the paragraph under it says what a big application's ring weighs.
+
+```bash
+# the stranger, from an empty directory
+python3 -m venv venv && ./venv/bin/pip install 'graphyos[estate,typescript]==0.2.0' && git clone https://github.com/pallets/click.git && cd click
+../venv/bin/graphy eat . && ../venv/bin/graphy showcase . && git status --short && ls .graphy/showcase
+# the refusal before the install (from engine/)
+python3 -m pytest -q tests/test_cli.py -k settles_the_package
+git show HEAD~1:engine/graphy/cli.py > graphy/cli.py && python3 -m pytest -q tests/test_cli.py -k settles_the_package    # RED: the provisioner reached first (reverted after)
+```
+
+| check | result |
+|---|---|
+| the floor | 494 passed · 3 skipped (493 + 1); the RED proof against the parent's code |
+| the gate | `GRAPHY_STANDALONE_OK` — `graphy resolves OK (0.2.0)` |
+| the release | `bash release.sh` → `graphyos-0.2.0-py3-none-any.whl` · `.tar.gz`, twine check green, the changelog under `## 0.2.0`; the tag's workflow run and PyPI's answer in the section below when they land |

@@ -1223,6 +1223,24 @@ def _cmd_eat(args: argparse.Namespace) -> int:
     producer = args.producer
     if producer is None:
         producer = "typescript_ast" if not candidates and (repo / "package.json").is_file() else "python_ast"
+    corpus = None
+    if producer != "typescript_ast":
+        # Which package to eat is settled before anything is installed: a repo with ten importable
+        # packages used to pay a minute of pip install to be told to pass --package (RECON.md §70).
+        if args.package:
+            matches = [c for c in candidates if c.name == args.package]
+            if not matches:
+                print(f"EAT REFUSED: no package {args.package!r} under {repo} or {repo / 'src'} "
+                      f"(found: {[c.name for c in candidates] or 'none'})", file=sys.stderr)
+                return 2
+            corpus = matches[0]
+        elif len(candidates) == 1:
+            corpus = candidates[0]
+        else:
+            print(f"EAT REFUSED: {'no' if not candidates else len(candidates)} importable package(s) under {repo}"
+                  f"{' — ' + ', '.join(c.name for c in candidates) if candidates else ''}; name one with --package",
+                  file=sys.stderr)
+            return 2
     if not args.site_packages:
         from graphy import provision as provision_lane
         try:
@@ -1236,20 +1254,6 @@ def _cmd_eat(args: argparse.Namespace) -> int:
             pv.site.mkdir(parents=True, exist_ok=True)
     if producer == "typescript_ast":
         return _eat_typescript(args, repo)
-    if args.package:
-        matches = [c for c in candidates if c.name == args.package]
-        if not matches:
-            print(f"EAT REFUSED: no package {args.package!r} under {repo} or {repo / 'src'} "
-                  f"(found: {[c.name for c in candidates] or 'none'})", file=sys.stderr)
-            return 2
-        corpus = matches[0]
-    elif len(candidates) == 1:
-        corpus = candidates[0]
-    else:
-        print(f"EAT REFUSED: {'no' if not candidates else len(candidates)} importable package(s) under {repo}"
-              f"{' — ' + ', '.join(c.name for c in candidates) if candidates else ''}; name one with --package",
-              file=sys.stderr)
-        return 2
     return _eat_run(args, repo, corpus.name, corpus, "python_ast")
 
 

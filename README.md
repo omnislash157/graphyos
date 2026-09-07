@@ -1,6 +1,6 @@
 # graphy
 
-[![ci](https://github.com/omnislash157/graphy/actions/workflows/ci.yml/badge.svg)](https://github.com/omnislash157/graphy/actions/workflows/ci.yml)
+[![ci](https://github.com/omnislash157/graphyos/actions/workflows/ci.yml/badge.svg)](https://github.com/omnislash157/graphyos/actions/workflows/ci.yml)
 
 
 **Bolt it onto a repo and it eats the whole thing.** One command mints your package and every
@@ -46,8 +46,9 @@ over any eaten repo. Six tools: `hunt` · `descend` · `blast` · `walk` · `dra
 ## Install, then eat — two lines
 
 ```bash
-pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.1.0 — the extras are optional
-cd /path/to/your/repo && graphy eat .        # then, for the page: graphy showcase .
+pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.0 — the extras are optional
+cd /path/to/your/repo && graphy eat .        # a repo with several packages: graphy eat . --package <name>
+graphy showcase .                            # the page: .graphy/showcase/index.html — open it in a browser
 ```
 
 The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+.
@@ -86,7 +87,7 @@ EAT OK: httpx + 6 ring shard(s) -> /path/to/repo/.graphy
 
 ```bash
 # 3. does A reach B — across packages, on the literal
-.venv/bin/graphy walk --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx \
+graphy walk --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx \
     --seed httpx://module/httpx --target certifi://module/certifi
 #   WALK PATH: hops=2 steps=httpx://module/httpx -> httpx://module/httpx._config -> certifi://module/certifi
 #   TRAVERSAL: source=live reads=15 stored=…/.graphy/substrate/traversals/<generation>/<seed>.parquet
@@ -95,16 +96,20 @@ EAT OK: httpx + 6 ring shard(s) -> /path/to/repo/.graphy
 # names the hops that no longer hold
 
 # 4. the whole ring as one SQL view: adj(corpus, src, dst, edge_type, attrs, dst_repr, src_repr) and nodes(corpus, id, …)
-.venv/bin/graphy estate --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx \
+graphy estate --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx \
     --sql "SELECT a.corpus, n.corpus, count(*) FROM adj a JOIN nodes n ON a.dst = n.id WHERE a.corpus <> n.corpus GROUP BY 1, 2 ORDER BY 3 DESC"
 #   httpx_graph  httpcore_graph  …        ESTATE OK: 9 row(s) over 7 shard(s) in 5.8 ms
 
 # 5. is it still true — the store against the repo's HEAD, the parquet against the shards
-.venv/bin/graphy check --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx
+graphy check --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx
 ```
 
-Everything lands in `<repo>/.graphy/`, which `eat` marks ignored for your repo and rebuilds from
-scratch every time. Node ids are `<package>://<module|class|func|method>/<dotted>`.
+Everything lands in `<repo>/.graphy/`, which ignores itself (your `git status` stays clean) and
+is rebuilt from the previous shards every time. It holds a shard per package in the ring, so a
+big application eats big: a company repo with numpy, networkx and livekit in its ring lands 165
+shards and about a gigabyte beside the repo, in a hundred seconds (15,456 files parsed). A repo with several importable packages
+is refused by name before anything is installed — `graphy eat . --package <name>` picks one.
+Node ids are `<package>://<module|class|func|method>/<dotted>`.
 
 ## Or let the script do all five
 

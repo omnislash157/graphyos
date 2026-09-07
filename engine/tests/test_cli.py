@@ -611,3 +611,21 @@ def test_GREEN_parser_producer_names_pin_the_minting_registry():
     tuple is the registry's keys, or this fails by name when a producer is added."""
     from graphy import smash
     assert cli._PRODUCER_NAMES == tuple(sorted(smash.PRODUCERS))
+
+
+def test_RED_eat_settles_the_package_before_it_provisions_anything(tmp_path, monkeypatch, capsys):
+    """A repo with two importable packages and no --package is refused by name before a venv is
+    made or pip runs: the choice costs nothing, the provisioning a minute (graphyos #34)."""
+    import graphy.provision as provision
+    repo = tmp_path / "repo"
+    for name in ("alpha", "beta"):
+        (repo / name).mkdir(parents=True)
+        (repo / name / "__init__.py").write_text("x = 1\n")
+    (repo / "pyproject.toml").write_text('[project]\nname = "twin"\nversion = "0"\n')
+    called = []
+    monkeypatch.setattr(provision, "provision", lambda *a, **k: (called.append(a), (_ for _ in ()).throw(RuntimeError("never")))[1])
+    assert cli.main(["eat", str(repo)]) == 2
+    err = capsys.readouterr().err
+    assert "2 importable package(s)" in err and "alpha, beta" in err and "--package" in err
+    assert called == [], "the repo was provisioned before the package was settled"
+    assert not (repo / ".graphy").exists()
