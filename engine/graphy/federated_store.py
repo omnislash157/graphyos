@@ -298,6 +298,8 @@ class SQLiteStore:
         if not p.is_file():
             raise StoreError(f"no compiled store at {p} — build it with `compile_store`")
         self._db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+        self._owned_cache: dict[str, list] = {}
+        self._edges_cache: list | None = None
         meta = dict(self._db.execute("SELECT k, v FROM meta"))
         if "generation" not in meta:
             raise StoreError(f"store at {p} carries no generation row — refusing to serve "
@@ -367,15 +369,25 @@ class SQLiteStore:
 
     def owned(self, owner: str):
         """Every (id, columns) one corpus owns — the whole-corpus read an aggregate takes, straight
-        off the columns: no record is decoded. The full record is record()'s."""
-        for row in self._db.execute(
-                "SELECT id, node_type, dotted, module, role, file, line, record IS NULL "
-                "FROM nodes WHERE owner=? ORDER BY id", (owner,)):
-            yield row[0], (None if row[7] else dict(zip(COLUMNS, row[1:7])))
+        off the columns: no record is decoded. The full record is record()'s. Read once per owner
+        and kept: the store is read-only at one generation, so the rows cannot move under a
+        caller, and the atlas asks six times per corpus (RECON.md §69)."""
+        rows = self._owned_cache.get(owner)
+        if rows is None:
+            rows = self._owned_cache[owner] = [
+                (row[0], (None if row[7] else dict(zip(COLUMNS, row[1:7]))))
+                for row in self._db.execute(
+                    "SELECT id, node_type, dotted, module, role, file, line, record IS NULL "
+                    "FROM nodes WHERE owner=? ORDER BY id", (owner,))]
+        for nid, cols in rows:
+            yield nid, (None if cols is None else dict(cols))
 
     def edges(self):
-        """Every directed (src, dst, rel) the store carries."""
-        yield from self._db.execute("SELECT src, dst, rel FROM edges ORDER BY src, dst, rel")
+        """Every directed (src, dst, rel) the store carries — read once and kept, as owned() is."""
+        rows = self._edges_cache
+        if rows is None:
+            rows = self._edges_cache = self._db.execute("SELECT src, dst, rel FROM edges ORDER BY src, dst, rel").fetchall()
+        yield from rows
 
     def close(self) -> None:
         self._db.close()

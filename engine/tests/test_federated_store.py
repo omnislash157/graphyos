@@ -641,3 +641,26 @@ def test_GREEN_two_builds_under_two_hash_seeds_land_the_same_row_order(tmp_path)
         orders.append(sqlite3.connect(db).execute("SELECT src, dst, rel FROM edges ORDER BY rowid").fetchall())
     assert orders[0] == orders[1] == orders[2], "the row order followed the hash seed"
     assert orders[0] == sorted(orders[0]) and len(orders[0]) > 100
+
+
+def test_GREEN_a_store_reads_its_whole_corpus_scans_once_and_hands_out_copies(tmp_path):
+    """owned() and edges() hit sqlite once per store and answer from the rows kept: the store is
+    read-only at one generation, and the atlas asks six times per corpus. A caller that mutates a
+    yielded columns dict does not reach the next caller (graphyos #33)."""
+    tenant, data_home = _walk_fixture(tmp_path)
+    db = _compile(tenant, tmp_path)
+    store = fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
+    statements: list[str] = []
+    store._db.set_trace_callback(statements.append)
+    first = list(store.edges())
+    second = list(store.edges())
+    owned_a = list(store.owned("fastapi"))
+    owned_b = list(store.owned("fastapi"))
+    widgets = list(store.owned("widgets"))
+    store._db.set_trace_callback(None)
+    selects = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+    assert first == second and len(first) > 100 and owned_a == owned_b and len(owned_a) > 100 and len(widgets) == 2
+    assert len(selects) == 3, selects                      # edges once, owned(fastapi) once, owned(widgets) once
+    nid, cols = next((n, c) for n, c in owned_a if c is not None)
+    cols["module"] = "mutated"
+    assert next(c for n, c in store.owned("fastapi") if n == nid)["module"] != "mutated"

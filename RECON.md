@@ -3523,3 +3523,44 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before32.json r
 | the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical |
 | the gate | `GRAPHY_STANDALONE_OK` |
 | the receipt | `measure.py run` then `diff recon.before32.json recon.json`: `tenants.sqlalchemy.seconds` 5.4 → 5.3, `pass.engine_hot_lanes` 1; one number the wrong way, `quickstart.express.eat_again_seconds` 1.2 → 1.6 — the eat, which no line of this change touches, timed by hand right after: 1.22 · 1.20 · 1.23 s (load 1.7). `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |
+
+## 69 · A STORE READS ITS WHOLE-CORPUS SCANS ONCE — the atlas's six pictures share two scans instead of twelve, 1.10 → 0.95 s, the same files (2026-09-07 · graphyos issue 33)
+
+**What it was.** `draw.units` · `pillars` · `arm` each iterated `store.owned(corpus)` and
+`store.edges()` — a `SELECT … ORDER BY` per call over sqlite, the rows re-materialized per
+picture. On sqlalchemy the two scans cost 17 + 26 ms and the atlas's six pictures paid them six
+times: 258 ms of a 332 ms picture build, for 74 ms of picture logic; the atlas's profile read
+`federated_store.edges` 149,694 rows and `owned` 83,755.
+
+**What it is.** `SQLiteStore` keeps the rows of `owned(owner)` per owner and of `edges()` the first
+time each is asked for, and answers from them after: the store is opened read-only (`mode=ro`) at
+one generation, so the rows cannot move under a caller. `owned` hands each caller its own copy of
+a columns dict, so a caller that mutates one does not reach the next. Every reader (`arms`,
+`pillars`, `draw`) sees the same rows in the same order; old code and new draw byte-identical
+atlases on sqlalchemy (12 files) and fastapi (13). The cost is the rows kept: the atlas's peak RSS
+100.6 → 118.5 MB on sqlalchemy (25k edge tuples and 12k node rows), under the rebuild's own peak
+(the build, 244 MB), so the lane's number does not move. The test traces sqlite: `edges()` twice
+and `owned()` twice per owner run three `SELECT`s, five on the parent's code.
+
+```bash
+# from engine/
+for i in 1 2 3; do /usr/bin/time -f "atlas %e s · %M kB peak" ../.venv/bin/graphy draw --tenant tenants/sqlalchemy/tenant.json --tenant-id sqlalchemy --corpus sqlalchemy --atlas /tmp/atlas --partition tenants/sqlalchemy/partition.json 2>&1 | grep '^atlas'; done
+git stash push graphy/federated_store.py && ../.venv/bin/graphy draw … --atlas /tmp/atlas_old … && git stash pop && ../.venv/bin/graphy draw … --atlas /tmp/atlas_new … && diff -rq /tmp/atlas_old /tmp/atlas_new    # empty, sqlalchemy and fastapi
+python3 -m pytest -q tests/test_federated_store.py -k scans_once
+git show HEAD~1:engine/graphy/federated_store.py > graphy/federated_store.py && python3 -m pytest -q tests/test_federated_store.py -k scans_once    # RED: assert 5 == 3 (reverted after)
+cd .. && python3 measure.py run && python3 measure.py diff recon.before33.json recon.json
+```
+
+| measure | before | after |
+|---|---|---|
+| building sqlalchemy's six pictures, in-process | 332 ms (258 of it the twelve scans) | the two scans once |
+| `graphy draw --atlas` on sqlalchemy, three runs | 1.11 · 1.10 · 1.11 s (§68) | 0.95 · 0.96 · 0.96 s |
+| the atlas's peak RSS | 100.6 MB | 118.5 MB (the rows kept) |
+| the atlas since §65 | 1.86 s | 0.95 s |
+
+| check | result |
+|---|---|
+| the floor | 493 passed · 3 skipped (492 + 1); the RED proof against the parent's code |
+| the same answer | old code vs new on the same store: sqlalchemy's 12 atlas files and fastapi's 13 byte-identical; every tenant's `arms --verify` green in the receipt |
+| the gate | `GRAPHY_STANDALONE_OK` |
+| the receipt | `measure.py run` then `diff recon.before33.json recon.json`: **`MEASURE DIFF OK: 41 number(s) moved, none the wrong way past tolerance`** — the receipt 58.4 → 55.9 s, `tenants.sqlalchemy.rss_kb` 255,176 → 263,756 (+3 %, within tolerance: the rows kept), every other lane's RSS flat or down, `pass.engine_hot_lanes` 1 |
