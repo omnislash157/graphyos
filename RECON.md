@@ -2541,3 +2541,61 @@ cd .. && python3 measure.py run --out recon.json && python3 measure.py diff reco
 | hono · express | rebuilt `ARMS OK`, `atlas.json` byte-identical before and after (`cmp`) |
 | the receipt | two full runs this session; the clean one: floor 460 passed in 14.6 s (16.5 before), gate OK 23.4 s, fastapi 3.7 → 3.5 s, sqlalchemy 7.4 → 6.8 s (RSS 301 → 288 MB), graphy 2.6 → 2.5 s, express 2.9 → 2.6 s, hono 2.7 → 2.7, quickstart httpx 5.7 → 5.1 s, express 9.8 → 6.3 s, the whole receipt 81.3 → 74.7 s. `pass.engine_hot_lanes` reads 4 → 6, which is the metric telling the truth: the producer's stdlib frame (`ast.iter_child_nodes`) no longer sits on top of the graphy and sqlalchemy lanes, so their hottest frame is the engine's `container._write_parquet` (0.32 s · 1.06 s), and the floor's hottest frame is the same `_write_parquet` at 4.89 s over `sqlite3.executescript` 4.09 s — the parquet writer is the next lane, the producer is done: its share of a sqlalchemy mint is `_scan` 0.76 s under the profiler against `ast.parse`, the stdlib's floor |
 | noise, named | `floor.seconds` read 20.1 in the first receipt of this session against 16.5 before; the direct floor read 14.5 and 15.2 on two runs straight after — the same network- and load-bound noise §49 names |
+
+## 51 · THE RECORDS ARE COMPACT — separators for the machine files, indent for what a human opens (2026-09-07 · graphyos issue 15)
+
+**What it was.** Every shard file went through one `smash._write_json`, `indent=2` — the same
+call for `PROVENANCE.json` (1.5 KB, a human reads it) and for `nodes.json` (7.4 MB, nothing but
+the loader ever reads it). On the SQLAlchemy tenant the three record files held 24.5 MB where the
+same records compact to 16.0 MB; the index's 718 releases held 1.9 GB of it; and every pull,
+`sha256`, freshness digest and parse downstream paid for the whitespace.
+
+**What it is.** Two writers, named for who reads the file. `smash._write_records` — `separators=(",", ":")`,
+no indent, one line — writes `nodes.json` and `edges.json`; `converge --resolve` writes
+`wormhole_edges.json` the same way; `cartograph.write_graph` writes its `nodes` · `edges` ·
+`clusters` · `adjacency` the same way and keeps `stats.json` indented. `_write_json` (`indent=2`)
+still writes `PROVENANCE.json`, `ring.json`, `refresh.json` and every receipt. Still JSON, still
+the stdlib's `json`: `load_graph_ir`, `validate_shard`, the journal, the estate and the gate's
+scheme scan (`"src":\s*"` — the regex already allowed no space) read either form, so every shard
+already in an index stays valid, and a golden in the old form still proves a compact re-mint
+record for record — the parity compares records, never bytes. The FastAPI fixture is re-minted by
+its own `mint_command` (its `PROVENANCE.json` receipts moved: 938,496 → 755,397 bytes over the
+two files; 507 nodes / 3715 edges equal to the previous fixture's records, checked against
+`git show HEAD~1`).
+
+```bash
+cd engine && SP=../staging/corpora/sqlalchemy/venv/lib/python3.12/site-packages
+wc -c tenants/sqlalchemy/substrate/sqlalchemy_graph/{nodes,edges,wormhole_edges}.json
+/usr/bin/time -f "smash %es %MKB" ../.venv/bin/python -m graphy smash --package sqlalchemy --site-packages $SP --out /tmp/sa
+../.venv/bin/python - <<'PY'
+import json, time
+d = "/tmp/sa/sqlalchemy_graph/"; n = json.load(open(d + "nodes.json")); e = json.load(open(d + "edges.json"))
+for label, kw in (("indent=2", dict(indent=2)), ("compact", dict(separators=(",", ":")))):
+    t = time.perf_counter(); a = json.dumps(n, **kw); b = json.dumps(e, **kw); print(label, "encode %.2fs" % (time.perf_counter() - t), "bytes", len(a) + len(b))
+PY
+../.venv/bin/python -m graphy smash --package fastapi --site-packages ../staging/corpora/venv/lib/python3.12/site-packages --out tests/fixtures --no-ring   # the fixture, re-minted
+python3 -m pytest -q tests/test_smash.py -k "compact_and_the_receipts"
+echo "six==1.17.0" > /tmp/one.txt && ../.venv/bin/python -m graphy farm --packages /tmp/one.txt --index /abs/staging/index/farm --work /tmp/farm1 --force
+../.venv/bin/python -m graphy index --index /abs/staging/index/farm --verify | tail -1
+cd .. && python3 measure.py run --out recon.json && python3 measure.py diff recon.before15.json recon.json
+```
+
+| bytes | indented | compact |
+|---|---|---|
+| SQLAlchemy `nodes.json` · `edges.json` · `wormhole_edges.json` | 7,437,288 · 11,842,493 · 5,214,566 = 24.5 MB | 6,258,357 · 9,777,286 · 4,463,686 (it was `indent=1`) = 20.5 MB |
+| the five tenants' record files | fastapi 10.59 · sqlalchemy 25.91 · hono 4.30 · express 1.01 · graphy 6.45 MB | fastapi 8.70 · sqlalchemy 21.68 · hono 3.46 · express 0.81 · graphy 5.25 MB — 48.3 → 39.9 MB over the five (`cat tenants/<t>/substrate/*_graph/{nodes,edges,wormhole_edges}.json | wc -c`) |
+| the fixture (`tests/fixtures/fastapi_graph`, two files) | 938,496 | 755,397 |
+| `six==1.17.0` in the index (nodes + edges) | 62,849 | 48,167 — the records equal, the old shard beside it under its own address |
+
+| on SQLAlchemy | before | after |
+|---|---|---|
+| the encode of nodes + edges (`json.dumps`, unprofiled) | 0.22 s → 19.3 MB | 0.05 s → 16.0 MB |
+| `graphy smash` wall (mint + ring, two runs) | 1.68–1.71 s · 130 MB | 1.54–1.59 s · 86 MB |
+| the decode (`json.loads`) | 0.06 s | 0.06 s — the whitespace was never the parser's cost, only the disk's, the hash's and the encoder's |
+
+| check | result |
+|---|---|
+| the floor test | `test_GREEN_the_records_are_compact_and_the_receipts_are_indented_and_parity_reads_both`: nodes.json and edges.json one line with no `": "`, under 0.8 of their indented bytes; PROVENANCE.json and ring.json indented; a golden rewritten in the old indented form validates to the same count and proves the compact re-mint `PARITY OK` |
+| the index | `INDEX OK: 718 named shard(s), 0 broken` with the compact six pushed by `--force` (address `471e49c8…`) beside the indented one (`0bc16aee…`); verify 2.6 s before and after — one shard of 718 moved, and the verify's cost is the hash (`_hashlib.openssl_sha256` 2.08 s in both profiles), which is what fewer bytes will cut when the farm is re-run (issue 15's own done line names that run; it is a `--force` farm of 718 releases, hours, not this lane) |
+| the fixture parity | fastapi rebuild `PARITY OK: fastapi_graph.records@sha256:21ed3ce1…` against the re-minted fixture |
+| the receipt | one full run: floor 461 passed in 14.4 s (14.6 before), gate OK 22.4 s (23.4), fastapi 3.5 → 3.3 s, sqlalchemy 6.8 → 6.5 s (RSS 288 → 277 MB), graphy 2.5 → 2.1 s (RED on the run — `ARMS DRIFT` naming `_write_records` in PRODUCE, the region re-rendered, `GRAPHY_TENANT_OK` straight after), hono 2.7 → 2.7, express 2.6 → 2.6, index verify 2.6 → 2.6 with 0 broken, `pass.engine_hot_lanes` 6 → 6 (`container._write_parquet` still on top of the graphy · sqlalchemy · fastapi lanes — the next lane), the whole receipt 74.7 → 75.1 s; `quickstart.express.seconds` 6.3 → 8.8 and httpx 5.1 → 5.5 are the clone-and-install noise §49 names (express read 6.2–9.8 across five runs there), the engine frames identical. The estate re-emitted over the moved catalog: 718 shards, the compact six read beside 717 indented ones, 51.2 s |

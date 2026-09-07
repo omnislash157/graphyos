@@ -250,10 +250,9 @@ def write_graph(graph: dict[str, Any], out_dir: Path, *, repo_root: Path | None 
     out_dir.mkdir(parents=True, exist_ok=True)
     stats = dict(graph["stats"])
     stats["built_at_sha"] = repo_head_sha(repo_root)
-    (out_dir / "nodes.json").write_text(json.dumps(graph["nodes"], indent=2), encoding="utf-8")
-    (out_dir / "edges.json").write_text(json.dumps(graph["edges"], indent=2), encoding="utf-8")
-    (out_dir / "clusters.json").write_text(json.dumps(graph["clusters"], indent=2), encoding="utf-8")
-    (out_dir / "adjacency.json").write_text(json.dumps(graph["adjacency"], indent=2), encoding="utf-8")
+    # the records the machine reads are compact; stats.json is the one a human opens
+    for name in ("nodes", "edges", "clusters", "adjacency"):
+        (out_dir / f"{name}.json").write_text(json.dumps(graph[name], separators=(",", ":")), encoding="utf-8")
     (out_dir / "stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
 
 

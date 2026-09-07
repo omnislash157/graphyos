@@ -170,6 +170,30 @@ def test_GREEN_parity_proves_a_remint_and_RED_names_a_divergence(tmp_path, capsy
     assert "re-mint with: python3 -m graphy smash --package alpha" in err
 
 
+def test_GREEN_the_records_are_compact_and_the_receipts_are_indented_and_parity_reads_both(tmp_path, capsys):
+    """nodes.json and edges.json are the machine's: one line, compact separators — a third of the
+    bytes of the indented form. PROVENANCE.json and ring.json are a human's: indented. A golden
+    written in the old indented form still proves a compact re-mint, record for record."""
+    sp = _site(tmp_path)
+    out = tmp_path / "home"
+    smash.smash("alpha", site_packages=sp, out=out)
+    shard = out / "alpha_graph"
+    for name in ("nodes.json", "edges.json"):
+        text = (shard / name).read_text(encoding="utf-8")
+        assert text.count("\n") == 1 and '": ' not in text and '", "' not in text
+        assert len(text) < len(json.dumps(json.loads(text), indent=2)) * 0.8
+    assert (shard / "PROVENANCE.json").read_text().startswith("{\n  ")
+    assert (out / smash.RING_NAME).read_text().startswith("{\n  ")
+    golden = tmp_path / "golden_graph"
+    shutil.copytree(shard, golden)
+    for name in ("nodes.json", "edges.json"):  # the old form, as every shard already in an index carries it
+        (golden / name).write_text(json.dumps(json.loads((golden / name).read_text()), indent=2) + "\n")
+    assert validate_shard(str(golden), PYTHON_AST_VOCABULARY) == validate_shard(str(shard), PYTHON_AST_VOCABULARY)
+    rc = cli.main(["smash", "--package", "alpha", "--site-packages", str(sp), "--out", str(tmp_path / "again"),
+                   "--parity", str(golden)])
+    assert rc == 0 and "PARITY OK: alpha_graph.records@" in capsys.readouterr().out
+
+
 def test_RED_a_golden_without_provenance_is_refused(tmp_path):
     sp = _site(tmp_path)
     out = tmp_path / "home"

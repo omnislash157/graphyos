@@ -217,9 +217,22 @@ def git_head(corpus: Path) -> str | None:
     return head.stdout.strip() if head.returncode == 0 and head.stdout.strip() else None
 
 
+RECORD_SEPARATORS = (",", ":")
+
+
 def _write_json(path: Path, obj) -> None:
+    """A file a human opens — PROVENANCE.json, ring.json, a receipt: indented."""
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _write_records(path: Path, obj) -> None:
+    """A file the machine reads — nodes.json, edges.json, the wormhole sidecar: compact separators,
+    no indent. A third of the bytes of the indented form, and the encode is a fraction of the
+    mint; every pull, digest and parse downstream reads the same records for fewer bytes."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(obj, separators=RECORD_SEPARATORS) + "\n", encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -251,8 +264,8 @@ def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
     validate_graph(nodes, edges, prod.vocabulary)
     node_map = {k: v for k, v in nodes.items()}
     shard_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(shard_dir / "nodes.json", node_map)
-    _write_json(shard_dir / "edges.json", edges)
+    _write_records(shard_dir / "nodes.json", node_map)
+    _write_records(shard_dir / "edges.json", edges)
     digest, n_files = corpus_digest(corpus, walk=python_ast.walk_files if prod.name == "python_ast" else typescript_ast.walk_files)
     head = git_head(corpus)
     kind = "file" if corpus.is_file() else ("package" if prod.is_package_dir(corpus) else "tree")

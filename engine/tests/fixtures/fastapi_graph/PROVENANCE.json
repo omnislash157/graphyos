@@ -4,10 +4,10 @@
   "mint_command": "python3 -m graphy smash --package fastapi --site-packages ../staging/corpora/venv/lib/python3.12/site-packages --out tests/fixtures --no-ring",
   "producer": {
     "adapter": "python_ast",
-    "graphy": "0.0.1",
+    "graphy": "0.1.0",
     "python": "3.12.3"
   },
-  "minted_at": "2026-09-06T01:39:02+00:00",
+  "minted_at": "2026-09-07T01:44:22+00:00",
   "corpus": {
     "scheme": "fastapi",
     "kind": "package",
@@ -38,12 +38,12 @@
   },
   "files": {
     "nodes.json": {
-      "bytes": 257150,
-      "sha256": "fbce338b55980d6efda37d9507e456bbf7091d117f2f3d840c5ba3fd4662f930"
+      "bytes": 212592,
+      "sha256": "8ccb0ab0bb94e45872c47a6638e4b24d3828c114a4755b4c2cb545e20afbef38"
     },
     "edges.json": {
-      "bytes": 681346,
-      "sha256": "60f04430718046636f1e49afca9e61d6ecffa0704162201f9e5042d334d3f024"
+      "bytes": 542805,
+      "sha256": "3989572bb4ff75af300e4880caa29c66db9a4c0f60e695d9e01e95f7b4cdf46c"
     }
   },
   "note": "Verbatim producer output. Re-mint, never hand-edit \u2014 a shard edited to fit a schema proves the schema, not the engine."

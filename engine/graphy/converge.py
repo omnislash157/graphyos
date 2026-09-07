@@ -287,8 +287,8 @@ def resolve(ring: Ring, slug: str, *, write: bool = True) -> dict:
     if write:
         path = ring.data_home / f"{slug}_graph" / WORMHOLE_SIDECAR
         tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps({"summary": summary, "edges": resolved, "qualified": qualified}, indent=1) + "\n",
-                       encoding="utf-8")
+        tmp.write_text(json.dumps({"summary": summary, "edges": resolved, "qualified": qualified},
+                                  separators=(",", ":")) + "\n", encoding="utf-8")
         os.replace(tmp, path)
         summary["sidecar"] = str(path)
     return summary
