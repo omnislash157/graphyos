@@ -3235,3 +3235,38 @@ cd .. && python3 measure.py run && python3 measure.py diff recon.before25.json r
 | the RED proof | the branch removed → `assert 2 == 0` — `none` names no shard in the roster |
 | the gate | `GRAPHY_STANDALONE_OK` |
 | the receipt | `measure.py run` then `diff recon.before25.json recon.json`: **`pass.engine_hot_lanes` 2 → 1** — `quickstart.httpx` off the count (`stdlib_hot` False → True), the floor the one lane left; `quickstart.httpx.rss_kb` 121,732 → 54,384 (−55 %) and `quickstart.express.rss_kb` 109,756 → 45,844 (−58 %) — duckdb no longer lives in the eat process; `quickstart.httpx.eat_seconds` 4.3 → 4.0, `eat_again_seconds` 0.5 → 0.4 (httpx) · 2.5 → 2.3 (express), `gate.seconds` 15.7 → 14.5, every tenant's doors faster; two numbers the wrong way and neither the engine's — `tenants.fastapi.seconds` 3.0 → 3.5 (the same rebuild timed by hand right after: 2.85 · 3.32 · 6.89 s, the box's noise), `wheel.seconds` 3.9 → 8.9 (pip, build and twine). `MEASURE DIFF` exits 1 on those two; closed on the engine lines by the standing ruling (§59) |
+
+## 62 · THE STORE'S ROWS LAND IN ONE ORDER — the mesh's edge set inserted sorted, three seeds one rowid order, every tie a door breaks stays broken the same way (2026-09-07 · graphyos issue 26)
+
+**What it was.** `MeshSet.directed` is a set of `(src, dst, rel)` tuples (`cross_substrate.py:195`,
+filled at line 294), and `compile_store` inserted it in iteration order. A set of string tuples
+iterates in hash order and the hash is salted per process, so three `graphy build`s of the fastapi
+tenant from the same shards landed the same rows at three rowid orders (md5 of the rows by rowid:
+`e1be29a77185` · `c8ec0fea5ae9` · `cf3e5b336e6b`; the rows as a set `ffaf9be63993` every time), and
+`SELECT … WHERE dst=?` through `idx_edges_dst` returns index order `(dst, rowid)` — so every tie a
+door breaks by row order broke differently: found under §59 when `blast fastapi://module/fastapi.routing`
+on two builds of one shard printed a hop-2 node under two parents and `BY OWNER: tests=2 graphy=2`
+in the other order. A store built twice on one box, or once on two, spelled one set in two orders.
+
+**What it is.** `compile_store` inserts `sorted(mesh.directed)`. The node rows already came from
+`node_owner`, a dict filled in shard order. Nothing else changes: the generation is a digest of the
+inputs, the rows are the same set, `check` is green on every tenant. The ties move once — the
+graphy tenant's six arm regions re-rendered (six lines), the atlas re-drawn — and then hold on any
+seed, on any box. `PYTHONHASHSEED=0`, the workaround §59's proof needed, is not needed.
+
+```bash
+# from engine/
+for i in 1 2 3; do PYTHONHASHSEED=$i ../.venv/bin/graphy build --tenant tenants/fastapi/tenant.json --tenant-id fastapi >/dev/null; ../.venv/bin/python -c "import sqlite3, glob, hashlib; p = sorted(glob.glob('tenants/fastapi/substrate/.mesh_store_*.sqlite'))[-1]; print(hashlib.md5(repr(sqlite3.connect(p).execute('SELECT src,dst,rel FROM edges ORDER BY rowid').fetchall()).encode()).hexdigest()[:12])"; done | sort -u | wc -l    # 1 (was 3)
+python3 -m pytest -q tests/test_federated_store.py -k two_hash_seeds      # three subprocess builds under seeds 1 · 2 · 3, one row order, sorted
+# the RED proof (reverted after): the parent commit's compile_store
+git show HEAD~1:engine/graphy/federated_store.py > graphy/federated_store.py && python3 -m pytest -q tests/test_federated_store.py -k two_hash_seeds   # AssertionError: the row order followed the hash seed
+cd .. && python3 measure.py run && python3 measure.py diff recon.before26.json recon.json
+```
+
+| check | result |
+|---|---|
+| three seeds, one row order | `1` distinct md5 over seeds 1 · 2 · 3 (was 3 over three unseeded builds) |
+| the floor | 486 passed · 3 skipped (485 + 1); the RED proof against the parent's code: `the row order followed the hash seed` |
+| the same answer | the rows as a set unchanged; `check` green on every tenant; the graphy tenant's arms re-rendered once and verify; the atlas 8 pictures checked |
+| the gate | `GRAPHY_STANDALONE_OK` |
+| the receipt | `measure.py run` then `diff recon.before26.json recon.json`: every tenant faster or flat (fastapi 3.5 → 2.7 · sqlalchemy 6.0 → 5.5 · hono 2.4 → 2.3 · graphy 2.0), the receipt 68.2 → 60.4 s, `pass.engine_hot_lanes` 1 (the floor); one number the wrong way — `quickstart.httpx.eat_seconds` 4.0 → 4.7, the cold eat's venv and pip over the network (§59: 4.2 · 4.5 · 5.3 · 4.3 · 4.0 · 4.7 across the last receipts), the eat itself untouched by a sort of the edge rows at build. `MEASURE DIFF` exits 1 on it; closed on the engine lines by the standing ruling (§59) |

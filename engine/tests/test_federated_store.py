@@ -615,3 +615,29 @@ def test_GREEN_the_tmp_store_syncs_once_before_the_rename(tmp_path, monkeypatch)
     order = [e[:2] for e in events if e[0] in ("fsync", "replace")]
     assert order == [("fsync", tmp), ("replace", tmp)], order
     assert sqlite3.connect(dbp).execute("PRAGMA journal_mode").fetchone()[0] == "delete"   # the pragma lived on the tmp connection only
+
+
+def test_GREEN_two_builds_under_two_hash_seeds_land_the_same_row_order(tmp_path):
+    """The mesh keeps its edges in a set, which iterates in hash order — salted per process — so a
+    store's rowids used to follow the seed and every tie a door breaks by row order broke
+    differently between two builds of one shard (graphyos #26). The rows land sorted: the same
+    order under any seed."""
+    import os
+    import subprocess
+    import sys
+    tenant, data_home = _walk_fixture(tmp_path)
+    script = (
+        "import sys; from pathlib import Path; import graphy.federated_store as fs; from graphy.tenant import Tenant\n"
+        "t = Tenant(root=Path(sys.argv[1]), data_home=Path(sys.argv[2]), adapters=(), build_lanes={}, join_keys=Path(sys.argv[3]),\n"
+        "           cursor='sha256:' + '0' * 64, policy='refuse', journal=Path(sys.argv[1]) / 'journal')\n"
+        "fs.compile_store(['fastapi', 'widgets'], sys.argv[4], tenant=t, tenant_id='store-test')\n"
+    )
+    orders = []
+    for seed in ("1", "2", "3"):
+        db = tmp_path / f"seed{seed}.sqlite"
+        env = {**os.environ, "PYTHONHASHSEED": seed}
+        subprocess.run([sys.executable, "-c", script, str(tmp_path), str(data_home), str(tenant.join_keys), str(db)],
+                       check=True, env=env, cwd=str(Path(fs.__file__).parents[1]))
+        orders.append(sqlite3.connect(db).execute("SELECT src, dst, rel FROM edges ORDER BY rowid").fetchall())
+    assert orders[0] == orders[1] == orders[2], "the row order followed the hash seed"
+    assert orders[0] == sorted(orders[0]) and len(orders[0]) > 100

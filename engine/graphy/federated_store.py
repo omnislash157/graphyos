@@ -429,8 +429,11 @@ def compile_store(substrates: list[str], db_path: str | Path,
         db.executemany(
             "INSERT OR REPLACE INTO nodes(id, owner, node_type, dotted, module, role, file, line, record) "
             "VALUES (?,?,?,?,?,?,?,?,?)", _rows())
-        db.executemany("INSERT INTO edges(src, dst, rel) VALUES (?,?,?)",
-                       ((s, d, r) for (s, d, r) in mesh.directed))
+        # The mesh keeps its edges in a set, which iterates in hash order — salted per process — so
+        # two builds of one shard landed the same rows at different rowids and every tie a door
+        # breaks by row order broke differently (RECON.md §62). Sorted, the rows are one order on
+        # any seed, on any box.
+        db.executemany("INSERT INTO edges(src, dst, rel) VALUES (?,?,?)", sorted(mesh.directed))
         db.executemany("INSERT INTO meta(k, v) VALUES (?,?)", [
             ("generation", shard.generation()),
             ("generation_format", str(GENERATION_FORMAT)),
