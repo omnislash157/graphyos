@@ -9,7 +9,9 @@ the receipt stores exactly the records the span cannot recover — the later fil
 (``extra``, with the position it was emitted at) and, under ``"last"``, the first file's own record
 that a later file overwrote (``own``, by slot) — so the replay is the full mint's replay record for
 record, and the shard written is byte-identical. Nothing else is stored: an id a file emits twice
-is one slot, and the span already carries its position and its winning value."""
+is one slot, and the span already carries its position and its winning value. A file the producer
+cannot read — a syntax error, an encoding it cannot decode, nesting past the interpreter's limit,
+a symlink out of the corpus — holds no span: it is named under ``unreadable`` with its reason."""
 from __future__ import annotations
 
 from typing import Any
@@ -27,6 +29,12 @@ class Receipt:
         self.files: dict[str, dict] = {}          # file -> {sha256, nodes, edges}
         self.cross = 0
         self.parsed = 0
+        self.unreadable_files: dict[str, str] = {}  # file -> why the producer could not read it
+
+    def unreadable(self, rel: str, reason: str) -> None:
+        """A file the producer will not read, by name and reason. It holds no span, counts as
+        neither parsed nor reused, and is asked again on every mint — the reason is the mint's."""
+        self.unreadable_files[rel] = reason
 
     def file(self, rel: str, sha: str, n_recs: list[dict], e_recs: list[dict], nodes: dict, *, parsed: bool) -> None:
         """Insert one file's records under the producer's semantics and account for them."""
@@ -78,7 +86,8 @@ class Receipt:
             if own:
                 self.files[rel]["own"] = own
         return {"pin": pin, "spliceable": True, "cross_file": self.cross, "parsed": self.parsed,
-                "reused": len(self.files) - self.parsed, "files": self.files}
+                "reused": len(self.files) - self.parsed, "files": self.files,
+                "unreadable": self.unreadable_files}
 
 
 def splice(span_nodes: list[dict], span_edges: list[dict], f: dict) -> tuple[list[dict], list[dict]]:

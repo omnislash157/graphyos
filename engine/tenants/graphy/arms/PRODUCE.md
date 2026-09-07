@@ -6,14 +6,14 @@
 A producer maps a parse tree onto the nine words (`adapters.python_ast`, `adapters.typescript_ast`); `ir` validates; `smash` mints a package into a shard and follows its imports into the ring; `index` pushes and pulls content-addressed shards; `refresh` follows upstream into a sibling; `farm` mints many; `provision` installs a repo's own dependencies for `eat`; `release` enforces one release per scheme.
 
 <!-- graphy:arm PRODUCE generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=355eed7c596bdba6 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:04c01d0298b7b92bd18667d84f4e981b5fb3e889b9d175600a715e50f740ffe9 -->
+     store=092a8ae8f6fce593 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:897739e024a904d433b94f0b72cdb283e534178c7e569d3a505e905eddd15cb0 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
 
-**`graphy.adapters._receipt`** — classes: `Receipt` (3); functions: `splice`
+**`graphy.adapters._receipt`** — classes: `Receipt` (4); functions: `splice`
 **`graphy.adapters.outline`** — classes: `_NodeRecords` (1); functions: `_slugify` · `build_ir` · `parse_outline`
-**`graphy.adapters.python_ast`** — classes: `_NodeRecords` (1); functions: `_class_info` · `_defs_in` · `_dotted_for` · `_emit_import_edges` · `_emit_raw_records_for_file` · `_emit_records_for_file` · `_expr_repr` · `_is_excluded` · `_local_package_names` · `_node_id` · `_resolve_module_dst` · `_scan` · `_scheme_of` · `_walk_stmt` · `build_ir` · `is_package_dir` · `mint_records` · `walk_files`
+**`graphy.adapters.python_ast`** — classes: `_NodeRecords` (1); functions: `_class_info` · `_defs_in` · `_dotted_for` · `_emit_import_edges` · `_emit_raw_records_for_file` · `_emit_records_for_file` · `_escapes` · `_expr_repr` · `_is_excluded` · `_local_package_names` · `_node_id` · `_resolve_module_dst` · `_scan` · `_scheme_of` · `_walk_stmt` · `build_ir` · `is_package_dir` · `mint_records` · `read_source` · `walk_files` · `walk_files_naming_skips`
 **`graphy.adapters.typescript_ast`** — classes: `ProducerUnavailable` · `_Wrap` (1); functions: `_assigned_functions` · `_calls_in` · `_decorators` · `_dotted_for` · `_expr_repr` · `_func_of_lexical` · `_heritage` · `_module_for_specifier` · `_node_id` · `_parsers` · `_require_spec` · `_requires_in` · `_text` · `_unwrap_export` · `_walk_class` · `_walk_module` · `build_ir` · `excludes_for` · `is_package_dir` · `mint_records` · `slug_of_specifier` · `walk_files`
 **`graphy.farm`** — classes: `FarmError` · `Spec` (2) · `Verdict`; functions: `_fetch_text` · `_pip` · `farm` · `farm_one` · `import_names_for` · `normalize` · `provision_alone` · `provision_npm` · `select_npm_release` · `select_release` · `top_npm_packages` · `top_packages`
 **`graphy.index`** — classes: `IndexError_` · `_Source` (3); functions: `_check_entry` · `_check_name` · `_check_payload` · `_fetch_entry` · `_notice` · `_provenance_of` · `_read_shard` · `_receipts` · `_resolve` · `_rewrite_catalog` · `_sha` · `_verify_entry` · `_verify_entry_streaming` · `_verify_one` · `_write_atomic` · `address_of` · `catalog` · `default_name` · `pull` · `push` · `verify_index` · `verify_shard`
@@ -23,7 +23,7 @@ Every symbol the partition places in this arm, by module; a class carries its me
 **`graphy.provision`** — classes: `Provisioned`; functions: `_declaration` · `_run` · `provision`
 **`graphy.refresh`** — classes: `CheckFailed` · `Plan` · `RefreshError`; functions: `_declare` · `_descriptor` · `_fetch_pypi` · `_ids` · `_prove` · `_remint_fixture` · `_run` · `_shards` · `_sibling_tenant` · `_version_in` · `current_provenance` · `diff_shards` · `is_final` · `is_newer` · `latest_release` · `parse_version` · `plan_for` · `provision` · `refresh` · `render_pages`
 **`graphy.release`** — classes: `Release` (1) · `ReleaseError`; functions: `_owned_schemes` · `collisions` · `release_of` · `require_one_release` · `roster_releases`
-**`graphy.smash`** — classes: `Producer` (1) · `SmashError`; functions: `_counts` · `_file_receipt` · `_graphy_version` · `_import_schemes` · `_license_of` · `_reuse_from` · `_schemes` · `_write_json` · `_write_records` · `corpus_digest` · `distributions` · `distributions_node` · `divergence` · `git_head` · `golden_from_shard` · `locate` · `locate_node` · `mint` · `mint_command_for` · `node_dir_for` · `node_dirs_of` · `parity` · `portable` · `shard_payload` · `slug_for` · `slug_for_specifier` · `smash` · `stdlib_names`
+**`graphy.smash`** — classes: `Producer` (1) · `SmashError`; functions: `_counts` · `_file_receipt` · `_graphy_version` · `_import_schemes` · `_license_of` · `_reuse_from` · `_schemes` · `_write_json` · `_write_records` · `corpus_digest` · `distributions` · `distributions_node` · `divergence` · `git_head` · `golden_from_shard` · `locate` · `locate_node` · `mint` · `mint_command_for` · `node_dir_for` · `node_dirs_of` · `parity` · `portable` · `shard_payload` · `slug_for` · `slug_for_specifier` · `smash` · `stdlib_names` · `unreadable_phrase`
 
 ## The inherits joins out — generated
 

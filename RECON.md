@@ -3752,3 +3752,55 @@ python3 measure.py run && python3 measure.py diff recon.before36.json recon.json
 | the floor | 498 passed · 3 skipped (497 + 1); the RED proof against the old `smash.py` |
 | the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` unchanged: runtime deps 0 · extras 3 · wheel 276,205 B (cap 400,000) |
 | the receipt | two runs. The lines the change lives on are flat: `quickstart.httpx.eat_again_seconds` 0.4 → 0.4, `quickstart.express.eat_again_seconds` 1.2 → 1.2 (the splice over the previous shards, now with one sha256 per payload file), `eat_again_parsed` 0 on both; every tenant rebuild OK, `pass.engine_hot_lanes` 1 → 0; `tenants.hono.rss_kb` 119,744 → 115,320, `tenants.sqlalchemy.rss_kb` 259,120 → 253,392. The wrong way, only lanes the splice never runs in: `quickstart.express.eat_seconds` 3.8 → 5.9 (the first eat — no shard on disk, `npm install` over the network), `tenants.sqlalchemy.seconds` 5.0 → 6.0 on the second run (a wipe-and-mint, no splice; 4.7 s by hand right after), `floor.seconds` 8.9 → 10.7 (9.4 s by hand, `-o addopts=""`; one new test that mints six times). Closed on the engine lines by the standing ruling (§59) |
+
+## 74 · A SYNTAX ERROR, A LATIN-1 FILE OR DEEP NESTING MINTED NOTHING AND COUNTED AS PARSED — the unreadable files are named in the mint line and the receipt (2026-09-07 · graphyos issue 38)
+
+**The finding.** Red-team finding 5 (§71). `python_ast._emit_raw_records_for_file` returned no record on
+`UnicodeDecodeError` or `SyntaxError`, and the mint counted the file as parsed: a package with `broken.py`
+(a syntax error), `latin.py` (`# coding: latin-1`, one real `def`) and `deep.py` (300 nested parentheses)
+read `MINT OK: badpkg 4 nodes / 2 edges (parsed 7 of 7 files)`, the three in PROVENANCE with `nodes: 0`.
+A codebase with one latin-1 module lost it, and the walk said "names no node" with no hint. A file symlink
+to `/etc/passwd` was read and parsed as a module of the corpus.
+
+**The change.** The producer reads a file by its own encoding — the PEP 263 cookie or the BOM,
+`tokenize.detect_encoding`, stdlib — so `latin.py` mints and a BOM-led file mints; what it still cannot
+read is named with its reason: `syntax error line N` · `not utf-8` · `unknown encoding: X` · `too deeply
+nested` · `null bytes` · `unreadable: <strerror>` · `symlink outside the corpus -> <target>`. The mint line
+reads `MINT OK: badpkg 7 nodes / 3 edges (parsed 4 of 7 files; 3 unreadable: passwd.py symlink outside the
+corpus -> /etc/passwd, broken.py syntax error line 1, deep.py too deeply nested)`; PROVENANCE carries
+`unreadable: {file: reason}` beside `sources` (an unreadable file holds no span in the receipt and is asked
+again on every mint, so the reason is always the mint's own — an older shard's empty span for it is not
+trusted); `ring.json` carries it per shard; `EAT OK … (4 of 7 files parsed; 3 unreadable: …)`. A file
+symlink whose target lies outside the corpus root is skipped by the walk and named, never read; a link
+that stays inside is a module of the corpus, as before; a directory link is never descended, as before.
+The bytes the mint hashes are the bytes the producer decodes — one read per file where there were two.
+The TypeScript producer names a file it cannot read the same way (an `OSError`; tree-sitter never refuses).
+
+**The floor.** `test_adapters`: nine files under one package — the walk names the escaped link and
+lists the rest in order; the mint names five unreadable files with their reasons, parses five, and the
+functions of `good.py` · `latin.py` · `bom.py` · `inside.py` are the nodes; `read_source` on its own;
+a handed parse emits the same records as a read. `test_smash`: the mint line, PROVENANCE, `ring.json`,
+the re-mint (`parsed 0 of 6 files; 3 unreadable: …`), an older shard's empty span not trusted, the
+`EAT OK` line, the phrase past its cap. Both RED against the old engine.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_adapters.py -k unreadable tests/test_smash.py
+git stash push -- engine/graphy && (cd engine && ../.venv/bin/python -m pytest -q tests/test_adapters.py -k unreadable tests/test_smash.py -k unreadable); git stash pop    # RED on the old producer
+# the same answer: the three Python tenants minted by the old engine (a worktree at HEAD~) and the new, nodes.json · edges.json sha256 equal
+cd engine && for pkg in "fastapi ../staging/corpora/fastapi" "sqlalchemy ../staging/corpora/sqlalchemy/venv/lib/python3.12/site-packages" "graphy ."; do set -- $pkg; ../.venv/bin/python -m graphy smash --package $1 --site-packages $2 --out /tmp/same/new/$1 --no-ring; done; sha256sum /tmp/same/*/*/*_graph/{nodes,edges}.json
+# the live run: pylint's own test tree — files with deliberate syntax errors and bad coding cookies
+cd /tmp && rm -rf pl && git clone -q --depth 1 https://github.com/pylint-dev/pylint.git pl && cd ~/graphy/engine \
+  && ../.venv/bin/python -m graphy smash --package tests --site-packages /tmp/pl --corpus /tmp/pl/tests --out /tmp/plt --no-ring | grep MINT \
+  && python3 -c "import json;d=json.load(open('/tmp/plt/tests_graph/PROVENANCE.json'));print(len(d['unreadable']),'unreadable;',d['sources']['parsed'],'parsed')"
+cd .. && python3 burden.py && bash standalone_check.sh | tail -1
+python3 measure.py run && python3 measure.py diff recon.before38.json recon.json
+```
+
+| check | result |
+|---|---|
+| the reproduction | the issue's package, plus a BOM-led file, a file symlink to `/etc/passwd` and a directory symlink to `/etc`: before, `parsed 7 of 7 files`; now `MINT OK: badpkg 7 nodes / 3 edges (parsed 4 of 7 files; 3 unreadable: passwd.py symlink outside the corpus -> /etc/passwd, broken.py syntax error line 1, deep.py too deeply nested)` — `latin.py` and `bom.py` mint, `passwd.py` is never read; the re-mint `parsed 0 of 7 files; 3 unreadable: …` |
+| the live run | `pylint-dev/pylint` at `af3930e`, a fresh clone, its `tests/` tree minted as one corpus in 0.8 s: `MINT OK: tests 7762 nodes / 19273 edges (parsed 1276 of 1316 files; 40 unreadable: functional/c/consider/consider_using_dict_comprehension_py315.py syntax error line 7, … and 32 more)` — 37 syntax errors (the `_py315` cases this interpreter cannot parse, `syntax_error.py`, `tokenize_error.py`), `unknown encoding: IBO-8859-1` · `utf-9` · `lala` (the repo's own bad-cookie fixtures); `regrtest_data/no_stdout_encoding.py` (`coding:iso-8859-1`) mints its class and method. Minted again: `parsed 0 of 1316 files; 40 unreadable: …` — the same 40, named again |
+| the same answer | fastapi 507 nodes / 3715 edges, sqlalchemy 11959 / 56604, graphy 965 / 10566 — `nodes.json` and `edges.json` sha256 equal between the old engine and the new on all three |
+| the floor | 500 passed · 3 skipped (498 + 2); both RED against the old engine; the graphy tenant's `PRODUCE` arm re-rendered (`read_source` · `walk_files_naming_skips` · `_escapes` · `unreadable_phrase` · `Receipt.unreadable` in the walk), `ARMS OK` |
+| the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK`: runtime deps 0 · extras 3 · wheel 278,572 B (cap 400,000) |
+| the receipt | `measure.py run` then `diff recon.before38.json recon.json`: every tenant OK, `quickstart.httpx.eat_again_seconds` 0.4 → 0.4 and `quickstart.express.eat_again_seconds` 1.2 → 1.2 with `eat_again_parsed` 0 on both — the splice unchanged; `quickstart.httpx.eat_seconds` 4.3 → 4.0, `tenants.sqlalchemy.seconds` 6.0 → 5.6, `floor.seconds` 10.7 → 7.5, the receipt 58.4 → 55.6 s. The wrong way: `index.verify_seconds` 0.5 → 0.6 (a lane no line of this change runs in), `pass.engine_hot_lanes` 0 → 1 — the floor's hottest function is `container._write_parquet` where it was `posix.fsync`, the same three functions in a different order. Closed on the engine lines by the standing ruling (§59) |

@@ -1346,9 +1346,12 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     seed = f"{package}://module/{package}"
     target = f"{deps[0]}://module/{deps[0]}" if deps else seed
     parsed = sum(m.get("parsed", 0) for m in ring["minted"].values())
-    files = sum(m.get("parsed", 0) + m.get("reused", 0) for m in ring["minted"].values())
+    unreadable = {f"{s}:{rel}" if s != package else rel: why
+                  for s, m in ring["minted"].items() for rel, why in (m.get("unreadable") or {}).items()}
+    files = sum(m.get("parsed", 0) + m.get("reused", 0) for m in ring["minted"].values()) + len(unreadable)
+    clause = smash_lane.unreadable_phrase(unreadable)
     print(f"EAT OK: {package} + {len(deps)} ring shard(s) -> {home}  "
-          f"({parsed} of {files} files parsed, {time.perf_counter() - t0:.1f}s)")
+          f"({parsed} of {files} files parsed{'; ' + clause if clause else ''}, {time.perf_counter() - t0:.1f}s)")
     print(_next_steps(desc, package, seed, target, home))
     return 0
 

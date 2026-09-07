@@ -549,11 +549,12 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
     edges: list[dict] = []
     receipt = Receipt("first")
     for f in files:
+        rel = rels[f]
         try:
             src = f.read_bytes()
-        except OSError:
+        except OSError as exc:
+            receipt.unreadable(rel, f"unreadable: {exc.strerror or exc.__class__.__name__}")
             continue
-        rel = rels[f]
         sha = hashlib.sha256(src).hexdigest()
         cached = reuse(pin, rel, sha) if reuse is not None else None
         if cached is None:

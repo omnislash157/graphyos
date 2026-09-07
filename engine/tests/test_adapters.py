@@ -236,3 +236,62 @@ def test_python_ast_visits_every_node_of_a_file_exactly_once(tmp_path, monkeypat
     imports = sorted(r["dst"].rsplit("/", 1)[1] for r in records if r.get("edge_type") == "imports")
     assert imports == ["json", "os"]
     assert {r["dotted"] for r in records if r["kind"] == "node"} == {"sample", "sample.outer", "sample.K", "sample.K.m"}
+
+
+def test_RED_an_unreadable_file_is_named_with_its_reason_and_a_coding_cookie_is_honoured(tmp_path):
+    """Red-team finding 5 (RECON §71, graphyos #38): a syntax error, a latin-1 file or nesting past
+    the interpreter's limit minted nothing and still counted as parsed — a codebase with one latin-1
+    module lost it and the walk said "names no node" with no hint. Now every file the producer
+    cannot read is named under ``unreadable`` with its reason, counted as neither parsed nor reused;
+    a latin-1 module with its PEP 263 cookie (and a BOM-led utf-8 one) is decoded by the cookie and
+    mints; a file symlink whose target lies outside the corpus is skipped and named, never read."""
+    import os
+    from graphy.adapters import python_ast
+    pkg = tmp_path / "badpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "good.py").write_text("def ok():\n    pass\n", encoding="utf-8")
+    (pkg / "broken.py").write_text("def top():\n    pass\n\ndef f(:\n    pass\n", encoding="utf-8")
+    (pkg / "latin.py").write_bytes(b"# coding: latin-1\n# caf\xe9\ndef g(): pass\n")
+    (pkg / "raw_latin.py").write_bytes(b"# caf\xe9\ndef h(): pass\n")
+    (pkg / "deep.py").write_text("x = " + "(" * 300 + "1" + ")" * 300 + "\ndef d(): pass\n", encoding="utf-8")
+    (pkg / "bom.py").write_bytes(b"\xef\xbb\xbfdef bom(): pass\n")
+    (pkg / "nul.py").write_bytes(b"def n(): pass\n\x00")
+    outside = tmp_path / "outside.py"
+    outside.write_text("def secret(): pass\n", encoding="utf-8")
+    os.symlink(outside, pkg / "escaped.py")
+    os.symlink(pkg / "good.py", pkg / "inside.py")            # a link that stays inside is a module of the corpus
+    os.symlink(tmp_path, pkg / "up")                          # a directory link is never descended
+
+    files, skipped = python_ast.walk_files_naming_skips(pkg)
+    assert skipped == {"escaped.py": f"symlink outside the corpus -> {outside.resolve()}"}
+    assert [f.name for f in files] == ["__init__.py", "bom.py", "broken.py", "deep.py", "good.py", "inside.py",
+                                       "latin.py", "nul.py", "raw_latin.py"]
+    assert python_ast.walk_files(pkg) == files
+
+    nodes, edges, sources = python_ast.mint_records(pkg)
+    unreadable = sources["unreadable"]
+    assert unreadable == {
+        "escaped.py": f"symlink outside the corpus -> {outside.resolve()}",
+        "broken.py": "syntax error line 4",
+        "deep.py": "too deeply nested",
+        "nul.py": "null bytes",
+        "raw_latin.py": "not utf-8",
+    }
+    assert sources["parsed"] == 5 and sources["reused"] == 0
+    assert set(sources["files"]) == {"__init__.py", "bom.py", "good.py", "inside.py", "latin.py"}
+    dotted = {n["dotted"] for n in nodes.values() if n["node_type"] == "func"}
+    assert dotted == {"badpkg.good.ok", "badpkg.latin.g", "badpkg.bom.bom", "badpkg.inside.ok"}
+    assert not any("secret" in n["dotted"] or "escaped" in n["dotted"] for n in nodes.values())
+
+    # the reader on its own: a readable file hands back its text and tree, an unreadable one its reason
+    src, tree = python_ast.read_source(pkg / "latin.py")
+    assert "café" in src and tree.body
+    assert python_ast.read_source(pkg / "broken.py") == "syntax error line 4"
+    assert python_ast.read_source(tmp_path / "missing.py").startswith("unreadable: ")
+    (pkg / "cookie.py").write_bytes(b"# coding: nope-1\ndef c(): pass\n")
+    assert python_ast.read_source(pkg / "cookie.py") == "unknown encoding: nope-1"
+
+    # a readable file's records are the same whether the producer reads it or is handed the parse
+    handed = list(python_ast._emit_records_for_file(pkg / "good.py", pkg, "badpkg", parsed=python_ast.read_source(pkg / "good.py")))
+    assert handed == list(python_ast._emit_records_for_file(pkg / "good.py", pkg, "badpkg"))

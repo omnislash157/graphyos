@@ -24,7 +24,8 @@ from graphy.ir import IRError, validate_graph
 from graphy.parity import Golden, Harness, ParityError, json_equal
 
 __all__ = ["SmashError", "smash", "mint", "parity", "locate", "distributions", "portable",
-           "stdlib_names", "RING_NAME", "PROVENANCE_NAME", "SOURCES_KEY", "PRODUCERS", "Producer"]
+           "stdlib_names", "RING_NAME", "PROVENANCE_NAME", "SOURCES_KEY", "UNREADABLE_KEY",
+           "unreadable_phrase", "PRODUCERS", "Producer"]
 
 RING_NAME = "ring.json"
 PROVENANCE_NAME = "PROVENANCE.json"
@@ -275,6 +276,17 @@ def _counts(nodes: dict, edges: list) -> dict:
 
 
 SOURCES_KEY = "sources"
+UNREADABLE_KEY = "unreadable"       # PROVENANCE: {relpath: reason} — the files the producer could not read
+
+
+def unreadable_phrase(unreadable: dict[str, str], *, limit: int = 8) -> str:
+    """``3 unreadable: broken.py syntax error line 3, latin.py not utf-8, …`` — the mint line's
+    clause, or an empty string when every file was read. Past ``limit`` names, the rest is counted."""
+    if not unreadable:
+        return ""
+    names = [f"{rel} {why}" for rel, why in list(unreadable.items())[:limit]]
+    more = len(unreadable) - len(names)
+    return f"{len(unreadable)} unreadable: " + ", ".join(names) + (f", and {more} more" if more > 0 else "")
 
 
 def _reuse_from(shard_dir: Path, producer_block: dict):
@@ -373,6 +385,7 @@ def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
         nodes, edges, sources = python_ast.mint_records(corpus, reuse=reuse)
     else:
         nodes, edges, sources = typescript_ast.mint_records(corpus, package, reuse=reuse)
+    unreadable = sources.pop("unreadable", {})
     validate_graph(nodes, edges, prod.vocabulary)
     node_map = {k: v for k, v in nodes.items()}
     shard_dir.mkdir(parents=True, exist_ok=True)
@@ -394,6 +407,7 @@ def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
         "counts": _counts(node_map, edges),
         "files": {name: _file_receipt(shard_dir / name) for name in ("nodes.json", "edges.json")},
         SOURCES_KEY: {**sources, **({"splice_refused": refusal} if refusal else {})},
+        UNREADABLE_KEY: unreadable,
         "note": _NOTE,
     }
     _write_json(shard_dir / PROVENANCE_NAME, prov)
@@ -511,11 +525,14 @@ def smash(package: str, *, site_packages: str | Path, out: str | Path,
                           "distribution": prov["corpus"].get("distribution"),
                           "version": prov["corpus"].get("version"),
                           "nodes": prov["counts"]["node_count"], "edges": prov["counts"]["edge_count"],
-                          "parsed": prov[SOURCES_KEY]["parsed"], "reused": prov[SOURCES_KEY]["reused"]}
+                          "parsed": prov[SOURCES_KEY]["parsed"], "reused": prov[SOURCES_KEY]["reused"],
+                          UNREADABLE_KEY: prov[UNREADABLE_KEY]}
         if log:
-            src = prov[SOURCES_KEY]
+            src, unread = prov[SOURCES_KEY], prov[UNREADABLE_KEY]
+            clause = unreadable_phrase(unread)
             log(f"MINT OK: {scheme} {prov['counts']['node_count']} nodes / {prov['counts']['edge_count']} edges -> {shard}"
-                f"  (parsed {src['parsed']} of {src['parsed'] + src['reused']} files)")
+                f"  (parsed {src['parsed']} of {src['parsed'] + src['reused'] + len(unread)} files"
+                + (f"; {clause}" if clause else "") + ")")
         if not ring:
             break
         for s in sorted(outs):

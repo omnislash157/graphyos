@@ -481,3 +481,69 @@ def test_RED_a_planted_edge_in_a_shard_on_disk_does_not_survive_the_splice(tmp_p
     assert "splice_refused" not in prov[smash.SOURCES_KEY]
     assert capsys.readouterr().err == ""
     assert _shard_bytes(live) == clean
+
+
+def test_RED_the_mint_line_and_the_provenance_name_every_unreadable_file(tmp_path, capsys):
+    """graphyos #38: the mint's count line said ``parsed 7 of 7`` over a package where three files
+    minted nothing. Now the line reads ``parsed 4 of 7 files; 3 unreadable: <file> <reason>, …``,
+    PROVENANCE carries ``unreadable: {file: reason}`` beside ``sources``, ring.json carries it per
+    shard, and `graphy eat` says it. A re-mint splices the readable files and asks the unreadable
+    ones again — an older shard's receipt that counted an unreadable file as an empty span is not
+    trusted for it — so the reasons are the mint's own, every time. A readable file's records are
+    byte-identical to the mint before this change (the fixture parity test is that floor)."""
+    sp = _site(tmp_path)
+    pkg = sp / "alpha"
+    (pkg / "broken.py").write_text("def top():\n    pass\n\ndef f(:\n    pass\n", encoding="utf-8")
+    (pkg / "latin.py").write_bytes(b"# coding: latin-1\n# caf\xe9\ndef g(): pass\n")
+    (pkg / "raw_latin.py").write_bytes(b"# caf\xe9\ndef h(): pass\n")
+    (pkg / "deep.py").write_text("x = " + "(" * 300 + "1" + ")" * 300 + "\ndef d(): pass\n", encoding="utf-8")
+    out = tmp_path / "out"
+    lines: list[str] = []
+    receipt = smash.smash("alpha", site_packages=sp, out=out, ring=False, log=lines.append)
+    mint_line = next(ln for ln in lines if ln.startswith("MINT OK: alpha "))
+    assert mint_line.endswith("(parsed 3 of 6 files; 3 unreadable: broken.py syntax error line 4, "
+                              "deep.py too deeply nested, raw_latin.py not utf-8)"), mint_line
+    prov = json.loads((out / "alpha_graph" / smash.PROVENANCE_NAME).read_text(encoding="utf-8"))
+    assert prov[smash.UNREADABLE_KEY] == {"broken.py": "syntax error line 4", "deep.py": "too deeply nested",
+                                          "raw_latin.py": "not utf-8"}
+    assert prov[smash.SOURCES_KEY]["parsed"] == 3 and prov[smash.SOURCES_KEY]["reused"] == 0
+    assert "unreadable" not in prov[smash.SOURCES_KEY]
+    assert "broken.py" not in prov[smash.SOURCES_KEY]["files"] and "latin.py" in prov[smash.SOURCES_KEY]["files"]
+    ring = json.loads((out / smash.RING_NAME).read_text(encoding="utf-8"))
+    assert ring["minted"]["alpha"]["unreadable"] == prov[smash.UNREADABLE_KEY]
+    assert receipt["minted"]["alpha"]["parsed"] == 3
+    nodes = json.loads((out / "alpha_graph" / "nodes.json").read_text(encoding="utf-8"))
+    assert "alpha://func/alpha.latin.g" in nodes and "alpha://func/alpha.deep.d" not in nodes
+
+    # the re-mint: the readable files splice, the unreadable ones are asked again and named again
+    lines.clear()
+    smash.smash("alpha", site_packages=sp, out=out, ring=False, log=lines.append)
+    again = next(ln for ln in lines if ln.startswith("MINT OK: alpha "))
+    assert "(parsed 0 of 6 files; 3 unreadable: broken.py syntax error line 4" in again, again
+
+    # a shard minted before this change: the unreadable file sits in the receipt as an empty span —
+    # the splice does not trust it for that file, so the reason is still named
+    prov_path = out / "alpha_graph" / smash.PROVENANCE_NAME
+    prov = json.loads(prov_path.read_text(encoding="utf-8"))
+    prov[smash.SOURCES_KEY]["files"]["deep.py"] = {"sha256": __import__("hashlib").sha256((pkg / "deep.py").read_bytes()).hexdigest(),
+                                                   "nodes": 0, "edges": 0}
+    prov[smash.UNREADABLE_KEY] = {}
+    prov_path.write_text(json.dumps(prov), encoding="utf-8")
+    lines.clear()
+    smash.smash("alpha", site_packages=sp, out=out, ring=False, log=lines.append)
+    older = next(ln for ln in lines if ln.startswith("MINT OK: alpha "))
+    assert "deep.py too deeply nested" in older, older
+
+    # eat says it too
+    repo = tmp_path / "repo"
+    shutil.copytree(pkg, repo / "alpha")
+    rc = cli.main(["eat", "--repo", str(repo), "--site-packages", str(sp), "--package", "alpha"])
+    eat_out = capsys.readouterr().out
+    assert rc == 0, eat_out
+    eat_line = next(ln for ln in eat_out.splitlines() if ln.startswith("EAT OK: alpha "))
+    assert "; 3 unreadable: broken.py syntax error line 4, deep.py too deeply nested, raw_latin.py not utf-8, " in eat_line, eat_line
+    assert "(6 of 9 files parsed" in eat_line, eat_line
+
+    # the phrase past its cap counts the rest
+    many = {f"f{i}.py": "not utf-8" for i in range(11)}
+    assert smash.unreadable_phrase(many).endswith("f7.py not utf-8, and 3 more")

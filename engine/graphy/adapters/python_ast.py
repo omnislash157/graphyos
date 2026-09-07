@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import io
 import re
+import tokenize
 from collections import deque
 from pathlib import Path
 from typing import Any, Iterator
@@ -11,7 +13,8 @@ from typing import Any, Iterator
 from graphy.adapters._receipt import Receipt
 from graphy.ir import PYTHON_AST_VOCABULARY
 
-__all__ = ["build_ir", "mint_records", "walk_files", "is_package_dir", "PYTHON_AST_VOCABULARY"]
+__all__ = ["build_ir", "mint_records", "walk_files", "walk_files_naming_skips", "read_source",
+           "is_package_dir", "PYTHON_AST_VOCABULARY"]
 
 _DEFAULT_EXCLUDES = (
     "__pycache__", ".git", ".venv", "venv", "node_modules",
@@ -315,21 +318,55 @@ def _local_package_names(root: Path) -> frozenset[str]:
     return frozenset(names)
 
 
+def read_source(file: Path, raw: bytes | None = None) -> tuple[str, ast.AST] | str:
+    """The file's text and its tree, or the one-line reason the producer cannot read it. The
+    encoding is the file's own — the PEP 263 coding cookie or the BOM, ``tokenize.detect_encoding``
+    — so a latin-1 module with its cookie mints; a file that decodes, parses and nests within the
+    interpreter's limits is readable and nothing else is. ``raw`` spares a second read when the
+    caller already holds the bytes (the mint hashes them first)."""
+    try:
+        if raw is None:
+            raw = file.read_bytes()
+    except OSError as exc:
+        return f"unreadable: {exc.strerror or exc.__class__.__name__}"
+    try:
+        encoding, _ = tokenize.detect_encoding(io.BytesIO(raw).readline)
+    except SyntaxError as exc:                    # a bad cookie, or a first line that is not utf-8
+        msg = str(exc.msg if exc.msg else exc)
+        return "not utf-8" if "encoding declaration" in msg else msg
+    try:
+        src = raw.decode(encoding)
+    except (UnicodeDecodeError, LookupError):
+        return f"not {'utf-8' if encoding.startswith('utf-8') else encoding}"
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as exc:
+        msg = exc.msg or ""
+        if "nested" in msg or "too complex" in msg:
+            return "too deeply nested"
+        if "null bytes" in msg:
+            return "null bytes"
+        return f"syntax error line {exc.lineno}" if exc.lineno else "syntax error"
+    except (RecursionError, MemoryError):
+        return "too deeply nested"
+    except ValueError as exc:                     # 3.10: null bytes are a ValueError
+        return "null bytes" if "null bytes" in str(exc) else f"unparseable: {exc}"
+    return src, tree
+
+
 def _emit_raw_records_for_file(
     file: Path,
     root: Path,
     package: str,
     local_packages: frozenset[str] = frozenset(),
     rel_base: Path | None = None,
+    parsed: tuple[str, ast.AST] | None = None,
 ) -> Iterator[dict]:
-    try:
-        src = file.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        return
-    try:
-        tree = ast.parse(src)
-    except SyntaxError:
-        return
+    if parsed is None:
+        parsed = read_source(file)
+        if isinstance(parsed, str):
+            return
+    src, tree = parsed
 
     module_dotted = _dotted_for(file, root, package)
     module_id = _node_id("module", module_dotted)
@@ -367,12 +404,13 @@ def _emit_records_for_file(
     package: str,
     local_packages: frozenset[str] = frozenset(),
     rel_base: Path | None = None,
+    parsed: tuple[str, ast.AST] | None = None,
 ) -> Iterator[dict]:
     """Every node carries ``module`` (the dotted module that holds it) and, when the producer's
     own rule says the file is a test, ``role: test``. The consumers read those fields; no consumer
     derives a module from a ``.py`` path or decides what a test is."""
     module_dotted: str | None = None
-    for rec in _emit_raw_records_for_file(file, root, package, local_packages, rel_base):
+    for rec in _emit_raw_records_for_file(file, root, package, local_packages, rel_base, parsed):
         if rec.get("kind") == "node":
             if rec["node_type"] == "module":
                 module_dotted = rec["dotted"]
@@ -391,13 +429,46 @@ def is_package_dir(corpus_dir: str | Path) -> bool:
 def walk_files(corpus_dir: str | Path) -> list[Path]:
     """The exact files a corpus is minted from, in mint order. A package directory skips only
     caches; a repo root also skips build and vendored trees; a ``.py`` file is itself."""
+    return walk_files_naming_skips(corpus_dir)[0]
+
+
+def _escapes(file: Path, root: Path) -> str | None:
+    """The reason a file symlink is skipped: its target lies outside the corpus root. A corpus
+    is the tree under its root; a link to ``/etc/passwd`` is not a module of it. A directory
+    symlink is never descended (``rglob``), so only file links are asked."""
+    if not file.is_symlink():
+        return None
+    try:
+        target = file.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return "symlink to nothing"
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return f"symlink outside the corpus -> {target}"
+    return None
+
+
+def walk_files_naming_skips(corpus_dir: str | Path) -> tuple[list[Path], dict[str, str]]:
+    """``walk_files`` and, beside it, the files under the root the producer will not read by
+    name (relative to the root) with the reason — a symlink that escapes the corpus."""
     root = Path(corpus_dir).resolve()
     if root.is_file():
-        return [root] if root.suffix == ".py" else []
+        return ([root] if root.suffix == ".py" else []), {}
     if not root.is_dir():
         raise RuntimeError(f"path is not a directory or a .py file: {root}")
     excludes = _PACKAGE_EXCLUDES if is_package_dir(root) else _DEFAULT_EXCLUDES
-    return [f for f in sorted(root.rglob("*.py")) if not _is_excluded(f, excludes, root)]
+    files: list[Path] = []
+    skipped: dict[str, str] = {}
+    for f in sorted(root.rglob("*.py")):
+        if _is_excluded(f, excludes, root):
+            continue
+        why = _escapes(f, root)
+        if why is None:
+            files.append(f)
+        else:
+            skipped[str(f.relative_to(root)).replace("\\", "/")] = why
+    return files, skipped
 
 
 def build_ir(corpus_dir: str | Path) -> tuple[_NodeRecords, list[dict]]:
@@ -430,16 +501,28 @@ def mint_records(corpus_dir: str | Path, *, reuse=None) -> tuple[_NodeRecords, l
     pin = f"python_ast:{package}:{'package' if is_package_dir(root) or root.is_file() else 'tree'}:" \
           + ",".join(sorted(local_packages))
     receipt = Receipt("last")
-    for file in walk_files(root):
+    files, skipped = walk_files_naming_skips(root)
+    for rel, why in skipped.items():
+        receipt.unreadable(rel, why)
+    for file in files:
         rel = str(file.relative_to(rel_root)).replace("\\", "/")
         try:
-            sha = hashlib.sha256(file.read_bytes()).hexdigest()
-        except OSError:
+            raw = file.read_bytes()
+        except OSError as exc:
+            receipt.unreadable(rel, f"unreadable: {exc.strerror or exc.__class__.__name__}")
             continue
+        sha = hashlib.sha256(raw).hexdigest()
         cached = reuse(pin, rel, sha) if reuse is not None else None
+        if cached is not None and not cached[0]:
+            cached = None       # a readable file always emits its module node: an empty span is a file
+            #                     an older mint could not read and counted anyway — read it, and name it
         if cached is None:
+            parsed = read_source(file, raw)
+            if isinstance(parsed, str):
+                receipt.unreadable(rel, parsed)
+                continue
             recs = list(_emit_records_for_file(file, base, package, local_packages=local_packages,
-                                               rel_base=rel_base))
+                                               rel_base=rel_base, parsed=parsed))
             n_recs = [r for r in recs if r.get("kind") == "node"]
             e_recs = [r for r in recs if r.get("kind") != "node"]
         else:
