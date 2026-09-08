@@ -55,6 +55,21 @@ claude plugin install graphy@omnislash157/graphyos     # Claude Code, once the m
 claude --plugin-dir /path/to/graphyos                   # the checkout is the plugin
 ```
 
+## The page, one line
+
+```bash
+uvx --from 'graphyos[typescript]' graphy showcase .     # no venv, no install — the page at .graphy/showcase/index.html
+```
+
+`uvx` is [uv](https://github.com/astral-sh/uv)'s runner: it makes the venv, installs `graphyos`
+into it and runs `graphy showcase` over the repo you are in — the modules drawn, the pillars the
+walk proposes, the ring, the MCP block, three questions. Run on this box from a scratch venv
+holding nothing but `uv` (`RECON.md` §86). This is the drawing it makes of graphy itself, from
+graphy's own store — [`docs/pillars.svg`](docs/pillars.svg), written by the graphy tenant's rebuild,
+re-rendered and compared byte for byte in the gate, never drawn by hand:
+
+![graphy's pillars, drawn by graphy from its own store](docs/pillars.svg)
+
 ## Install, then eat — two lines
 
 ```bash

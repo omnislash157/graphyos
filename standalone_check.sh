@@ -48,6 +48,19 @@ if [ -s "$HERE/.private_key" ]; then
 else
     echo "prose scrub        SKIPPED (no .private_key beside scrub.py — the keyed sweep runs on the operator's box, never here)"
 fi
+# The README's picture is the walk's drawing: docs/pillars.svg is what `graphy draw --emit svg` renders
+# from the graphy tenant's store (rebuild.sh writes it). The gate re-renders it and refuses a byte of
+# drift, the way `graphy arms --verify` names a moved region. A box without the tenant (CI) cannot
+# draw and says SKIPPED by name.
+GT="$HERE/engine/tenants/graphy"
+if [ -s "$GT/tenant.json" ] && [ -d "$GT/substrate" ]; then
+    FRESH="$(dirname "$VENV")/pillars.svg"
+    ( cd "$STAGE" && env -u PYTHONPATH "$PY" -m graphy draw --tenant "$GT/tenant.json" --tenant-id graphy --corpus graphy --pillars --partition "$GT/partition.json" --lr --min-weight 2 --emit svg -o "$FRESH" >/dev/null )
+    cmp -s "$FRESH" "$HERE/docs/pillars.svg" || { echo "pillars svg        DRIFT — docs/pillars.svg is not what the store draws; run engine/tenants/graphy/rebuild.sh"; exit 3; }
+    echo "pillars svg        OK"
+else
+    echo "pillars svg        SKIPPED (no graphy tenant on this box — rebuild.sh draws docs/pillars.svg; the byte check runs where the store is)"
+fi
 bash "$HERE/release.sh" --check
 python3 "$HERE/burden.py" || { echo "burden            FAILED — a responsibility grew without burden.json saying so"; exit 3; }
 # The workflow files parse here, on the box, before CI is asked: a file GitHub cannot parse runs

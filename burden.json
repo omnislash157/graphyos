@@ -3,7 +3,7 @@
  "runtime_dependencies": [],
  "extras": {"dev": ["pytest"], "estate": ["duckdb"], "typescript": ["tree-sitter", "tree-sitter-typescript"]},
  "wheel_max_bytes": 400000,
- "hosts": ["pypi.org", "registry.npmjs.org", "api.npmjs.org", "hugovk.github.io", "raw.githubusercontent.com", "github.com"],
+ "hosts": ["pypi.org", "registry.npmjs.org", "api.npmjs.org", "hugovk.github.io", "raw.githubusercontent.com", "github.com", "www.w3.org"],
  "subprocess_targets": ["git", "npm", "rg", "python", "pip", "venv"],
  "_shell": "no shell=True and no os.system, ever — every program the engine runs is argv (graphyos #41); there is no list to grow",
  "tracked_docs": ["README.md", "graphy/shell/README.md", "graphy/shell/claude/GRAPHY.md", "tenants/*/[A-Z]*.md", "tests/fixtures/**/*.md"],

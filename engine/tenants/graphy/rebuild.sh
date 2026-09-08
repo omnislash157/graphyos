@@ -63,6 +63,9 @@ PY
 "$PY" -m graphy fanout --verify --out "$SUB/fanout"
 "$PY" -m graphy arms --tenant "$DESC" --tenant-id graphy --corpus graphy --partition "$HERE/partition.json" --dir "$HERE/arms" --verify
 "$PY" -m graphy draw --tenant "$DESC" --tenant-id graphy --corpus graphy --partition "$HERE/partition.json" --atlas "$SUB/atlas" --lr --min-weight 2
+# The README's picture: the pillars as one standalone svg, tracked at docs/pillars.svg — the walk's drawing,
+# never drawn by hand; standalone_check.sh re-renders it from the store and refuses a byte of drift.
+"$PY" -m graphy draw --tenant "$DESC" --tenant-id graphy --corpus graphy --pillars --partition "$HERE/partition.json" --lr --min-weight 2 --emit svg -o "$ROOT/docs/pillars.svg"
 "$PY" -m graphy pillars --tenant "$DESC" --tenant-id graphy --corpus graphy --write "$SUB/pillars.json" > "$SUB/pillars.txt"
 tail -n 2 "$SUB/pillars.txt"
 echo "GRAPHY_TENANT_OK"

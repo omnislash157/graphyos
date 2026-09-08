@@ -101,3 +101,21 @@ def test_GREEN_the_atlas_lays_each_picture_out_once_and_places_it_once(tmp_path,
     lo = S.layout(pic.nodes, pic.edges, pic.labels)
     assert draw.render(pic, emit="ascii", lr=True, layout=lo) == draw.render(pic, emit="ascii", lr=True)
     assert set(lo.placed) == {False}, "the LR pass was memoized on the layout, and only it"
+
+
+def test_GREEN_svg_emit_is_a_standalone_file_for_a_readme(tmp_path, capsys):
+    tenant, desc, roster = _fixture(tmp_path)
+    store = fs.open_for(roster, tenant=tenant, tenant_id="doors")
+    cut = fanout.load_partition(_cut(tmp_path))
+    pic = draw.pillars(store, "fastapi", cut)
+    svg = draw.render(pic, emit="svg", lr=True)
+    assert svg.startswith('<svg xmlns="http://www.w3.org/2000/svg" viewBox=') and svg.rstrip().endswith("</svg>")
+    assert "<script" not in svg and 'data-interactive' not in svg and "https://" not in svg
+    assert "prefers-color-scheme: dark" in svg and '[data-theme="dark"]' in svg and ".card {" in svg and "body {" not in svg
+    import xml.dom.minidom
+    xml.dom.minidom.parseString(svg)                                   # one well-formed document, as an <img> reads it
+    out = tmp_path / "p.svg"
+    rc = cli.main(["draw", "--tenant", str(desc), "--tenant-id", "doors", "--corpus", "fastapi", "--pillars",
+                   "--partition", str(_cut(tmp_path)), "--lr", "--emit", "svg", "-o", str(out)])
+    assert rc == 0 and "CHECK GREEN" in capsys.readouterr().out
+    assert out.read_text() == svg                                      # the same bytes twice: the gate compares them

@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1039 374" role="img" aria-labelledby="svg-title svg-desc">
+  <style>
+    :root {
+      --paper: #FAFAF7; --card: #FFFFFF; --ink: #1F2933; --muted: #52606D; --soft: #9AA5B1;
+      --accent: #2F6F4E; --link: #1F5FA8; --head-wash: rgba(31,41,51,0.05); --card-rule: rgba(31,41,51,0.22);
+      --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --paper: #1E2028; --card: #262A34; --ink: #E0E0E0; --muted: #94A3B8; --soft: #808080;
+        --accent: #7DD3A0; --link: #7CC4FA; --head-wash: rgba(224,224,224,0.05); --card-rule: rgba(224,224,224,0.22);
+      }
+    }
+    :root[data-theme="dark"] {
+      --paper: #1E2028; --card: #262A34; --ink: #E0E0E0; --muted: #94A3B8; --soft: #808080;
+      --accent: #7DD3A0; --link: #7CC4FA; --head-wash: rgba(224,224,224,0.05); --card-rule: rgba(224,224,224,0.22);
+    }
+    .bg { fill: var(--paper); }
+    .card { fill: var(--card); stroke: var(--ink); }
+    .t-ink { fill: var(--ink); }
+    .mk-muted { fill: var(--muted); }
+    .mk-link { fill: var(--link); }
+    .rel { stroke: var(--muted); fill: none; }
+    .rev { stroke: var(--link); stroke-dasharray: 5,4; fill: none; }
+    .up { stroke: var(--accent); stroke-width: 1.6; }
+    .down { stroke: var(--link); stroke-width: 1.6; }
+    .dim { opacity: 0.22; }
+    .node rect { fill: var(--card); stroke: var(--ink); }
+    .srcb rect { fill: var(--head-wash); stroke: var(--card-rule); }
+    .srcb text { fill: var(--muted); font-family: var(--font-mono); font-size: 8px; text-anchor: middle; }
+  </style>
+  <title id="svg-title">graphy · the pillars</title>
+  <desc id="svg-desc">Computed layered layout of graphy · the pillars.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" class="mk-muted"/>
+    </marker>
+    <marker id="arrow-rev" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+      <polygon points="8 0, 0 3, 8 6" class="mk-link"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1039" height="374"></rect>
+      <path d="M 166,61 L 169.5,61" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 169.5,47 L 169.5,173" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 169.5,103 L 250,103" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="CUT" data-to="CLI"/>
+      <path d="M 169.5,75 L 250,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 169.5,47 L 250,47" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 169.5,131 L 250,131" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 169.5,173 L 180,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="DOORS"/>
+      <path d="M 187,103 L 323.5,103 L 323.5,117 L 341,117" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="CUT" data-to="CLI"/>
+      <path d="M 187,75 L 404,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 348,75 L 470.5,75 L 470.5,103 L 561.5,103" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 502,103 L 631.5,103 L 631.5,117 L 663,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 187,47 L 404,47" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 348,47 L 561.5,47" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 502,47 L 726,47" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 670,47 L 792.5,47 L 792.5,61 L 831,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 187,131 L 323.5,131 L 323.5,187 L 404,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 348,187 L 470.5,187 L 470.5,201 L 495,201" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 467,117 L 477.5,117" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 477.5,75 L 477.5,201" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 477.5,131 L 561.5,131" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="EDGE"/>
+      <path d="M 477.5,75 L 561.5,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
+      <path d="M 477.5,201 L 495,201" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
+      <path d="M 502,131 L 638.5,131 L 638.5,117 L 663,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="EDGE"/>
+      <path d="M 502,75 L 726,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
+      <path d="M 670,75 L 799.5,75 L 799.5,61 L 831,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
+      <path d="M 320,173 L 330.5,173" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 330.5,117 L 330.5,243" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 330.5,159 L 404,159" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="EDGE"/>
+      <path d="M 330.5,243 L 404,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
+      <path d="M 330.5,215 L 404,215" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
+      <path d="M 330.5,117 L 341,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="CUT"/>
+      <path d="M 348,159 L 561.5,159" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="EDGE"/>
+      <path d="M 502,159 L 645.5,159 L 645.5,117 L 663,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="EDGE"/>
+      <path d="M 348,243 L 561.5,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
+      <path d="M 502,243 L 631.5,243 L 631.5,187 L 726,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
+      <path d="M 670,187 L 806.5,187 L 806.5,61 L 831,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
+      <path d="M 348,215 L 484.5,215 L 484.5,201 L 495,201" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
+      <path d="M 789,117 L 813.5,117 L 813.5,61 L 831,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="EDGE"/>
+      <path d="M 628,201 L 652.5,201" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 652.5,117 L 652.5,201" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 652.5,159 L 726,159" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="SEAM"/>
+      <path d="M 652.5,117 L 663,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="SEAM" data-to="EDGE"/>
+      <path d="M 670,159 L 820.5,159 L 820.5,61 L 831,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="SEAM"/>
+      <g class="node" data-id="CLI">
+        <rect x="40" y="40" width="126" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="103" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (114→ ·→9)</text>
+      </g>
+      <g class="node" data-id="CUT">
+        <rect x="341" y="96" width="126" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="404" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CUT (18→ ·→29)</text>
+      </g>
+      <g class="node" data-id="DOORS">
+        <rect x="180" y="152" width="140" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="250" y="177.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (34→ ·→31)</text>
+      </g>
+      <g class="node" data-id="EDGE">
+        <rect x="663" y="96" width="126" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="726" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (4→ ·→14)</text>
+      </g>
+      <g class="node" data-id="PRODUCE">
+        <rect x="831" y="40" width="154" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="908" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (14→ ·→44)</text>
+      </g>
+      <g class="node" data-id="SEAM">
+        <rect x="495" y="180" width="133" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="561.5" y="205.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (25→ ·→83)</text>
+      </g>
+      <g class="node" data-id="MEMORY">
+        <rect x="40" y="292" width="133" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="106.5" y="317.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">MEMORY (1→ ·→0)</text>
+      </g>
+</svg>

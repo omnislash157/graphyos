@@ -4312,3 +4312,44 @@ python3 burden.py | tail -1; bash standalone_check.sh | tail -1
 | the floor | 518 passed, 3 skipped in 8.3 s (+8: `repo_tenant` reads eat's layout, five refusals by name, the CLI's three refusals, the two manifests run the repo door at the package version) |
 | the gate | `BURDEN OK … docs 34 tracked · scrub OK`; `GRAPHY_STANDALONE_OK` in 15.9 s |
 | the hold | the marketplace listing and the registry submission are outside accounts; the registry entry resolves only after graphyos #53 ships 0.2.2 to PyPI |
+
+## 86 · THE FIRST STEP — `uvx --from 'graphyos[typescript]' graphy showcase .` opens the README, proven from a scratch venv holding only uv; under it the picture: the graphy tenant's pillars as one standalone svg the rebuild draws and the gate re-renders byte for byte (2026-09-08 · graphyos issue 50)
+
+**The finding.** The README's first step was a venv and a pip install; `uvx` runs a PyPI console script with
+no venv the reader makes, and it was proven nowhere — `which uvx` → nothing on this box. The README carried
+no picture: the showcase page was described in prose and never shown. Operator, 2026-09-08: "lower the first
+step … agreed on all of it".
+
+**The change.** The quickstart opens with the one line, run from a scratch venv that holds nothing but `uv`
+(never the project's `.venv`), over the hostile TypeScript repo of §80 (`/tmp/graphy-nondotted`), against
+PyPI's 0.2.1: `SHOWCASE OK`. Under it, the drawing: `graphy draw --emit svg` (`sugiyama.emit_svg_file`) — the
+same `<svg>` the html page carries, with the namespace a file needs and the palette, both themes and the class
+rules inlined in a `<style>`, no script, no external resource, so a README or an `<img>` shows the walk's own
+drawing; `check_artifact` runs over it on the way out as it does over html. `docs/pillars.svg` is tracked:
+`engine/tenants/graphy/rebuild.sh` writes it after the atlas, and `standalone_check.sh` re-renders it from the
+graphy tenant's store in the gate's fresh venv and refuses a byte of drift — `pillars svg DRIFT` — the way
+`graphy arms --verify` names a moved region; a box without the tenant (CI) says `pillars svg SKIPPED` by
+name. `burden.json` names `www.w3.org`: the xmlns literal the scanner finds, a namespace the engine never
+reaches — named rather than hidden from the regex. No GIF: a recorder is a new program; the svg is the
+drawing the walk made. The rebuild's `arms --verify` also named six regions moved — `mcp_args` and
+`repo_tenant` from §85 had never been re-rendered, and `emit_svg_file` joined — so the six were re-rendered
+first (the router's law: drift named, never absorbed), and the svg moved with the store the same way
+(`CLI (113→ ·→8)` became `CLI (114→ ·→9)`): the gate would have refused the stale picture.
+
+```bash
+U=/tmp/graphy-uv; rm -rf $U && python3 -m venv $U && $U/bin/pip install -q uv && cd /tmp/graphy-nondotted && time $U/bin/uvx --from 'graphyos[typescript]' graphy showcase . --no-provision 2>&1 | grep -E '^SHOWCASE OK'   # the repo: §80's done block builds it
+cd /tmp/graphy-nondotted && rm -rf .graphy && time UV_CACHE_DIR=/tmp/graphy-uv-cache /tmp/graphy-uv/bin/uvx --from 'graphyos[typescript]' graphy showcase . --no-provision 2>&1 | grep -E '^SHOWCASE OK'   # cold uv cache
+cd ~/graphy && bash engine/tenants/graphy/rebuild.sh | grep -E 'ARMS|DRAW OK|GRAPHY_TENANT_OK'; wc -c docs/pillars.svg; python3 -c "import xml.dom.minidom; xml.dom.minidom.parse('docs/pillars.svg'); print('XML OK')"
+cd ~/graphy && bash standalone_check.sh | grep -E 'pillars svg|BURDEN|GRAPHY_STANDALONE_OK'
+cd ~/graphy && sed -i 's/CLI (/CLX (/' docs/pillars.svg && bash standalone_check.sh | grep 'pillars svg'; git checkout docs/pillars.svg            # a hand inside the picture: DRIFT
+cd engine && ../.venv/bin/python -m pytest -q -o addopts="" | tail -1
+```
+
+| check | result |
+|---|---|
+| the first step, from PyPI | `SHOWCASE OK: hostile · 1 arm(s) (HOSTILE) · 0 ring shard(s) · CHECK GREEN · 0.2s`, the page under `.graphy/showcase/`; 0.8 s wall with uv's cache warm, 0.5 s with `UV_CACHE_DIR` fresh — graphyos 0.2.1 and its `[typescript]` extra resolved and installed by uv inside that |
+| the picture | `DRAW OK: 7 node(s) · 20 edge(s) · 3 under the weight floor -> …/docs/pillars.svg · CHECK GREEN` from the rebuild; 9,789 bytes, one `<svg xmlns=…>`, well-formed XML, no `<script`, both themes in its `<style>` |
+| the rebuild | `ARMS OK: 6 arm(s) match the walk (store 8be38afd040c52bd)` after the six were re-rendered; `GRAPHY_TENANT_OK` in 2.3 s |
+| the gate | `pillars svg OK`; a hand-edited svg → `pillars svg DRIFT — docs/pillars.svg is not what the store draws; run engine/tenants/graphy/rebuild.sh`, exit 3; `BURDEN OK … hosts 8 on the list of 7 · docs 34 tracked · scrub OK`; `GRAPHY_STANDALONE_OK` in 18.1 s |
+| the floor | 519 passed, 3 skipped in 9.1 s (+1: the svg emit is one well-formed standalone document, no script, both themes, the CLI writes the same bytes twice) |
+| the done block | all four lines green: `SHOWCASE OK`, `README.md:61` the uvx line, `docs/pillars.svg` one `<svg` and linked at `README.md:68`, `GRAPHY_STANDALONE_OK` |

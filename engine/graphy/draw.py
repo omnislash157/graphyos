@@ -200,6 +200,8 @@ def render(pic: Picture, *, emit: str = "ascii", lr: bool = False, color: bool =
     t = title or pic.title
     if emit == "html":
         return S.emit_html(lo, title=t, orient=orient, interactive=interactive, node_meta=pic.meta)
+    if emit == "svg":
+        return S.emit_svg_file(lo, title=t, orient=orient, node_meta=pic.meta)
     if emit == "json":
         return json.dumps(S.layout_json(lo, graph_id=t, adapter="graphy.draw", orient=orient), indent=1)
     return S.render(lo, color=color, title=t, orient=orient)

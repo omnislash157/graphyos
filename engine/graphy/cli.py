@@ -481,11 +481,11 @@ def _cmd_draw(args: argparse.Namespace) -> int:
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
         line = f"DRAW OK: {pic.summary()} -> {args.out}"
-        if args.emit == "html":
+        if args.emit in ("html", "svg"):
             red = sugi.check_artifact(args.out)
             line += " · CHECK " + ("GREEN" if not red else "RED " + "; ".join(red))
         print(line)
-        return 0 if not (args.emit == "html" and red) else 1
+        return 0 if not (args.emit in ("html", "svg") and red) else 1
     print(text)
     print(f"DRAW: {pic.summary()} reads={counted.reads} generation={store.generation()}")
     return 0
@@ -1730,7 +1730,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_draw.add_argument("--max-nodes", type=int, default=60, help="the neighbourhood's node budget (default 60)")
     p_draw.add_argument("--atlas", default=None, metavar="DIR", help="one drawing per arm plus the unit map, ascii and html, with a receipt")
     p_draw.add_argument("--lr", action="store_true", help="left-to-right flow (trees and wide fans read better)")
-    p_draw.add_argument("--emit", choices=("ascii", "html", "json"), default="ascii")
+    p_draw.add_argument("--emit", choices=("ascii", "html", "svg", "json"), default="ascii",
+                        help="svg: one standalone .svg file, both themes inlined, no script — for a README")
     p_draw.add_argument("--interactive", action="store_true", help="html: click-focus reachability, zoom and pan")
     p_draw.add_argument("--color", action="store_true", help="ascii to a terminal: ANSI color")
     p_draw.add_argument("--title", default=None)

@@ -1263,6 +1263,24 @@ def emit_svg(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bo
     return "\n".join(svg), script
 
 
+# The svg's own rules out of the page css: every class rule, none of the page chrome (body, .frame, h1 …).
+_SVG_CSS = "\n".join(ln for ln in _HTML_CSS.splitlines()
+                     if ln.strip().startswith(".") and not ln.strip().startswith((".frame", ".eyebrow", ".plate")))
+
+
+def emit_svg_file(lo: Layout, *, title: str = "", orient: str = "TB", node_meta: dict | None = None) -> str:
+    """The computed layout as one standalone .svg: the same <svg> emit_html carries, with the
+    namespace a file needs and the tokens and rules inlined in a <style> — both themes, no script,
+    no external resource — so a README or an <img> shows the drawing the walk made. Never interactive:
+    a script inside an <img> never runs."""
+    svg, _ = emit_svg(lo, title=title, orient=orient, interactive=False, node_meta=node_meta)
+    head, rest = svg.split("\n", 1)
+    head = head.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1)
+    tokens = "\n".join(_TOKEN_CSS.splitlines()[1:])                 # the palette and both themes; the page reset stays out
+    style = "  <style>\n" + tokens + "\n" + _SVG_CSS + "\n  </style>"
+    return "\n".join((head, style, rest)) + "\n"
+
+
 def emit_html(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bool = False,
               node_meta: dict | None = None, eyebrow: str = "COMPUTED LAYOUT · graphy draw") -> str:
     """The computed layout as one self-contained HTML+SVG page (see emit_svg for the parts)."""
