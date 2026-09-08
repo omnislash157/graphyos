@@ -4507,3 +4507,33 @@ docker build -t graphy-gallery:55 . && docker run --rm graphy-gallery:55 python3
 | the review's one finding | two urls of one repo name (a/click and b/click) shared `.work/click` and the page directory — a silent overwrite in sequence, a race side by side; `build` now refuses the pair by name before any clone (`GALLERY REFUSED: two urls share the slug 'click': a/click and b/click`, exit 2), with a test that proves the runner never starts |
 | the floor | 525 passed, 3 skipped (+2); the pool test green three runs in a row, red under `GALLERY_JOBS=1` |
 | the gate | `GRAPHY_STANDALONE_OK`, `BURDEN OK`, `WORKFLOWS OK` |
+
+## 91 · THE MARKETPLACE — the repo is its own Claude Code marketplace; `claude plugin marketplace add omnislash157/graphyos` · `claude plugin install graphy@graphyos`, proven end to end from this box (2026-09-08 · graphyos issue 56)
+
+**The finding.** The checkout was the plugin (§85) but no marketplace listed it: a stranger's only door was
+`--plugin-dir` over a clone. Claude Code installs from a repo carrying `.claude-plugin/marketplace.json`.
+Anthropic's own directory (`anthropics/claude-plugins-official`) takes third-party plugins only through its
+submission form — the operator's step, not this issue.
+
+**The change.** `.claude-plugin/marketplace.json` beside `plugin.json`: marketplace `graphyos`, one plugin
+`graphy` whose source is `{"source": "github", "repo": "omnislash157/graphyos"}` — the checkout itself — with the
+description, version, author, homepage, license and keywords the plugin manifest carries. `release.sh --check`'s
+VERSION DRIFT now reads the marketplace entry and its metadata too (proven red at 0.0.0); the manifest test asserts
+the entry; `claude plugin validate .` validates both manifests and passes clean. The README's plugin block is the
+two lines a stranger types, and the checkout line for a box with no marketplace.
+
+```bash
+claude plugin validate . | tail -1                          # ✔ Validation passed
+bash release.sh --check | tail -2                           # versions OK (… marketplace.json …) · registry OK
+claude plugin marketplace add omnislash157/graphyos && claude plugin install graphy@graphyos && claude plugin list | grep -A3 graphy
+cd /tmp/np && claude -p "Using the graphy plugin's MCP tools only, call blast on 'Context' …"   # the installed plugin's tool answers
+```
+
+| check | result |
+|---|---|
+| the manifests | `claude plugin validate .` → `✔ Validation passed` (the CLAUDE.md warning of §85 is gone: the root validates as a marketplace); `versions OK (0.2.3 in pyproject.toml, .claude-plugin/plugin.json, marketplace.json, server.json)`; red at 0.0.0: `VERSION DRIFT: … marketplace.json plugins[0] says 0.0.0; … metadata says 0.0.0` |
+| the install, this box | `claude plugin marketplace add ~/graphy` (the path form, before the push) → `Successfully added marketplace: graphyos`; `claude plugin install graphy@graphyos` → `Successfully installed plugin: graphy@graphyos (scope: user)`, version 0.2.3, the source cloned from GitHub at graphyos 825885e into `~/.claude/plugins/cache/graphyos/graphy/0.2.3` |
+| the command the plugin runs | `graphy` must be on PATH outside any venv: `pip install --user` is refused by PEP 668 on this box, so a dedicated venv (`~/.local/share/graphy-venv`, `graphyos[typescript]==0.2.3` from PyPI) with `~/.local/bin/graphy` linked — what pipx or `uv tool install graphyos` does; `graphy mcp --repo /tmp/np` serves tenant click |
+| end to end | `cd /tmp/np && claude -p …` with no `--plugin-dir`: `Called mcp__plugin_graphy_graphy__blast on Context (resolved to click.core.Context)`, 3 turns, 14.8 s wall |
+| the gate | `GRAPHY_STANDALONE_OK`, `BURDEN OK` (json, not a tracked doc) |
+| the hold | the official directory: the submission form at clau.de/plugin-directory-submission on the operator's account |

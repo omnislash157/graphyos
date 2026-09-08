@@ -51,8 +51,9 @@ receipt eat left, and refuses by name when the repo has not been eaten. The same
 registry's entry, [`server.json`](server.json) (`uvx graphyos mcp --repo <repo>`).
 
 ```bash
-claude plugin install graphy@omnislash157/graphyos     # Claude Code, once the marketplace lists it; until then:
-claude --plugin-dir /path/to/graphyos                   # the checkout is the plugin
+claude plugin marketplace add omnislash157/graphyos    # the repo is the marketplace (.claude-plugin/marketplace.json) …
+claude plugin install graphy@graphyos                  # … and the plugin; inside Claude Code the same two as /plugin …
+claude --plugin-dir /path/to/graphyos                   # or a checkout, no marketplace: the checkout is the plugin
 ```
 
 ## The page, one line

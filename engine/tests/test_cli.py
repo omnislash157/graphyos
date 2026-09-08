@@ -799,3 +799,9 @@ def test_plugin_manifest_and_registry_entry_run_the_repo_door_at_the_package_ver
     readme = (root / "engine" / readme_name).read_text(encoding="utf-8")
     assert re.search(r"mcp-name: " + re.escape(server["name"]) + r"(?=\s|-->|<)", readme), readme_name
     assert len(server["description"]) <= 100   # the registry's cap, enforced server-side only
+    # the marketplace (graphyos #56): one entry, the checkout itself as its github source, the plugin's version
+    market = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+    (entry,) = market["plugins"]
+    assert market["name"] == "graphyos" and market["owner"]["name"]
+    assert entry["name"] == "graphy" and entry["source"] == {"source": "github", "repo": "omnislash157/graphyos"}
+    assert entry["version"] == market["metadata"]["version"] == graphy.__version__

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "graphyos",
+  "owner": {
+    "name": "Matt Hartigan",
+    "url": "https://github.com/omnislash157"
+  },
+  "metadata": {
+    "description": "graphy — the MCP server over the repo it ate; the checkout is the plugin",
+    "version": "0.2.3"
+  },
+  "plugins": [
+    {
+      "name": "graphy",
+      "source": {
+        "source": "github",
+        "repo": "omnislash157/graphyos"
+      },
+      "description": "The MCP server over the repo graphy ate: hunt · descend · blast · walk · draw · explain — every answer a walk over the code's structure, no model decides an edge. Run `graphy eat .` first; the server reads .graphy/tenant.json under the project root.",
+      "version": "0.2.3",
+      "author": {
+        "name": "Matt Hartigan",
+        "url": "https://github.com/omnislash157"
+      },
+      "homepage": "https://graphy-os.com",
+      "repository": "https://github.com/omnislash157/graphyos",
+      "license": "Apache-2.0",
+      "keywords": [
+        "mcp",
+        "code-graph",
+        "static-analysis",
+        "tree-sitter",
+        "dependency-graph",
+        "codebase-analysis"
+      ],
+      "category": "development"
+    }
+  ]
+}

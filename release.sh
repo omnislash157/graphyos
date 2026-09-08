@@ -39,12 +39,15 @@ from pathlib import Path
 root, version = Path(sys.argv[1]), sys.argv[2]
 plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
 server = json.loads((root / "server.json").read_text(encoding="utf-8"))
+market = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+(entry,) = market["plugins"]
 found = {".claude-plugin/plugin.json": plugin["version"], "server.json": server["version"],
-         "server.json packages[0]": server["packages"][0]["version"]}
+         "server.json packages[0]": server["packages"][0]["version"],
+         ".claude-plugin/marketplace.json plugins[0]": entry["version"], ".claude-plugin/marketplace.json metadata": market["metadata"]["version"]}
 drift = {k: v for k, v in found.items() if v != version}
 if drift:
     sys.exit(f"VERSION DRIFT: pyproject.toml says {version}; " + "; ".join(f"{k} says {v}" for k, v in drift.items()))
-print(f"versions           OK  ({version} in pyproject.toml, .claude-plugin/plugin.json, server.json)")
+print(f"versions           OK  ({version} in pyproject.toml, .claude-plugin/plugin.json, marketplace.json, server.json)")
 # The registry's two doors (graphyos #54): the ownership proof lives in the README the wheel ships —
 # the one pyproject names, never the repo's — as `mcp-name: <server name>` followed by a boundary;
 # and the registry caps the description at 100 characters, server-side only, so it is measured here.
