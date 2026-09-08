@@ -4541,3 +4541,52 @@ cd /tmp/np && claude -p "Using the graphy plugin's MCP tools only, call blast on
 | end to end | `cd /tmp/np && claude -p …` with no `--plugin-dir`: `Called mcp__plugin_graphy_graphy__blast on Context (resolved to click.core.Context)`, 3 turns, 14.8 s wall |
 | the gate | `GRAPHY_STANDALONE_OK`, `BURDEN OK` (json, not a tracked doc) |
 | the hold | the official directory: the submission form at clau.de/plugin-directory-submission on the operator's account |
+
+## 92 · THE RESOLVER BINDS AN ANNOTATED PARAMETER — `ctx: Context` makes `ctx.invoke` an edge to `Context.invoke`; blast on click 1 → 6, 37 edges bound on click, 116 on SQLAlchemy, 42 on graphy itself (2026-09-08 · graphyos issue 57)
+
+**The number.** Over the eaten click checkout at `/tmp/np` (the repo §85 and §91 answered through the
+plugin): `graphy blast click.core.Context.invoke --depth 3` → `dependents=1` — `Context.forward`'s
+`self.invoke`. The source: five `ctx.invoke(` call sites. The issue's own count was wrong about their form —
+one is `def invoke(self, ctx: Context)` (core.py:1406); two bind `ctx = get_current_context()` as a local; one is
+an unannotated `new_func(ctx, …)`; one is a closure over an outer `ctx`. Only the first is a parameter the
+function annotates, and only that form is a scope. The wider number, `rg -c 'ctx: Context\b|: Context[,)]'
+src/click` → core.py 62 · types.py 29 · decorators.py 4: a class the whole package is written against, with every
+`ctx.<method>(` on those parameters left as text.
+
+**The law.** A text label becomes an edge only through the scope that binds it. A parameter's annotation is
+that kind of binding: `def f(ctx: Context)` names `Context`, which resolves through the module's own definition
+or its `imports` edge — the same two doors a call label walks — to exactly one class node; `ctx.invoke` inside
+`f` is then `Context.invoke` by scope, the way `self.go` is the container's `go`. `Optional[Context]`,
+`Context | None`, a string, a `TypeVar`, a name that reaches no class node, or a parameter the function does not
+annotate: text, never a guess.
+
+**The change.** The producer says the annotation: `python_ast` emits `annotations: {param: text}` on every func
+and method record (positional-only, positional, keyword-only), `_expr_repr` over the annotation node. The IR
+carries it: `Node.annotations`, validated as a mapping of strings. The resolver binds it: `_class_in_scope` takes
+an annotation that is a bare or dotted name, walks the module's own definition then `_qualify` (imports,
+re-exports), and answers only a node whose type is `class`; `_resolve_one` uses it after `self`/`super` and before
+the local rule — `via: "annotation"` in the sidecar and the RESOLVE line, `unbound-attribute` when the class
+has no such member. The golden `tests/fixtures/fastapi_graph` re-minted by its own PROVENANCE command (288 of
+507 records now carry annotations; producer graphy 0.2.3); the fastapi, sqlalchemy and graphy tenants rebuilt,
+the graphy tenant's six arm regions re-rendered (the walk moved: `_class_in_scope` joined SEAM). TypeScript is
+untouched: its producer records parameter patterns, not types; the seam is python's alone until a typed parameter
+is an edge there.
+
+```bash
+cd /tmp/np && ~/graphy/.venv/bin/graphy eat . && ~/graphy/.venv/bin/graphy blast click.core.Context.invoke --tenant /tmp/np/.graphy/tenant.json --tenant-id click --depth 3 | head -1
+python3 -c "import json; s=json.load(open('/tmp/np/.graphy/substrate/click_graph/wormhole_edges.json'))['summary']; print(s['via'])"
+cd engine && GRAPHY_CORPUS_SITE_PACKAGES=$PWD/../staging/corpora/venv/lib/python3.12/site-packages ../.venv/bin/python -m pytest -q tests/test_smash.py -k parity
+cd engine && bash tenants/sqlalchemy/rebuild.sh | grep -E 'RESOLVE OK: sqlalchemy|ARMS'
+python3 measure.py diff recon.before57.json recon.json | tail -1
+```
+
+| check | result |
+|---|---|
+| click, before → after | `blast Context.invoke --depth 3`: `dependents=1` → `dependents=6 own=6` — hop1 `Command.invoke` (the annotated site), `Context.forward`, `Group.invoke`; hop2 `Command.main`; hop3 `Command.__call__`, `CliRunner.invoke`. `Context.fail` 4, `lookup_default` 5, `get_help` 1 where the door had nothing to say. The shard's RESOLVE: `annotation 37` beside import 159 · local 187 · self 160 · super 30; the 37 land on Context 17 · HelpFormatter 13 · _OptionParser 5 · Command 2, every one a `calls` edge |
+| the same answer | every one of the 37: the source annotates the label's head with the target's class, checked over the sidecar against the node records — 0 exceptions; no edge exists that a scope did not bind |
+| the class itself | `blast click.core.Context --depth 2` stays `dependents=0`: a binding is not an edge onto the class, and `annotates` is not one of the nine words — the issue's second done line asked for what the law does not give, refused by name |
+| the seam test | `w: Widget` binds `w.ping` through gamma's re-export (`resolver:annotation`); `u` (bare), `o: t.Optional[Widget]`, `s: 'Widget'` stay `unresolved`; `w.nothing` is `unbound-attribute` on the class; the ring's counts move by exactly the five calls the fixture gained |
+| the other tenants | sqlalchemy `annotation 116` of 11,237 resolved, `ARMS OK: 5 arm(s) match`, 4.9 s; graphy `annotation 42` of 1,707, six regions re-rendered then `ARMS OK: 6 arm(s) match`, `DRAW OK` (the svg byte-identical); fastapi, the fixture placed alone: no annotation binds — every annotated class is starlette's or pydantic's and the fixture carries no ring, so nothing resolves to a class node |
+| the golden | re-minted, `MINT OK: fastapi 507 nodes / 3715 edges`, PROVENANCE producer graphy 0.2.3; the parity test against the corpus venv: 2 passed |
+| the constraints | `BURDEN OK` (wheel 283,572 → 284,370 B, under the cap); `MEASURE DIFF OK: 6 number(s) moved, none the wrong way past tolerance` (the before pinned on the pre-change tree in the same hour); the floor 525 passed, 3 skipped; the gate `GRAPHY_STANDALONE_OK`, `pillars svg OK` |
+| the review | REVIEW_ROW |

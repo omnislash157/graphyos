@@ -275,6 +275,10 @@ def _walk_stmt(
             "line": stmt.lineno,
             "is_async": isinstance(stmt, ast.AsyncFunctionDef),
             "args": [a.arg for a in stmt.args.args],
+            # every parameter's annotation as the producer saw it (graphyos #57): the resolver binds
+            # `ctx.invoke` through `ctx: Context` the way it binds `self.` through the class — by scope
+            "annotations": {a.arg: _expr_repr(a.annotation)
+                            for a in (*stmt.args.posonlyargs, *stmt.args.args, *stmt.args.kwonlyargs) if a.annotation is not None} or None,
             "returns": _expr_repr(stmt.returns) if stmt.returns else None,
             "docstring": (ast.get_docstring(stmt) or "")[:200],
             "container_class": container_class,

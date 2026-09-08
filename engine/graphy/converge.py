@@ -11,6 +11,7 @@ from __future__ import annotations
 import builtins
 import json
 import os
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -199,6 +200,23 @@ def _through_package(ring: Ring, qualified: str, depth: int) -> tuple[str, str]:
     return qualified, "import"
 
 
+_ANNOTATION = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+
+
+def _class_in_scope(ring: Ring, module_id: str, module_dotted: str, ann: str) -> str | None:
+    """The class node one annotation names in a module's scope, or None. The same two doors a
+    call label walks — the module's own definition, then its imports (re-exports followed) — and
+    only a node whose type is `class` counts."""
+    if not _ANNOTATION.match(ann):
+        return None
+    parts = ann.split(".")
+    nid = ring.by_dotted.get(".".join([module_dotted] + parts))
+    if nid is None:
+        q, _ = _qualify(ring, module_id, parts[0], parts[1:])
+        nid = ring.by_dotted.get(q) if q else None
+    return nid if nid and ring.nodes.get(nid, {}).get("node_type") == "class" else None
+
+
 def _resolve_one(ring: Ring, src_node: str, label: str, bases: dict[str, str]) -> dict:
     """One label against the scopes that can bind it. Returns a record with ``dst`` when a node
     carries the literal, else ``qualified``/``kind`` naming what it is."""
@@ -232,6 +250,21 @@ def _resolve_one(ring: Ring, src_node: str, label: str, bases: dict[str, str]) -
         q = f"{ring.dotted(base_id)}.{tail[0]}"
         nid = ring.by_dotted.get(q)
         return {"dst": nid, "via": "super"} if nid else {"kind": "unbound-attribute", "qualified": q}
+
+    # a parameter the function annotates with one class in scope binds its attribute calls to that
+    # class, the way `self.` binds to the container (graphyos #57): `def invoke(self, ctx: Context)`
+    # makes `ctx.invoke` `Context.invoke` when `Context` resolves — through the module's own definition
+    # or its imports — to a class node. A bare name or a dotted one only; `Optional[X]`, `X | None`, a
+    # string, a TypeVar or a name that reaches no class stays text — never a guess.
+    src = ring.nodes.get(src_node) or {}
+    ann = (src.get("annotations") or {}).get(head) if tail else None   # a key is a parameter, by construction
+    if ann is not None:
+        cls_id = _class_in_scope(ring, module_id, module_dotted, ann)
+        if cls_id is None or len(tail) != 1:
+            return {"kind": "unresolved"}
+        q = f"{ring.dotted(cls_id)}.{tail[0]}"
+        nid = ring.by_dotted.get(q)
+        return {"dst": nid, "via": "annotation"} if nid else {"kind": "unbound-attribute", "qualified": q}
 
     local = ".".join([module_dotted] + parts)
     nid = ring.by_dotted.get(local)

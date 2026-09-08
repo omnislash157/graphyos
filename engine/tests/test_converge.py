@@ -27,6 +27,7 @@ def _site(tmp_path: Path) -> Path:
         "from gamma import Widget\n"          # a re-export: gamma/__init__ imports Widget from gamma.core
         "from gamma.core import make\n"
         "from typing import cast\n"
+        "import typing as t\n"
         "import nothere\n\n\n"
         "def local_helper(x):\n"
         "    return len(x)\n\n\n"
@@ -44,13 +45,20 @@ def _site(tmp_path: Path) -> Path:
         "        super().__init__()\n"
         "        self.go()\n\n"
         "    def go(self):\n"
-        "        return self.go\n", encoding="utf-8")
+        "        return self.go\n\n\n"
+        "def use(w: Widget, u, o: t.Optional[Widget], s: 'Widget', *, k: Widget):\n"   # graphyos #57: the annotation binds w and k; u, o and s stay text
+        "    k.ping()\n"
+        "    w.ping()\n"
+        "    u.ping()\n"
+        "    o.ping()\n"
+        "    s.ping()\n"
+        "    return w.nothing()\n", encoding="utf-8")
     (sp / "beta.py").write_text("def helper(x):\n    return x\n", encoding="utf-8")
     gamma = sp / "gamma"
     gamma.mkdir()
     (gamma / "__init__.py").write_text("from .core import Widget, make\n", encoding="utf-8")
     (gamma / "core.py").write_text(
-        "class Widget:\n    def __init__(self):\n        pass\n\n\ndef make(x):\n    return Widget()\n",
+        "class Widget:\n    def __init__(self):\n        pass\n\n    def ping(self):\n        pass\n\n\ndef make(x):\n    return Widget()\n",
         encoding="utf-8")
     _dist(sp, "alpha", "1.0", ["alpha/__init__.py"])
     _dist(sp, "beta", "1.0", ["beta.py"])
@@ -75,7 +83,7 @@ def test_GREEN_converge_counts_wormholes_per_shard_pair(tmp_path):
     assert pairs[("alpha", "beta")]["edges"] == 1 and pairs[("alpha", "beta")]["by_type"] == {"imports": 1}
     assert pairs[("alpha", "gamma")]["edges"] == 2 and pairs[("alpha", "gamma")]["nodes"] == 2
     assert ("gamma", "beta") not in pairs and ("beta", "alpha") not in pairs
-    assert report["shards"]["alpha"]["labels"] == 13   # len · 8 calls in run · Widget · super · super().__init__ · self.go
+    assert report["shards"]["alpha"]["labels"] == 19   # len · 8 calls in run · Widget · super · super().__init__ · self.go · 6 calls in use
     assert report["wormholes"] == 3
 
 
@@ -92,14 +100,20 @@ def test_GREEN_resolve_walks_scope_not_names(tmp_path):
     # the base class came through gamma's re-export, and super() stands on it
     assert by_label[("Root", "Widget")] == ("gamma://class/gamma.core.Widget", "resolver:reexport")
     assert by_label[("__init__", "super(...).__init__")] == ("gamma://method/gamma.core.Widget.__init__", "resolver:super")
+    # graphyos #57: `w: Widget` binds w.ping through the import; u (bare), o (Optional[…]) and s (a string) do not
+    assert by_label[("use", "w.ping")] == ("gamma://method/gamma.core.Widget.ping", "resolver:annotation")
+    assert by_label[("use", "k.ping")] == ("gamma://method/gamma.core.Widget.ping", "resolver:annotation")   # keyword-only, annotated
+    assert ("use", "u.ping") not in by_label and ("use", "o.ping") not in by_label and ("use", "s.ping") not in by_label
     left = {(q["label"]): (q["qualified"], q["kind"]) for q in side["qualified"]}
     assert left["js.dumps"] == ("json.dumps", "stdlib")
     assert left["cast"] == ("typing.cast", "stdlib")
     assert left["os.path.join"] == ("os.path.join", "stdlib")
     assert left["nothere.thing"] == ("nothere.thing", "unminted")
+    assert left["w.nothing"] == ("gamma.core.Widget.nothing", "unbound-attribute")   # bound to the class, no such method
     assert summary["unresolved"]["builtin"] == 2          # len, and the bare super() call
-    assert summary["unresolved"]["unresolved"] == 1       # x.unknown — a local, no rule reaches it
-    assert summary["resolved"] == 6 and summary["cross_shard"] == 4
+    assert summary["unresolved"]["unresolved"] == 4       # x.unknown, u.ping, o.ping, s.ping — no rule reaches them
+    assert summary["via"]["annotation"] == 2
+    assert summary["resolved"] == 8 and summary["cross_shard"] == 6
     assert validate_shard(str(home / "alpha_graph"), PYTHON_AST_VOCABULARY) > 0
 
 
@@ -109,13 +123,13 @@ def test_GREEN_the_loader_admits_the_sidecar_and_the_store_digest_moves(tmp_path
     digest_before = fstore._shard_input_digest(home / "alpha_graph")
     cv.resolve(cv.load_ring(home, slugs), "alpha", write=True)
     after = load_graph_ir(home / "alpha_graph").edges
-    assert len(after) == before + 6
+    assert len(after) == before + 8                     # graphyos #57: w.ping and k.ping through the annotation
     assert all(e.get("via", "").startswith("resolver:") for e in after[before:])
     assert fstore._shard_input_digest(home / "alpha_graph") != digest_before, \
         "a store compiled before the sidecar existed must read as stale"
     # a second resolve over the same ring sees the sidecar's edges as edges, not as labels, and is idempotent
     again = cv.resolve(cv.load_ring(home, slugs), "alpha", write=True)
-    assert again["resolved"] == 6 and len(load_graph_ir(home / "alpha_graph").edges) == before + 6
+    assert again["resolved"] == 8 and len(load_graph_ir(home / "alpha_graph").edges) == before + 8
 
 
 def test_GREEN_converge_after_resolve_counts_the_new_wormholes(tmp_path):
@@ -126,7 +140,7 @@ def test_GREEN_converge_after_resolve_counts_the_new_wormholes(tmp_path):
     report = cv.converge(cv.load_ring(home, slugs))
     pairs = {(r["from"], r["to"]): r for r in report["pairs"]}
     assert pairs[("alpha", "beta")]["by_type"] == {"calls": 1, "imports": 1}
-    assert pairs[("alpha", "gamma")]["by_type"] == {"calls": 2, "imports": 2, "inherits": 1}
+    assert pairs[("alpha", "gamma")]["by_type"] == {"calls": 4, "imports": 2, "inherits": 1}   # make · super().__init__ · w.ping · k.ping
 
 
 def test_GREEN_the_cli_measures_and_resolves_a_tenant(tmp_path, capsys):
@@ -140,7 +154,7 @@ def test_GREEN_the_cli_measures_and_resolves_a_tenant(tmp_path, capsys):
     rc = cli.main(["converge", "--tenant", str(desc), "--tenant-id", "t", "--resolve"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "RESOLVE OK: alpha 13 label(s) -> 6 edge(s)" in out
+    assert "RESOLVE OK: alpha 19 label(s) -> 8 edge(s)" in out
     assert "CONVERGE: 3 shard(s)" in out and "alpha -> gamma" in out
     assert "RESOLVED: rebuild the store" in out
     assert (home / "gamma_graph" / WORMHOLE_SIDECAR).is_file()

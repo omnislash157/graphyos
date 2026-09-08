@@ -168,6 +168,7 @@ class Node:
     loc: int | None = None
     is_async: bool | None = None
     args: tuple[str, ...] | None = None
+    annotations: tuple[tuple[str, str], ...] | None = None
     returns: str | None = None
     container_class: str | None = None
     provenance: Provenance | None = None
@@ -234,6 +235,13 @@ class Node:
             args_tuple = tuple(args)
         else:
             args_tuple = None
+        annotations = raw.get("annotations")
+        if annotations is not None:
+            if not isinstance(annotations, Mapping) or not all(isinstance(k, str) and isinstance(v, str) for k, v in annotations.items()):
+                raise IRError(f"{where}: annotations must be an object of parameter name to annotation text")
+            annotations_tuple = tuple(annotations.items())
+        else:
+            annotations_tuple = None
         returns = raw.get("returns")
         if returns is not None and not isinstance(returns, str):
             raise IRError(
@@ -261,6 +269,7 @@ class Node:
             loc=loc,
             is_async=is_async,
             args=args_tuple,
+            annotations=annotations_tuple,
             returns=returns,
             container_class=container_class,
             provenance=provenance,

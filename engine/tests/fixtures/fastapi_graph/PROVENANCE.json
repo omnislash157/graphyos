@@ -4,10 +4,10 @@
   "mint_command": "python3 -m graphy smash --package fastapi --site-packages ../staging/corpora/venv/lib/python3.12/site-packages --out tests/fixtures --no-ring",
   "producer": {
     "adapter": "python_ast",
-    "graphy": "0.1.0",
+    "graphy": "0.2.3",
     "python": "3.12.3"
   },
-  "minted_at": "2026-09-07T01:44:22+00:00",
+  "minted_at": "2026-09-08T20:26:30+00:00",
   "corpus": {
     "scheme": "fastapi",
     "kind": "package",
@@ -38,13 +38,263 @@
   },
   "files": {
     "nodes.json": {
-      "bytes": 212592,
-      "sha256": "8ccb0ab0bb94e45872c47a6638e4b24d3828c114a4755b4c2cb545e20afbef38"
+      "bytes": 349093,
+      "sha256": "a086964a309ec3224518767c27e65dd8e71b717c7b2a9204458a5ea779a13b58"
     },
     "edges.json": {
       "bytes": 542805,
       "sha256": "3989572bb4ff75af300e4880caa29c66db9a4c0f60e695d9e01e95f7b4cdf46c"
     }
   },
+  "sources": {
+    "pin": "python_ast:fastapi:package:",
+    "spliceable": true,
+    "cross_file": 0,
+    "parsed": 48,
+    "reused": 0,
+    "files": {
+      "__init__.py": {
+        "sha256": "355dadc1d09da2db164be007769e1b07949ccce764c31bf0f4027a545485236c",
+        "nodes": 1,
+        "edges": 20
+      },
+      "__main__.py": {
+        "sha256": "6ca78f5cb74ee12b1548ceabf525682e2724243711d9cd1c4cec5944aab6e984",
+        "nodes": 1,
+        "edges": 1
+      },
+      "_compat/__init__.py": {
+        "sha256": "3d8391fbcbc9e6f6b842397cd7415c42625baa6a72c9e40ca19f51f3a09e1365",
+        "nodes": 1,
+        "edges": 30
+      },
+      "_compat/shared.py": {
+        "sha256": "5c997c71560e4d281f2bed5f8891cb7871de4862df0b4d07eccaeda726294205",
+        "nodes": 16,
+        "edges": 105
+      },
+      "_compat/v2.py": {
+        "sha256": "b031b28b588a4855bd2ee27b9f807ad7ed72ad0235347452c2c15144bb8527c9",
+        "nodes": 33,
+        "edges": 164
+      },
+      "applications.py": {
+        "sha256": "85fe2f18158c5399c490799ea90bad60120adc0b27844c1c545db022f7a07a47",
+        "nodes": 25,
+        "edges": 414
+      },
+      "background.py": {
+        "sha256": "4c00f301eb613806aaa55bdc918b934f77383bd3751da150cac1423edd0cb205",
+        "nodes": 3,
+        "edges": 12
+      },
+      "cli.py": {
+        "sha256": "3988596f4351fdd7ae4f9a1fc8f176368341cd90cd38ff126a579fda793e1ea0",
+        "nodes": 2,
+        "edges": 5
+      },
+      "concurrency.py": {
+        "sha256": "c4718310e40003a72f1440d7e3aa2adebdadd59778b15beb79a4607481388ee3",
+        "nodes": 2,
+        "edges": 17
+      },
+      "datastructures.py": {
+        "sha256": "5cfba09e88c7738374ede1795e9d534e774fda032fd5f1b893ed0be1576beca7",
+        "nodes": 14,
+        "edges": 53
+      },
+      "dependencies/__init__.py": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "nodes": 1,
+        "edges": 0
+      },
+      "dependencies/models.py": {
+        "sha256": "5cf22411aba41da4da173f4ba1e23d7ff4fede8b4e015928382d75dd3a456d62",
+        "nodes": 14,
+        "edges": 108
+      },
+      "dependencies/utils.py": {
+        "sha256": "5c8a5130beedb71e44866721816cfa47908cb01b9ea71eca1dd9a2dfc17f7bfb",
+        "nodes": 29,
+        "edges": 353
+      },
+      "encoders.py": {
+        "sha256": "9b63869eaf64f7802571de9440cf2bee2c27f9c8ef25da4e291549b9047af13f",
+        "nodes": 7,
+        "edges": 105
+      },
+      "exception_handlers.py": {
+        "sha256": "615713f19cb4db555861e79c81dca1e581148c420729c2eca5b9127f839f6c92",
+        "nodes": 4,
+        "edges": 23
+      },
+      "exceptions.py": {
+        "sha256": "7d434e051748b142d4d139cef1a3418371e825ec89c57a7d515e83f3062ef652",
+        "nodes": 21,
+        "edges": 64
+      },
+      "logger.py": {
+        "sha256": "23d34d8b7a2ff0072a6ec6c2f709755fe85d22d2a062dd974ebc757fdf59a65e",
+        "nodes": 1,
+        "edges": 1
+      },
+      "middleware/__init__.py": {
+        "sha256": "a100f188555c7357d825438816fa619caee94d3e6492d99f2f7d905e9045befa",
+        "nodes": 1,
+        "edges": 1
+      },
+      "middleware/asyncexitstack.py": {
+        "sha256": "44a1a54291b383718ba2ca9586bc41cbf34267da894bbcd078d1ede58df1fb4d",
+        "nodes": 4,
+        "edges": 10
+      },
+      "middleware/cors.py": {
+        "sha256": "ca7c2359066873fbdb873677fd95dc7a8692aec9471473dda0ce76ad7af45945",
+        "nodes": 1,
+        "edges": 1
+      },
+      "middleware/gzip.py": {
+        "sha256": "c4ce4f72c1fc425022999c38543bdc9939ea41a9ac95386c7dedc254ddafa1ad",
+        "nodes": 1,
+        "edges": 1
+      },
+      "middleware/httpsredirect.py": {
+        "sha256": "acbf1e5cc9e62e28f05641fbff8d34cc7ae2d407a47de05de83eaab3c8b1f79d",
+        "nodes": 1,
+        "edges": 1
+      },
+      "middleware/trustedhost.py": {
+        "sha256": "784e57191c466bb739ccf9cc2431a9dc1c5a2f6e64e625509619eff8f9343ecb",
+        "nodes": 1,
+        "edges": 1
+      },
+      "middleware/wsgi.py": {
+        "sha256": "6bf14c0e8793c1c76283dc1d006ba6207f36a0315fba3e29c6d4312db030d8db",
+        "nodes": 1,
+        "edges": 1
+      },
+      "openapi/__init__.py": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "nodes": 1,
+        "edges": 0
+      },
+      "openapi/constants.py": {
+        "sha256": "69d1b39a2b352f51c9453137909e5f9874bf368abab4863aa56bff485ce81435",
+        "nodes": 1,
+        "edges": 0
+      },
+      "openapi/docs.py": {
+        "sha256": "3dc8c7d129feca9f7b3b47b15e29dc1bc7a9b18ec04f2242e7aeb66cad4345aa",
+        "nodes": 5,
+        "edges": 38
+      },
+      "openapi/models.py": {
+        "sha256": "b708c95867fa95c29125981a6427274344de9f584385cc822e06ebeed5c83f7d",
+        "nodes": 47,
+        "edges": 116
+      },
+      "openapi/utils.py": {
+        "sha256": "f8769fd7a697c9d004f88570968a39fcc541a749747e2fc5f5eaf9c0a78a6d9f",
+        "nodes": 11,
+        "edges": 196
+      },
+      "param_functions.py": {
+        "sha256": "e1f4c2565bc40db010afb82f59890e5fc864b5d97623093e92fe05693cfb3fcc",
+        "nodes": 10,
+        "edges": 259
+      },
+      "params.py": {
+        "sha256": "d5f34d48ae49ecf339170f85e7ff6e3b2b00d8d802fbad666f72e5ac15a9a893",
+        "nodes": 22,
+        "edges": 93
+      },
+      "requests.py": {
+        "sha256": "cdac9ea4a15c89e9c1965bf7b27996236d06934a073552d4e030e1a9705be0b5",
+        "nodes": 1,
+        "edges": 2
+      },
+      "responses.py": {
+        "sha256": "04cec9b6267f1b88f667b42f1d4cd5d4ab593e78cea027d7df946a6179590e1d",
+        "nodes": 9,
+        "edges": 31
+      },
+      "routing.py": {
+        "sha256": "4fdf951bbf9ca943a5fc26f63ed83e8c424ff5d1debe10e8d1b73732bc8f2c7b",
+        "nodes": 135,
+        "edges": 1117
+      },
+      "security/__init__.py": {
+        "sha256": "6cef29366c6a5515d48df97698e2a25592e7d05a4143ad555185639a9a676c9c",
+        "nodes": 1,
+        "edges": 15
+      },
+      "security/api_key.py": {
+        "sha256": "e0234b355012b4eb0c872b47f42e4439410e66bb4b83f2293104bf1dc4433f83",
+        "nodes": 14,
+        "edges": 52
+      },
+      "security/base.py": {
+        "sha256": "765e29bdb0be4718df6d680fb4259df0c554fbb081d92676dab2435d50973ba7",
+        "nodes": 2,
+        "edges": 2
+      },
+      "security/http.py": {
+        "sha256": "674c402c3ab080965101a0ece3449aebcac09e317310bf7d50498ee4f2734ca0",
+        "nodes": 18,
+        "edges": 79
+      },
+      "security/oauth2.py": {
+        "sha256": "b12a96e2d6efa07696365778e9361ab6d6b9ae015f8e87782e1c6679d5f3908f",
+        "nodes": 17,
+        "edges": 101
+      },
+      "security/open_id_connect_url.py": {
+        "sha256": "57c58b3c4b04abf5899488cfc093b6bc2a095862eef954edd7e3761fb695f83e",
+        "nodes": 5,
+        "edges": 20
+      },
+      "security/utils.py": {
+        "sha256": "13d608a1ecfe1f6935a012c4771a89122f2c575ba6ba72582a3407bd91b71516",
+        "nodes": 2,
+        "edges": 3
+      },
+      "sse.py": {
+        "sha256": "69db703f4dde3e774c40eb9108d447ad37c5431329470ad252844c1f207c3af0",
+        "nodes": 8,
+        "edges": 40
+      },
+      "staticfiles.py": {
+        "sha256": "8a2ac622ddec758d90657777ea28ecdc28fe4f416e18575addc77dd2433d224c",
+        "nodes": 1,
+        "edges": 1
+      },
+      "templating.py": {
+        "sha256": "e33b2e4d681c8dc11a8a7309140956ebe827b259ba020392d528a20d67e64319",
+        "nodes": 1,
+        "edges": 1
+      },
+      "testclient.py": {
+        "sha256": "9c1bda0265fae9895d45e24d6573ce935b1fba8d90ea1b3c6cebc86827a9e8b4",
+        "nodes": 1,
+        "edges": 1
+      },
+      "types.py": {
+        "sha256": "836b43f38d815070b60b7fcff0fd3a6a56d0e0c8426fd4726eb4a6a79ace0e05",
+        "nodes": 1,
+        "edges": 8
+      },
+      "utils.py": {
+        "sha256": "0d7d15ae73307d5b19c51cfc222b50e36736fbef9f0f398566479131947650ca",
+        "nodes": 8,
+        "edges": 46
+      },
+      "websockets.py": {
+        "sha256": "e35f6e9dc60e6c42991b461cad7b1c7d04182d25a8135d23ab154c7ad19d47df",
+        "nodes": 1,
+        "edges": 3
+      }
+    }
+  },
+  "unreadable": {},
   "note": "Verbatim producer output. Re-mint, never hand-edit \u2014 a shard edited to fit a schema proves the schema, not the engine."
 }
