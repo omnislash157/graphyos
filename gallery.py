@@ -147,7 +147,7 @@ pip install 'graphyos[typescript]' &amp;&amp; graphy showcase https://github.com
 {chr(10).join(rows)}
 </ul>
 <h2>Add your model</h2>
-<p>Paste into <code>.mcp.json</code> (Claude Code) or your client's MCP settings after <code>graphy eat .</code> — six tools: hunt · descend · blast · walk · draw · explain.</p>
+<p>Paste into <code>.mcp.json</code> (Claude Code) or your client's MCP settings after <code>graphy eat .</code> — the tools: hunt · descend · blast · walk · draw · explain · history.</p>
 {mcp_html}
 <footer>built {html.escape(built_at)} · graphyos {html.escape(engine)} · <a href="https://github.com/omnislash157/graphyos">source, Apache 2.0</a> · <a href="https://pypi.org/project/graphyos/">PyPI</a></footer>
 </body></html>

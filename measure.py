@@ -4,7 +4,7 @@
     python3 measure.py run [--out recon.json] [--quick]     the receipt: the floor, the gate, the wheel, and
                                                             (unless --quick) every tenant's rebuild, the pinned
                                                             quickstarts, the index — each with its seconds
-    python3 measure.py diff OLD NEW [--time-tolerance 0.15] every number that moved, its direction; exit 1 on a
+    python3 measure.py diff OLD NEW [--time-tolerance 0.15] [--time-floor 0.5] every number that moved, its direction; exit 1 on a
                                                             regression past tolerance (times) or any (counts)
     python3 measure.py adoption [--out adoption.json]      whether anyone uses it: stars · forks · PyPI downloads ·
                                                             showcases asked for by strangers · plugin installs — each
@@ -51,7 +51,13 @@ _REPO_URL = re.compile(r"https://(?:github\.com|gitlab\.com)/[\w.-]+/[\w.-]+")
 
 # direction: which way is better for a number; a number not listed is informational
 BETTER = {"floor.seconds": "down", "floor.failed": "down", "gate.seconds": "down", "wheel.bytes": "down", "sdist.bytes": "down",
-          "index.broken": "down", "floor.passed": "up", "index.names": "up", "pass.engine_hot_lanes": "down"}
+          "index.broken": "down", "floor.passed": "up", "index.names": "up", "pass.engine_hot_lanes": "down",
+          "quickstart.httpx.mint_seconds": "down", "quickstart.express.mint_seconds": "down"}
+# A quickstart's clone, pip install or npm install is the network's time, not the engine's: read, shown,
+# never a verdict. The engine's own quickstart numbers are `mint_seconds` — the eat's clock less the
+# provision's, which eat prints — the eat-again (no network) and what it parsed.
+NETWORK = (".eat_seconds", ".provision_seconds", ".seconds")
+NETWORK_PREFIX = "quickstart."
 HOT_N = 3
 PROFILE = True     # run() flips it off for --no-profile
 PROFILE_SECONDS = 0.0   # what the second runs cost; never a receipt number the diff judges
@@ -214,9 +220,13 @@ def measure_quickstart(url: str) -> dict:
     shutil.rmtree(repo, ignore_errors=True)
     rc, out, secs = _run(["bash", str(HERE / "quickstart.sh"), url])
     again_rc, again_out, again_secs = _run([str(HERE / ".venv" / "bin" / "graphy"), "eat", "."], cwd=repo)
+    eat_secs = _num(r"(?m)^EAT OK: .*, ([\d.]+)s\)", out, float)
+    prov_secs = _num(r"(?m)^PROVISION (?:OK|PARTIAL): .*\(([\d.]+)s\)$", out, float)
     return {"repo": name, "ok": "GRAPHY_QUICKSTART_OK" in out, "seconds": secs,
             "ring": _num(r"RING: (\d+) shard", out), "rc": rc,
-            "eat_seconds": _num(r"(?m)^EAT OK: .*, ([\d.]+)s\)", out, float), "eat_again_seconds": again_secs,
+            "eat_seconds": eat_secs, "provision_seconds": prov_secs,
+            "mint_seconds": (round(eat_secs - prov_secs, 1) if eat_secs is not None and prov_secs is not None else None),
+            "eat_again_seconds": again_secs,
             "eat_again_ok": again_rc == 0 and "EAT OK" in again_out,
             "eat_again_parsed": _num(r"(?m)^EAT OK: .*\((\d+) of \d+ files parsed", again_out),
             **_profiled(["bash", str(HERE / "quickstart.sh"), url])}
@@ -367,9 +377,10 @@ def flatten(d: dict, prefix: str = "") -> dict:
     return out
 
 
-def diff(old: dict, new: dict, time_tolerance: float = 0.15) -> tuple[list[str], list[str]]:
-    """(lines, regressions). A time is a regression past tolerance; a count is a regression on any
-    move the wrong way; a verdict flipping to false is a regression."""
+def diff(old: dict, new: dict, time_tolerance: float = 0.15, time_floor: float = 0.5) -> tuple[list[str], list[str]]:
+    """(lines, regressions). A time is a regression past tolerance AND past the floor in seconds (0.5 s
+    → 1.0 s is a coin, 9 s → 11 s is not); a count is a regression on any move the wrong way; a verdict
+    flipping to false is a regression; a quickstart's network seconds are shown and never judged."""
     a, b = flatten(old), flatten(new)
     lines, bad = [], []
     for k in sorted(set(a) | set(b)):
@@ -389,10 +400,14 @@ def diff(old: dict, new: dict, time_tolerance: float = 0.15) -> tuple[list[str],
         rel = (delta / va) if va else float("inf")
         arrow = "↑" if delta > 0 else "↓"
         verdict = ""
-        if better:
+        network = k.startswith(NETWORK_PREFIX) and k.endswith(NETWORK)
+        if network:
+            verdict = "  network"
+        elif better:
             good = (delta < 0) == (better == "down")
             is_time = k.endswith(("seconds", "bytes", "_kb"))
-            if not good and (not is_time or abs(rel) > time_tolerance):
+            small = k.endswith("seconds") and abs(delta) <= time_floor
+            if not good and (not is_time or (abs(rel) > time_tolerance and not small)):
                 verdict = "  REGRESSION"
                 bad.append(f"{k} {va} -> {vb} ({rel:+.0%})")
             elif good:
@@ -411,6 +426,7 @@ def main(argv=None) -> int:
     d = sub.add_parser("diff")
     d.add_argument("old"), d.add_argument("new")
     d.add_argument("--time-tolerance", type=float, default=0.15)
+    d.add_argument("--time-floor", type=float, default=0.5, help="a time moved less than this many seconds is never a regression")
     ad = sub.add_parser("adoption", help="stars · forks · PyPI downloads · stranger showcases · plugin installs, each with its source; off-box, never part of run")
     ad.add_argument("--out", default=str(HERE / "adoption.json"))
     ad.add_argument("--repo", default=PUBLIC_REPO)
@@ -433,7 +449,7 @@ def main(argv=None) -> int:
         red = [k for k, v in flatten(rec).items() if k.endswith(".ok") and v is False]
         return 1 if red else 0
     old, new = json.loads(Path(args.old).read_text()), json.loads(Path(args.new).read_text())
-    lines, bad = diff(old, new, args.time_tolerance)
+    lines, bad = diff(old, new, args.time_tolerance, args.time_floor)
     print("\n".join(lines) if lines else "  (no number moved)")
     if bad:
         print(f"MEASURE REGRESSION: {len(bad)} number(s) moved the wrong way — " + "; ".join(bad))

@@ -1004,11 +1004,57 @@ def _cmd_fanout(args: argparse.Namespace) -> int:
 
 
 
+def _cmd_timeline(args: argparse.Namespace) -> int:
+    """`graphy history <A> [--with <B>]`: the two words as bloodhound co-occurrence over the sessions
+    archive, the fan-out walked through the history shard into the story (graphyos #60)."""
+    from graphy import federated_store as fstore
+    from graphy import timeline as timeline_lane
+    from graphy.lightning.archive import sessions_dir
+    if len(args.terms) > 1:
+        print("HISTORY REFUSED: one term, and the second through --with", file=sys.stderr)
+        return 2
+    if not args.tenant or not args.tenant_id:
+        print("HISTORY REFUSED: --tenant and --tenant-id are required — the story is the tenant's history shard, "
+              "and graphy resolves identity only through a declared Tenant", file=sys.stderr)
+        return 2
+    try:
+        tenant = _load_tenant(args.tenant)
+    except TenantError as exc:
+        print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
+        return 2
+    try:
+        store = fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
+    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+        print(_flatten(f"HISTORY REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        return 2
+    corpus = Path(args.sessions).expanduser() if args.sessions else sessions_dir()
+    try:
+        t = timeline_lane.timeline(store, args.terms[0], args.partner, corpus, window=args.window)
+    except timeline_lane.TimelineError as exc:
+        print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
+        return 2
+    print(timeline_lane.render(t))
+    return 0 if t.sessions else 1
+
+
 def _cmd_history(args: argparse.Namespace) -> int:
     """The repo's own record as a shard (graphyos #59): commits · sessions · RECON sections · issues ·
-    receipts, wormholed onto the code shard's module ids by the files each commit touched."""
+    receipts, wormholed onto the code shard's module ids by the files each commit touched. With a term,
+    the timeline door (graphyos #60)."""
     from graphy.adapters import history as history_lane
     from graphy.ir import IRError
+    mint_flags = [f for f in ("repo", "out", "code", "verify") if getattr(args, f)]
+    story_flags = [f for f in ("terms", "partner", "tenant", "tenant_id") if getattr(args, f)]
+    if mint_flags and story_flags:
+        print(f"HISTORY REFUSED: one mode per call — the mint takes --repo/--out/--code/--verify, the timeline a term with "
+              f"--with/--tenant/--tenant-id; this call mixed {', '.join(mint_flags)} with {', '.join(story_flags)}", file=sys.stderr)
+        return 2
+    if story_flags:
+        if not args.terms:
+            print("HISTORY REFUSED: the timeline needs a term — `graphy history <A> --with <B> --tenant … --tenant-id …`",
+                  file=sys.stderr)
+            return 2
+        return _cmd_timeline(args)
     for flag in ("repo", "out"):
         if not getattr(args, flag):
             print(f"HISTORY REFUSED: --{flag} is required — graphy never guesses the repository or where "
@@ -1344,12 +1390,13 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         args.site_packages = str(empty)
     elif not args.site_packages:
         from graphy import provision as provision_lane
+        t_prov = time.perf_counter()
         try:
             pv = provision_lane.provision(repo, producer, log=print)
         except RuntimeError as exc:
             sys.stdout.flush(); print(f"EAT REFUSED: {exc}", file=sys.stderr)
             return 2
-        print(f"PROVISION {'OK' if pv.installed else 'PARTIAL'}: {pv.how}")
+        print(f"PROVISION {'OK' if pv.installed else 'PARTIAL'}: {pv.how} ({time.perf_counter() - t_prov:.1f}s)")
         args.site_packages = str(pv.site)
         if producer == "typescript_ast" and not pv.site.is_dir():
             pv.site.mkdir(parents=True, exist_ok=True)
@@ -1638,11 +1685,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_hist = sub.add_parser(
         "history", help="mint the repo's own record — commits · sessions · RECON sections · issues · receipts — "
-                        "as a history_graph shard beside the code shard (graphyos #59)")
-    p_hist.add_argument("--repo", default=None, help="the git repository whose record is minted")
+                        "as a history_graph shard beside the code shard (graphyos #59); with a term, the timeline: "
+                        "`graphy history <A> --with <B> --tenant … --tenant-id …` — the sessions where both words sit "
+                        "within a window, their commits, RECON sections, issues and the numbers that moved (graphyos #60)")
+    p_hist.add_argument("terms", nargs="*", help="the timeline: one term (the second through --with)")
+    p_hist.add_argument("--with", dest="partner", default=None, help="the second term — co-occurrence within the window")
+    p_hist.add_argument("--window", type=int, default=10, help="the co-occurrence window in tokens (default 10)")
+    p_hist.add_argument("--tenant", default=None, help="the timeline: path to the tenant descriptor JSON")
+    p_hist.add_argument("--tenant-id", default=None, help="the timeline: the receipt name open_for refuses to open without")
+    p_hist.add_argument("--on-stale", default="refuse", help="refuse|warn")
+    p_hist.add_argument("--repo", default=None, help="the mint: the git repository whose record is minted")
     p_hist.add_argument("--out", default=None, help="the shard directory (nodes.json · edges.json · PROVENANCE.json)")
     p_hist.add_argument("--sessions", default=None,
-                        help="the sessions archive (.claude/recovery/sessions); absent, the shard carries no session")
+                        help="the sessions archive (.claude/recovery/sessions): the mint carries no session without it; "
+                             "the timeline searches the project's own archive without it")
     p_hist.add_argument("--recon", default="RECON.md", help="the measured record, relative to --repo (default RECON.md)")
     p_hist.add_argument("--code", action="append", default=None,
                         help="a code shard whose module ids a commit's changed files map onto (repeatable); "
@@ -1850,7 +1906,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ref.add_argument("--force", action="store_true", help="re-mint over a sibling a previous refresh left at the same release")
     p_ref.set_defaults(handler=_cmd_refresh)
 
-    p_mcp = sub.add_parser("mcp", help="the MCP server on stdio: six tools — hunt · descend · blast · walk · draw · explain — over one tenant's store")
+    p_mcp = sub.add_parser("mcp", help="the MCP server on stdio: the tools — hunt · descend · blast · walk · draw · explain · history — over one tenant's store")
     p_mcp.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
     p_mcp.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
     p_mcp.add_argument("--repo", default=None,

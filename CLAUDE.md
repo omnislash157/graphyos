@@ -115,6 +115,7 @@ session_tail.py         a transcript → its semantic tail: extract_turns · pai
 reseed.py               the continuity hooks: capture · inject · render — fail-open
 refresh.py              the refresh lane: PyPI (or --release) against the shard's PROVENANCE; a sibling substrate pinned to the newer release, minted · converged · built · checked beside the current one; born/died per shard stamped in the sibling's journal — never in place
 lightning/              rg discovers, the AST walk-out anchors: the doors · bloodhound · reseed_graph
+timeline.py             hunt · story · render — two words as bloodhound co-occurrence over the archive, the fan-out walked through the history shard: sessions in time order, their commits, sections, issues, the receipt numbers that moved; `graphy history <A> --with <B>` and the MCP tool
 draw.py                 units · pillars · arm · neighbourhood · atlas — the codebase drawn from the store, never a shard: a query, laid out by sugiyama, ASCII for the terminal and a checked HTML+SVG page for a human
 showcase.py             compose · showcase — one page of a stranger's codebase: clone when a url, eat, propose the pillars, draw, write index.html + showcase.txt (the MCP block, three questions, how to add a model), checked
 provision.py            the repo's own dependencies provisioned by eat: a venv and pip install, or npm; a repo that will not install is minted alone and the reason named
@@ -172,6 +173,7 @@ parser cannot trust is refused loud, never injected hollow. No summarizer, no em
 | does A live inside B | `python3 -m graphy.lightning --cooccur A --with B --path <corpus>` |
 | the pipe, for what `--path` skips by name | `rg -li '<term>' <path> \| python3 -m graphy.lightning '<term>' --files-from -` |
 | when did we say A and B together, with the spans | `python3 -m graphy.lightning.bloodhound "<A>" --with "<B>"` |
+| how the product changed over time, from the record: the sessions where A and B were said together, oldest first with timestamps, their commits, the RECON sections and issues they name, the receipt numbers that moved — cold, under a second | `python3 -m graphy history "<A>" --with "<B>" --tenant tenants/graphy/tenant.json --tenant-id graphy` · the MCP tool `history` |
 | the archive's topics · exchanges holding terms · the heat · one term across time | `python3 -m graphy.lightning.reseed_graph topics \| search <terms> \| heat <terms> \| chain <term>` |
 | render any transcript by hand | `python3 -m graphy.reseed render --transcript <jsonl> [--budget-chars N]` |
 

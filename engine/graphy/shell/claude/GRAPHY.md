@@ -36,6 +36,7 @@ text, and these doors read it (ripgrep makes them fast; without it they fall bac
 | does A live inside B | `{{python}} -m graphy.lightning --cooccur A --with B --path {{sessions}}` |
 | the pipe, for what `--path` skips by name | `rg -li '<term>' {{sessions}} \| {{python}} -m graphy.lightning '<term>' --files-from -` |
 | when did we say A and B together, with the spans | `{{python}} -m graphy.lightning.bloodhound "<A>" --with "<B>" --path {{sessions}}` |
+| how the product changed over time — those sessions oldest first with timestamps, their commits, the RECON sections and issues, the numbers that moved (needs the tenant's history shard: `graphy history --repo … --out …/history_graph`) | `{{python}} -m graphy history "<A>" --with "<B>" --tenant <descriptor> --tenant-id <name> --sessions {{sessions}}` |
 | the archive's topics · exchanges holding terms · the heat · one term across time | `{{python}} -m graphy.lightning.reseed_graph --path {{sessions}} topics \| search <terms> \| heat <terms> \| chain <term>` |
 | render any transcript by hand | `{{python}} -m graphy.reseed --project-dir {{repo}} render --transcript <jsonl> [--budget-chars N]` |
 

@@ -33,6 +33,38 @@ def test_GREEN_diff_names_better_and_regressions_with_tolerance():
     assert any("gate.ok flipped to false" in b for b in bad)
 
 
+def test_GREEN_diff_has_a_time_floor_and_never_judges_the_network(tmp_path):
+    """graphyos #60: a time moved less than the floor in seconds is a coin, never a regression (0.5 s → 1.0 s
+    is +100 % of nothing); a quickstart's clone-and-install seconds are the network's — shown, tagged, never
+    a verdict; the engine's own eat-again seconds are still judged."""
+    old = json.loads(json.dumps(OLD))
+    old["quickstart"] = {"httpx": {"seconds": 5.0, "eat_seconds": 4.5, "provision_seconds": 3.0, "mint_seconds": 1.5,
+                                   "eat_again_seconds": 0.5, "eat_again_parsed": 0}}
+    new = json.loads(json.dumps(old))
+    new["quickstart"]["httpx"]["eat_again_seconds"] = 1.0      # +100 %, 0.5 s: under the floor
+    new["quickstart"]["httpx"]["eat_seconds"] = 9.0            # +100 %: the pip install's, shown as network
+    new["quickstart"]["httpx"]["provision_seconds"] = 7.5
+    new["quickstart"]["httpx"]["seconds"] = 9.6
+    lines, bad = measure.diff(old, new)
+    assert not bad, bad
+    assert any("quickstart.httpx.eat_seconds: 4.5 -> 9.0" in l and l.endswith("network") for l in lines)
+    assert any("provision_seconds: 3.0 -> 7.5" in l and l.endswith("network") for l in lines)
+    new["quickstart"]["httpx"]["mint_seconds"] = 3.5           # the engine's own cold mint doubled: judged
+    _, bad = measure.diff(old, new)
+    assert bad == ["quickstart.httpx.mint_seconds 1.5 -> 3.5 (+133%)"]
+    new["quickstart"]["httpx"]["mint_seconds"] = 1.5
+    assert any("eat_again_seconds: 0.5 -> 1.0" in l and "REGRESSION" not in l and "network" not in l for l in lines)
+    new["quickstart"]["httpx"]["eat_again_seconds"] = 2.0      # +300 %, 1.5 s: past the floor, the engine's — a regression
+    _, bad = measure.diff(old, new)
+    assert bad == ["quickstart.httpx.eat_again_seconds 0.5 -> 2.0 (+300%)"]
+    _, bad = measure.diff(old, new, time_floor=2.0)            # the floor is a flag
+    assert not bad
+    new["floor"]["seconds"] = 66.0                             # +10 %, 6 s: within tolerance, past the floor — not a regression
+    new["quickstart"]["httpx"]["eat_again_seconds"] = 0.5
+    _, bad = measure.diff(old, new)
+    assert not bad
+
+
 def test_GREEN_cli_diff_exit_codes(tmp_path, capsys):
     a, b = tmp_path / "a.json", tmp_path / "b.json"
     a.write_text(json.dumps(OLD)); b.write_text(json.dumps(OLD))

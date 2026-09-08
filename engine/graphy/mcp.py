@@ -56,6 +56,13 @@ TOOLS = [
      "description": "What explains a symbol: where it lives and its docstring, the docs bound to it, the test modules that reach it, and the journal page that birthed its shard. Each absence is named with its cause.",
      "inputSchema": {"type": "object", "properties": {"symbol": _SYMBOL, "depth": _DEPTH(3), "limit": _LIMIT},
                      "required": ["symbol"], "additionalProperties": False}},
+    {"name": "history",
+     "description": "How the product changed over time, from the record: the sessions where a term (and a second, within a window) was said, oldest first with timestamps, the commits each session made, the RECON sections and issues they name, the receipt numbers that moved. Every line is a node of the history shard; no model wrote it.",
+     "inputSchema": {"type": "object", "properties": {"term": {"type": "string", "description": "the first word or phrase"},
+                                                      "partner": {"type": "string", "description": "the second, co-occurring within the window"},
+                                                      "window": {"type": "integer", "default": 10},
+                                                      "sessions": {"type": "string", "description": "the sessions archive; default the project's .claude/recovery/sessions"}},
+                     "required": ["term"], "additionalProperties": False}},
 ]
 
 
@@ -64,7 +71,7 @@ class ToolError(RuntimeError):
 
 
 class Doors:
-    """The six tools over one opened store."""
+    """The seven tools over one opened store."""
 
     def __init__(self, store, tenant, tenant_id: str):
         self.store, self.tenant, self.tenant_id = store, tenant, tenant_id
@@ -105,6 +112,17 @@ class Doors:
         else:
             out = doors.render_explain(doors.explain(c, seed, depth, tenant=self.tenant), limit)
         return f"{out}\nDOOR: {which} reads={c.reads} generation={self.generation}"
+
+    def history(self, term: str, partner: str | None = None, window: int = 10, sessions: str | None = None) -> str:
+        from graphy import timeline as timeline_lane
+        from graphy.lightning.archive import sessions_dir
+        from pathlib import Path
+        corpus = Path(sessions).expanduser() if sessions else sessions_dir()
+        try:
+            t = timeline_lane.timeline(self.store, term, partner, corpus, window=window)
+        except timeline_lane.TimelineError as exc:
+            raise ToolError(f"HISTORY REFUSED: {exc}") from exc
+        return f"{timeline_lane.render(t)}\nDOOR: history generation={self.generation}"
 
     def descend(self, symbol: str, depth: int = 4, limit: int = 12) -> str:
         return self._door("descend", symbol, depth, limit)
@@ -186,7 +204,8 @@ def handle(msg: dict, tools: Doors) -> dict | None:
                              "instructions": (f"graphy over tenant {tools.tenant_id!r}, store generation {tools.generation}. "
                                               "Every answer is a walk over the code's structure; no model decided an edge. "
                                               "Start with hunt when a name is bare; blast for 'what breaks', descend for "
-                                              "'what does this reach', walk for 'does A reach B', explain for 'what is this'.")})
+                                              "'what does this reach', walk for 'does A reach B', explain for 'what is this', "
+                                              "history for 'how did this change over time' (two words, the sessions and commits).")})
     if method == "ping":
         return _result(rid, {})
     if method == "tools/list":
