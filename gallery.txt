@@ -1,0 +1,10 @@
+https://github.com/encode/httpx.git
+https://github.com/pallets/click.git
+https://github.com/fastapi/fastapi.git
+https://github.com/fastapi/typer.git
+https://github.com/Textualize/rich.git
+https://github.com/psf/requests.git
+https://github.com/honojs/hono.git
+https://github.com/expressjs/express.git
+https://github.com/colinhacks/zod.git
+https://github.com/encode/starlette.git

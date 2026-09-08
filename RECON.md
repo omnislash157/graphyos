@@ -4197,3 +4197,50 @@ python3 -m venv /tmp/v && /tmp/v/bin/pip install -q 'graphyos==0.2.1' && /tmp/v/
 | the tag's run | `v0.2.1` on graphyos c8932fd: release run 34220726510 — build success · publish success; CI run 34220725636 on the same sha success |
 | PyPI | answers `0.2.1` within a minute of the publish; a fresh venv's `pip install --no-cache-dir graphyos==0.2.1` imports `0.2.1` and `graphy --help` runs |
 | what shipped | §72 eat runs no build without `--provision` · §73 the splice hashes its payload · §74 the unparsed counted and named · §75 the dirty-tree cursor · §76 the comment fence · §77 the shell-free cartograph · §78 the venv layout by sysconfig, Linux and macOS · §79 the first five minutes · §80 the keyed markers · §81 the partition carries any name the walk found |
+
+## 83 · THE GALLERY — ten showcases of repos people know, one index, one receipt, built inside the image so every Railway deploy is a fresh gallery on the current engine (2026-09-08 · graphyos issue 47)
+
+**The finding.** The showcase page (§66, §71) existed one run at a time under a repo's `.graphy/showcase/`
+and nowhere anyone could link to. The public repo read 0 stars and 1 fork two days in. Railway's first
+deploy of the connected repo failed before anything was done: no Dockerfile, no requirements.txt, no
+Procfile at the root and the package under `engine/` — its detector found nothing to build. Railway pulls
+the connected repo and builds on its own builder, never GitHub Actions.
+
+**The change.** `gallery.py` (+ `gallery.sh`, the venv wrapper) at the repo root: for every url in
+`gallery.txt`, `graphy showcase <url> --no-provision --work <out>/.work --out <out>/<slug>/` — the clone
+shallow, nothing of the stranger's repo executes — then `<out>/index.html`, every green page linked with its
+arms (name and crown) and its ring read from its `showcase.txt`, the uvx line and the MCP block on top, and
+`<out>/gallery.json`, the receipt: every url, the clone's commit, the `SHOWCASE` line it ended on, the page's
+`check_artifact` verdict run a second time here. A page RED or REFUSED is named in the receipt and in a
+`GALLERY LEFT OUT:` line and never in the index; the exit is 1 while anything is left out. The `Dockerfile`
+at the root builds the gallery inside the image — the engine installed from the checkout (`pip install
+/src/engine[typescript]`, what main does, not what PyPI last published), `gallery.sh` over `gallery.txt` at
+image build, the directory served by `python3 -m http.server $PORT` (stdlib; Railway sets `PORT`, the
+service's public port is 8080). `gallery/` is gitignored — a build product. The tenth url was this repo
+itself, refused (`no importable package(s) under …` — the package is under `engine/`, and the showcase eats
+a clone's root); swapped for encode/starlette, the self-showcase a later issue if it is wanted.
+
+**The floor.** `tests/test_gallery.py` (new): `slug_of` admits github and gitlab urls and refuses ssh,
+other hosts, an owner alone; `read_text_page` names the arms in order with crown and floor and the ring;
+`compose_index` links only green pages, never a RED or a REFUSED one, is static html with no script;
+`build` over a fake showcase writes the index and the receipt, links the good page, leaves the refused one
+out and says so; the CLI refuses without two arguments and refuses a bad url before the first clone.
+
+```bash
+bash gallery.sh /tmp/graphy-gallery $(cat gallery.txt) | tail -1                    # GALLERY OK: 10 page(s) of 10
+python3 -c "import json; r=json.load(open('/tmp/graphy-gallery/gallery.json')); assert all(p['check']==[] for p in r['pages']); print(len(r['pages']), 'pages checked green')"
+(cd /tmp/graphy-gallery && timeout 3 python3 -m http.server 8765 >/dev/null 2>&1 &); sleep 1; curl -s localhost:8765/ | grep -c 'href="'
+sg docker -c "docker build -t graphy-gallery ." && sg docker -c "docker run -d --rm -e PORT=8767 -p 8767:8767 --name graphy-gallery graphy-gallery" && sleep 2 && curl -s localhost:8765/ | grep -c 'href="'; sg docker -c "docker rm -f graphy-gallery"
+cd engine && ../.venv/bin/python -m pytest -q tests/test_gallery.py && cd ..
+bash standalone_check.sh | tail -1
+```
+
+| check | result |
+|---|---|
+| the done check | `GALLERY OK: 10 page(s) of 10 checked green -> /tmp/graphy-gallery/index.html · 0 left out · receipt /tmp/graphy-gallery/gallery.json · 26.6s`; `10 pages checked green`; the stdlib server over the directory answers the index with 12 `href=` (ten pages, the issues link, the source) and a page at 200; `GRAPHY_STANDALONE_OK` |
+| the ten | httpx 3 arms (MODELS, CLIENT, EXCEPTIONS) · click 3 · fastapi 5 (ROUTING, DEPENDENCIES, OPENAPI, APPLICATIONS, COMPAT) · typer 4 · rich 14 · requests 4 · hono 6 · express 1 · zod 1 · starlette 2 — every page `CHECK GREEN`, 0.6–2.7 s each, the ring 0 on every one (`--no-provision`: nothing of theirs installs); the directory 884 KB without the clones |
+| the image | `docker build -t graphy-gallery .` on this box (docker.io 29.1.3, installed today): the ten showcases run inside the build, `GALLERY OK: 10 page(s) of 10 … 12.1s`, the image 536 MB (python:3.12-slim + git + the engine + the pages); `docker run -e PORT=8767 -p 8767:8767` answers the index with 12 `href=` and `rich/index.html` at 200 — the `PORT` variable honored, which is what Railway sets (the service's public port is 8080, the Dockerfile's default) |
+| the first url that refused | `omnislash157/graphyos`: `EAT REFUSED: no importable package(s) under …/.work/graphyos; name one with --package` — the package is under `engine/`; named in the receipt's `left_out` and the `GALLERY LEFT OUT:` line, the index without it, exit 1; swapped for encode/starlette |
+| the floor | 510 passed · 3 skipped (505 + 5, `tests/test_gallery.py`); the first build test passed for the wrong reason (the fake read the wrong argument and the assertion allowed an empty green list) — tightened to assert the good page green, linked, and the refused one out |
+| the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` — no new dependency, host or program in the engine (the gallery is a root script over the `graphy` CLI and `git`; docker is Railway's builder, proven here, never a burden of the wheel); `CHANGELOG OK: 72 entries` |
+| what waits on the operator | the Railway service connected to omnislash157/graphyos on main with the root directory `/` — it picks up the Dockerfile on its own; the custom domain graphy-os.com is already set on the service and pointed through Cloudflare on public port 8080; `gh repo edit omnislash157/graphyos --homepage https://graphy-os.com` once the first deploy answers (graphyos #48) |

@@ -36,3 +36,6 @@ staging/farm/
 .private_key
 recon.json
 recon.*.json
+
+# the gallery — a build product (gallery.sh)
+gallery/
