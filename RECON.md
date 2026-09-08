@@ -4426,6 +4426,6 @@ rm -rf /tmp/graphyos-0.2.2 && python3 -m venv /tmp/graphyos-0.2.2 && /tmp/graphy
 |---|---|
 | the release | `graphyos-0.2.2-py3-none-any.whl` · `graphyos-0.2.2.tar.gz`, twine check PASSED both; `CHANGELOG OK: 77 entries`; the gate `graphy resolves OK (0.2.2)`, `versions OK (0.2.2 in pyproject.toml, .claude-plugin/plugin.json, server.json)`, `GRAPHY_STANDALONE_OK` in 17.7 s |
 | the built wheel, a fresh venv | imports `0.2.2`; `graphyos mcp --repo /tmp` → `MCP REFUSED: no tenant at /tmp/.graphy/tenant.json — run \`graphy eat /tmp\` first` |
-| the tag's run | TAG_RUN_ROW |
-| PyPI | PYPI_ROW |
+| the tag's run | `v0.2.2` on graphyos 2e64299 (private 7a6c8fa): release run 34255072298 — build success · publish success (trusted publishing, digital attestations); CI run 34255070530 on the same sha |
+| PyPI | answers `0.2.2` within a minute of the publish (17:07 UTC); the done block: `release.sh --check` versions OK · PyPI 0.2.2 · a fresh venv's `pip install --no-cache-dir graphyos==0.2.2` then `graphyos mcp --repo /tmp` → `MCP REFUSED: no tenant at /tmp/.graphy/tenant.json` (grep -c → 1) — the script and the flag both resolve from the index |
 | the hold | the registry submission (`mcp-publisher publish`) and the marketplace listing stay outside accounts — the argv now resolves; the operator's step |
