@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "graphy",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "The MCP server over the repo graphy ate: hunt · descend · blast · walk · draw · explain — every answer a walk over the code's structure, no model decides an edge. Run `graphy eat .` first; the server reads .graphy/tenant.json under the project root.",
   "author": {"name": "Matt Hartigan", "url": "https://github.com/omnislash157"},
   "homepage": "https://graphy-os.com",

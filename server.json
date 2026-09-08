@@ -5,13 +5,13 @@
   "description": "Compile any codebase into a walkable graph and serve it over MCP: hunt, descend, blast, walk, draw, explain. Every answer is a walk over the code's structure; no model decides an edge.",
   "repository": {"url": "https://github.com/omnislash157/graphyos", "source": "github"},
   "websiteUrl": "https://graphy-os.com",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "graphyos",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "runtimeHint": "uvx",
       "transport": {"type": "stdio"},
       "packageArguments": [
