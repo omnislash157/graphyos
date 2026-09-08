@@ -1819,7 +1819,10 @@ catalog say what it did.
 The scrub used to carry its own marker list, which is the one thing a scrub must not do: the
 list is the leak. `scrub.py` hashes instead — every token of every file, single and adjacent-pair,
 lowercased with spaces and underscores removed, against `.private_markers.sha256`; the words live
-in no tracked file and the operator regenerates the hashes with `scrub.py --hash <word>…`. The
+in no tracked file and the operator regenerates the hashes with `scrub.py --hash <word>…`. (§80:
+the hashes are keyed now — HMAC-SHA256 under `.private_key`, gitignored, this box only — because a
+plain hash of a company name reverses by a wordlist; `--keygen` writes the key once, and a box
+without one says `SCRUB SKIPPED`.) The
 departure gate now sweeps twice: the staged engine tree, and every git-tracked file outside
 `staging/`. The host-module probe reads its names from `.private_modules`, gitignored, and says
 SKIPPED on a box without one. The early sections of this file, written against the private host
@@ -1853,12 +1856,14 @@ git init /tmp/graphy-public && cd /tmp/graphy-public
 cp -r /path/to/graphy/{engine,README.md,CLAUDE.md,RECON.md,LICENSE,NOTICE,standalone_check.sh,quickstart.sh,scrub.py,census.sh,.private_markers.sha256,.gitignore} .
 mkdir -p .claude && cp -r /path/to/graphy/.claude/hooks .claude/            # the march; skills and recovery stay behind
 sed -i '/^staging\//d' .gitignore                                         # nothing under staging/ exists here
-python3 scrub.py --tree . && bash standalone_check.sh                     # the gate on the cut itself
+python3 scrub.py --key /path/to/graphy/.private_key --tree .              # the keyed sweep on the cut itself, under the key that stays behind (§80)
+bash standalone_check.sh                                                  # the gate on the cut: its scrub says SKIPPED here (no key), the line above is the sweep
 git add -A && git commit -m "graphy: the public cut" && gh repo create omnislash157/graphyos --public --source . --push
 ```
 
 What stays behind: `staging/` (tools, docs, skills, the corpora and indexes), `.claude/recovery`,
-`.claude/skills`, `.private_modules`, and this repo's history. What the cut needs from the
+`.claude/skills`, `.private_modules`, `.private_key` (§80), and this repo's history. Kept current
+afterwards by `sync_public.sh`, which scrubs the public checkout under this box's key by path. What the cut needs from the
 operator afterwards: the board's open issues re-filed on the public repo, `MARCH_REPO` pointed
 at it, and the private repo kept as the archive it is.
 
@@ -4054,3 +4059,71 @@ python3 measure.py run && python3 measure.py diff recon.before43.json recon.json
 | the floor | 496 passed · 3 skipped (492 + 4); the graphy tenant's six arm regions verified, `ARMS OK` |
 | the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK`; `CHANGELOG OK` |
 | the receipt | `MEASURE OK: floor 496 passed · gate OK 15.9s · wheel 280,344 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 54.9s`; `diff recon.before43.json recon.json`: `wheel.wheel_bytes` 279,913 → 280,344 (+431 B, `_walk_target` and the log lines), `tenants.hono.rss_kb` −4%, `quickstart.express.seconds` 6.6 → 4.5, `quickstart.httpx.eat_again_seconds` 0.7 → 0.4. The one wrong way: `quickstart.httpx.seconds` 4.6 → 6.0 with `eat_seconds` 4.1 → 4.7 — the first eat is a network pip install of httpx, the load noise §49 names; the eat lane's only new work is one read of the package shard's `nodes.json` for the example's target, and the eat-again lane that reads nothing from the network got faster; `pass.engine_hot_lanes` 1 → 1 as §74 left it. The first receipt read the graphy tenant RED: `ARMS DRIFT` on CLI, `_walk_target` joining `graphy.cli` — the six regions re-rendered (store e94407b1ec1b63a2), `ARMS OK`, and the second receipt reads every tenant OK |
+
+## 80 · THE MARKER DIGESTS ARE KEYED — a wordlist reversed 5 of 7 plain hashes in 0.01 ms, none of the keyed ones; the key never travels and a box without it says SKIPPED (2026-09-08 · graphyos issue 44)
+
+**The finding.** Red-team finding 4 (§71). `.private_markers.sha256` is tracked in the public repo, and
+`scrub.py` hashed each private word as an unsalted sha256 of its lowercase alphanumerics. A company name is
+a public fact: a guess list of 24 words built from the login name, its parts and the product names — the
+public facts the red team started from — recovered 5 of the 7 markers from the tracked list in 0.011 ms.
+The words the scrub exists to hide were one `sha256` away from the file that hides them.
+
+**The change.** The digests are keyed: HMAC-SHA256 under `.private_key`, a 32-byte hex key `scrub.py --keygen`
+writes once beside the script, gitignored like `.private_modules`, never tracked (`--keygen` refuses to
+overwrite one that stands — a new key makes every digest stale). The tracked list holds the keyed digests,
+which no wordlist reverses without the key; the same 24 guesses recover 0 of 7. `--hash <word>…` writes the
+list under the key and refuses without one. A box without the key cannot run the sweep and says so, never a
+hollow OK: `scrub.py` prints `SCRUB SKIPPED: no key at … — the keyed sweep over N file(s) needs the
+operator's key; it runs on the operator's box, never here` and exits 0; `standalone_check.sh` prints
+`prose scrub        SKIPPED (no .private_key beside scrub.py …)` instead of the two sweeps; `census.sh` prints
+`CENSUS SKIPPED` and exits 0; `burden.py`'s summary says `scrub SKIPPED (no .private_key)`. CI has no key and
+never needed one — the words are absent from the tree, which the sweep proves on the operator's box before
+every push and every cut. `--key <path>` reads another path's key first, for a checkout that has none:
+`sync_public.sh` scrubs the public checkout under this box's key by path and refuses to sync without it.
+The keyed state is primed once per key and copied per token, and a token's digest is remembered across the
+sweep — the two gate sweeps cost 0.84 s where the plain hash cost 0.54 s and the naive HMAC 2.24 s. §32's
+cut instructions name the keyed sweep and the key that stays behind; the folder list names `.private_key`.
+
+**The floor.** `tests/test_scrub.py` (new): a planted marker caught by file and line under the key, and a
+clean file clean; the tracked digests reverse by no wordlist — a plain sha256 of the fixture's words is in no
+line, a second key gives a different list, and the real list beside the repo holds no plain hash of the login
+name, its parts or the product name; a copy of the script beside a list and no key says `SCRUB SKIPPED`,
+exits 0 and prints no token, `--hash` refuses naming `--keygen`, and the same file under the key is
+`SCRUB RED: 1 hit(s)` at its line; `--keygen` writes 64 hex at mode 0600 once and refuses the second time;
+`--key <path>` scrubs a keyless checkout and an absent path says SKIPPED with the path. Three of five RED
+against the old scrub. The first gate run caught the test file itself spelling a marker as a guess — the
+guesses now derive from the login name, as the done check's do.
+
+```bash
+python3 scrub.py --tracked | tail -1                                          # SCRUB OK
+python3 -c "import hashlib; lines = open('.private_markers.sha256').read().split(); import sys; sys.exit(0 if all(len(l) == 64 for l in lines) else 1)"
+bash standalone_check.sh | tail -1
+cd engine && ../.venv/bin/python -m pytest -q tests/test_scrub.py && cd ..
+# RED against the old scrub
+git stash push -q -- scrub.py .private_markers.sha256 && (cd engine && ../.venv/bin/python -m pytest -q tests/test_scrub.py); git stash pop -q
+# the wordlist attack, old list vs new: the login name and its parts, the product names, the module list normalized
+python3 - <<'P'
+import hashlib, subprocess
+from pathlib import Path
+old = set(subprocess.run(["git","show","HEAD~1:.private_markers.sha256"],capture_output=True,text=True).stdout.split()); new = set(open(".private_markers.sha256").read().split())
+home = Path.home().name; mods = Path(".private_modules").read_text().split()
+guesses = sorted(set(["graphy","graphyos","omnislash", home, *home.split("-"), home.replace("-","")] + mods + [m.replace("_","") for m in mods]))
+for name, lst in (("old", old), ("new", new)): print(name, "recovered", sum(hashlib.sha256(g.lower().encode()).hexdigest() in lst for g in guesses), "of", len(lst))
+P
+# the box with no key
+mv .private_key .private_key.aside; python3 scrub.py --tracked | tail -1; bash census.sh | tail -1; python3 burden.py | tail -1; mv .private_key.aside .private_key
+time (python3 scrub.py --tree engine >/dev/null; python3 scrub.py --tracked >/dev/null)
+python3 measure.py run && python3 measure.py diff recon.before44.json recon.json
+```
+
+| check | result |
+|---|---|
+| the done check | `SCRUB OK: 207 file(s), no private token`; every line of the list is 64 hex; `unkeyed guesses match nothing`; `GRAPHY_STANDALONE_OK` |
+| the wordlist attack | 24 guesses: the old list `recovered 5 of 7 in 0.011 ms`; the new list `recovered 0 of 7` |
+| the same answer | `census.sh`: `flagged lines: 1910 across the tracked tree`, `CENSUS OK` — the same 1910 lines inside `staging/` as §32, 0 outside; the seven words regenerated from the tracked staging docs on this box, `--hash` under the new key |
+| the box with no key | `SCRUB SKIPPED: no key at …/.private_key — the keyed sweep over 207 file(s) needs the operator's key; it runs on the operator's box, never here` (exit 0) · `CENSUS SKIPPED: no .private_key beside census.sh …` (exit 0) · `BURDEN OK: … scrub SKIPPED (no .private_key)` · the gate `prose scrub        SKIPPED (…)` |
+| RED against the old scrub | `test_scrub.py` on the stashed `scrub.py` + list: the wordlist test, the SKIPPED test and the keygen test fail (the old script has no key, no `--keygen`, and its list is plain sha256) |
+| the cost | the two gate sweeps: plain sha256 0.54 s · naive HMAC 2.24 s · primed and memoized 0.84 s; the receipt's gate 15.9 → 15.0 s |
+| the floor | 501 passed · 3 skipped (496 + 5); the graphy tenant `ARMS OK` (the tests shard grew: 2663 → 2671 nodes, 6658 → 6677 edges) |
+| the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK: … scrub OK` — no new dependency, host or program (`hmac` and `secrets` are stdlib); `WORKFLOWS OK`; `CHANGELOG OK` |
+| the receipt | `MEASURE OK: floor 501 passed · gate OK 15.0s · wheel 280,344 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 53.2s`; `diff recon.before44.json recon.json`: the wheel byte-identical (no engine line moved), `quickstart.express.seconds` 4.5 → 3.8, `quickstart.httpx.seconds` 6.0 → 5.3; the one wrong way `wheel.seconds` 2.8 → 3.4, the wheel build, which no line of this change runs in; the first receipt read four wrong ways — the gate 15.9 → 19.1 s under the naive HMAC and the express quickstart's npm install — and the second, after the priming, reads none of them |

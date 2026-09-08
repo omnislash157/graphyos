@@ -35,14 +35,19 @@ PY
 
 ( cd "$STAGE" && env -u PYTHONPATH "$PY" -m pytest -q )
 
-# The prose scrub never names what it scrubs: scrub.py hashes every token of every file against
-# .private_markers.sha256 (hashes only; the words never travel). Two sweeps: the staged engine
-# tree as it would ship, and every git-tracked file outside staging/ — the public cut's tripwire.
-# A tenant's descriptor and substrate (and a refresh's sibling) are skipped by name: rebuilt on
-# each machine, gitignored, carrying that machine's absolute paths.
-python3 "$HERE/scrub.py" --tree "$STAGE" || { echo "prose scrub        FAILED — private language in the engine tree"; exit 3; }
-python3 "$HERE/scrub.py" --tracked || { echo "prose scrub        FAILED — private language in a tracked file outside staging/"; exit 3; }
-echo "prose scrub        OK"
+# The prose scrub never names what it scrubs: scrub.py keys every token of every file (HMAC under
+# .private_key, gitignored) against .private_markers.sha256 (keyed digests only; neither the words
+# nor the key travel). Two sweeps: the staged engine tree as it would ship, and every git-tracked
+# file outside staging/ — the public cut's tripwire. A tenant's descriptor and substrate (and a
+# refresh's sibling) are skipped by name: rebuilt on each machine, gitignored, carrying that
+# machine's absolute paths. A box without the key (CI) cannot sweep and says SKIPPED by name.
+if [ -s "$HERE/.private_key" ]; then
+    python3 "$HERE/scrub.py" --tree "$STAGE" || { echo "prose scrub        FAILED — private language in the engine tree"; exit 3; }
+    python3 "$HERE/scrub.py" --tracked || { echo "prose scrub        FAILED — private language in a tracked file outside staging/"; exit 3; }
+    echo "prose scrub        OK"
+else
+    echo "prose scrub        SKIPPED (no .private_key beside scrub.py — the keyed sweep runs on the operator's box, never here)"
+fi
 bash "$HERE/release.sh" --check
 python3 "$HERE/burden.py" || { echo "burden            FAILED — a responsibility grew without burden.json saying so"; exit 3; }
 # The workflow files parse here, on the box, before CI is asked: a file GitHub cannot parse runs

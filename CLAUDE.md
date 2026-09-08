@@ -47,7 +47,7 @@ lens : the whole world is traversable through our lens
 - **Arm docs carry no numbers, no status, no history — only the tap.** Numbers live in `RECON.md`,
   each with the command that re-derives it.
 - **Nothing private travels.** The public repo is `omnislash157/graphyos`, cut from this one (`RECON.md` §32, §39); this one is the private archive. Tenant material built from a private codebase,
-  schema or data never reaches it; the gate's hashed scrub over `engine/` and every tracked file
+  schema or data never reaches it; the gate's keyed scrub over `engine/` and every tracked file
   outside `staging/` is the tripwire, and `staging/` does not make the public cut (`RECON.md` §32).
 
 ## THE FOLDER
@@ -57,14 +57,15 @@ CLAUDE.md             this file — the router
 README.md             the public face: install, eat a repo, ask it things — every line run on this box
 RECON.md              the cold-start record: measured, dated, every number with its re-derive command
 standalone_check.sh   the departure gate. Run it after EVERY change to engine/. → GRAPHY_STANDALONE_OK
-scrub.py              the prose scrub that never names what it scrubs: tokens hashed against .private_markers.sha256; --tree engine · --tracked (everything outside staging/)
+scrub.py              the prose scrub that never names what it scrubs: tokens HMAC'd under .private_key against .private_markers.sha256; --tree engine · --tracked (everything outside staging/) · --keygen · --hash; SCRUB SKIPPED on a box with no key
 census.sh             where the private language sits, per tracked directory → CENSUS OK is the public cut's tripwire
 burden.py             the burden invariants (burden.json): zero runtime dependencies, the extras by name, the wheel under its cap, every host and every subprocess program on the list, every tracked engine doc declared or an arm region, the scrub — the gate refuses growth by name
 workflows.py          every file under .github/workflows/ parsed (a stdlib subset parser, strict where GitHub is) and shaped — name · on · jobs, every step uses or runs; a file that would run zero jobs is refused in the gate with its line, before a push finds out
 measure.py            the receipt: every RECON number re-derived into recon.json by `run` (--quick for CI); every lane's hottest functions and peak RSS from a second run under GRAPHY_PROFILE_DIR, and `pass.engine_hot_lanes` — the optimization pass ends when it reads 0; `diff OLD NEW` names every number that moved and exits 1 on a regression — the improvement gate's before and after
 release.sh            the release made mechanical: wheel + sdist into dist/, twine check, CHANGELOG.md derived from RECON's section titles (--check in the gate); a `v<version>` tag on the public repo publishes to PyPI by trusted publishing (release.yml), no token
 CHANGELOG.md          derived from RECON.md by release.sh — a build product the gate verifies, the one generated doc in git besides the arm regions
-.private_markers.sha256  the hashes of the words that must not travel (the words live in no tracked file)
+.private_markers.sha256  the keyed digests of the words that must not travel (the words live in no tracked file; no wordlist reverses a digest without the key)
+.private_key          gitignored — the scrub's HMAC key, this box only: without it a digest is noise and the sweep says SKIPPED
 .mcp.json             Claude Code's pointer at the FastAPI tenant's MCP server (engine/tenants/fastapi/mcp.sh)
 quickstart.sh         the production proof: clone a repo, eat it, query it, walk it → GRAPHY_QUICKSTART_OK
 .github/workflows/    CI: the floor on 3.10 and 3.12, the gate, the census and the quick receipt on every push; on every PR the blast radius from the walk and the gate (burden + the receipt diffed against the base on the same runner); an opened issue naming a repo url gets its showcase posted back — the showcase job holds no token and no checkout, a second job posts (§71)

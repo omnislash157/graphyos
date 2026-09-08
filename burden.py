@@ -6,7 +6,7 @@
 Runtime dependencies stay at zero and the extras carry only the declared names; the wheel stays
 under its cap; every network host the engine names is on the list; every subprocess the engine
 runs is one of the declared programs; every tracked document under engine/ is either an arm file
-carrying its generated region or on the list; the hashed scrub over everything tracked. A change
+carrying its generated region or on the list; the keyed scrub over everything tracked. A change
 that adds a responsibility — a package, a host, a program, a document — must add it to
 burden.json in the same commit, where a human reads it. Nothing here is a guess: each check
 names the file and line it refuses.
@@ -264,11 +264,11 @@ def main() -> int:
     scrub = subprocess.run([sys.executable, str(HERE / "scrub.py"), "--tracked"], capture_output=True, text=True)
     if scrub.returncode != 0:
         red += [ln for ln in scrub.stdout.splitlines() if ": private token" in ln]
+    scrub_note = "RED" if scrub.returncode != 0 else ("SKIPPED (no .private_key)" if scrub.stdout.startswith("SCRUB SKIPPED") else "OK")
     for r in red:
         print(f"BURDEN RED {r}")
     summary = (f"runtime deps 0 · extras {len(rules['extras'])} · {wnote} · hosts {nh} on the list of {len(rules['hosts'])} · "
-               f"subprocess sites {ns} over {len(rules['subprocess_targets'])} program(s) · docs {nd} tracked · scrub "
-               + ("OK" if scrub.returncode == 0 else "RED"))
+               f"subprocess sites {ns} over {len(rules['subprocess_targets'])} program(s) · docs {nd} tracked · scrub {scrub_note}")
     if red:
         print(f"BURDEN RED: {len(red)} growth(s) — {summary}")
         return 3

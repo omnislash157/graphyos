@@ -17,7 +17,9 @@ cd "$PUB"
 sed -i 's#omnislash157/graphy\.git && cd graphy#omnislash157/graphyos.git \&\& cd graphyos#; s#omnislash157/graphy/actions#omnislash157/graphyos/actions#g' README.md
 sed -i 's#omnislash157/graphy\b#omnislash157/graphyos#g' CLAUDE.md RECON.md .claude/hooks/march.py
 sed -i 's#^staging/docs/         doctrine and prior audits — development input, never released$#staging/              gitignored — the corpora, the indexes and the farm work this box minted from; never tracked#; /^staging\/tools\/  /d; /^staging\/skills\/  /d; /^staging\/containers\/ /d; /^staging\/brains\/  /d; /^staging\/corpora\/  /d' CLAUDE.md
-python3 scrub.py --tracked | tail -1
+# the public checkout has no key (and never will): its scrub runs under this box's key, by path
+[ -s "$HERE/.private_key" ] || { echo "SYNC REFUSED: no .private_key at $HERE — the cut is scrubbed under the operator's key (scrub.py --keygen)" >&2; exit 2; }
+python3 scrub.py --key "$HERE/.private_key" --tracked | tail -1
 bash release.sh --check
 git add -A
 if git diff --cached --quiet; then echo "SYNC OK: the public cut is current"; exit 0; fi

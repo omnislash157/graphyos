@@ -32,5 +32,7 @@ staging/index/
 staging/farm/
 # machine-local: the host's own module names the departure gate probes for; never tracked
 .private_modules
+# machine-local: the key the scrub's marker digests are HMAC'd under (scrub.py --keygen); never tracked
+.private_key
 recon.json
 recon.*.json
