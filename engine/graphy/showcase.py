@@ -142,7 +142,9 @@ def _clone(url: str, work: Path, log) -> Path:
     name = url.rstrip("/").rsplit("/", 1)[-1]
     name = name[:-4] if name.endswith(".git") else name
     repo = work / name
-    if not (repo / ".git").is_dir():
+    if (repo / ".git").is_dir():
+        log(f"SHOWCASE: reusing the clone at {repo}")
+    else:
         work.mkdir(parents=True, exist_ok=True)
         log(f"SHOWCASE: git clone --depth 1 {url} {repo}")
         proc = subprocess.run(["git", "clone", "-q", "--depth", "1", url, str(repo)], capture_output=True, text=True)
@@ -161,7 +163,11 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
     log = log or (lambda *_: None)
     t0 = time.perf_counter()
     if target.startswith(("http://", "https://", "git@")):
-        repo = _clone(target, Path(work or Path.cwd() / "showcase").resolve(), log)
+        if work is None:                                         # graphyos #43: the clone lands where you stand, said so
+            work = Path.cwd() / "showcase"
+            log(f"SHOWCASE: no --work — the clone lands under {work.resolve()} (the current directory); "
+                f"--work <dir> puts it elsewhere")
+        repo = _clone(target, Path(work).resolve(), log)
         origin = target
     else:
         repo = Path(target).resolve()

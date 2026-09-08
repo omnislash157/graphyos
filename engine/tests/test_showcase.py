@@ -3,6 +3,9 @@ three cold showcases in RECON."""
 from __future__ import annotations
 
 import json
+import subprocess
+
+import pytest
 from pathlib import Path
 
 import graphy.cli as cli
@@ -162,3 +165,28 @@ def test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carrie
         assert comment.endswith(f"\n{fence}text\n{posted}\n{fence}\n"), comment
         assert "\n" + fence + "`" not in comment, "a longer run than the fence is inside the body"
         assert ("It refused" in comment) == (rc != 0)
+
+
+def test_RED_showcase_without_work_says_where_the_clone_lands(tmp_path, monkeypatch):
+    """A url with no --work clones under ./showcase in the current directory; the run says so
+    before the clone, and names the reuse when the clone already stands (graphyos #43)."""
+    monkeypatch.chdir(tmp_path)
+    logged = []
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        repo = Path(argv[-1])
+        (repo / ".git").mkdir(parents=True)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+    monkeypatch.setattr(showcase.subprocess, "run", fake_run)
+    with pytest.raises(showcase.ShowcaseError):        # the clone stands, then the eat refuses an empty repo
+        showcase.showcase("https://example.invalid/o/thing.git", log=logged.append, no_provision=True)
+    where = str((tmp_path / "showcase").resolve())
+    assert any(line.startswith("SHOWCASE: no --work") and where in line and "--work <dir>" in line for line in logged), logged
+    assert calls and calls[0][-1] == str(tmp_path / "showcase" / "thing")
+    logged.clear()
+    with pytest.raises(showcase.ShowcaseError):
+        showcase.showcase("https://example.invalid/o/thing.git", log=logged.append, no_provision=True)
+    assert any(line.startswith("SHOWCASE: reusing the clone at") and line.endswith("thing") for line in logged), logged
+    assert len(calls) == 1

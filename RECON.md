@@ -3998,3 +3998,59 @@ python3 measure.py run && python3 measure.py diff recon.before42.json recon.json
 | the floor | 492 passed · 3 skipped (491 + 1); the graphy tenant's six arm regions re-rendered (the store stamp moved), `ARMS OK` |
 | the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK`; `CHANGELOG OK` |
 | the receipt | `MEASURE OK: floor 492 passed · gate OK 26.4s · wheel 279,913 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 68.2s`; `diff recon.before42.json recon.json`: `wheel.wheel_bytes` 278,954 → 279,913 (+959 B, `venv_layout` and its docstring), `tenants.sqlalchemy.seconds` 5.3 → 5.0. The wrong way: `floor.seconds` 8.1 → 10.6, `gate.seconds` 16.5 → 26.4, `quickstart.httpx.eat_again_seconds` 0.4 → 0.7, `seconds` 56.6 → 68.2 — the full floor was running beside this receipt on the same box, the load noise §49 names; no line of this change runs in the gate or the eat-again lane; `pass.engine_hot_lanes` 1 → 1 as §74 left it |
+
+## 79 · THE FIRST FIVE MINUTES — the walk example never finds itself, the MCP server says its own version, a refusal prints alone, showcase says where it clones, and "never a load" names the walk (2026-09-08 · graphyos issue 43)
+
+**The finding.** Red-team finding 10 (§71): what a newcomer misreads in the first five minutes. The `ASK IT`
+block `eat` prints ended with `walk --seed <pkg>://module/<pkg> --target <pkg>://module/<pkg>` whenever the
+ring was empty — seed equals target, zero hops, it finds itself. `graphy mcp --help` listed five tools and the
+README six; `mcp.py` carried `version 0.1.0` as a literal against the package's `0.2.0`. `EAT: repo …` went to
+stdout before the package was settled, so a directory with no package printed the banner and then `EAT REFUSED`
+on stderr — in a terminal the two interleave, and in a pipe the refusal came first and the banner last.
+`showcase <url>` with no `--work` cloned into `./showcase/<name>` in the current directory and said nothing
+until the `git clone` line. The README's "every walk is a query, never a load" reads as a promise about the
+build to a stranger, and the build reads the shard JSON once.
+
+**The change.** Each line fixed where it is. `cli._walk_target` is the example's target: the first ring
+shard's root module, else the package's first submodule read from the shard's `nodes.json`, and the seed
+itself only for a one-module package with an empty ring. The `mcp` help says six tools and names `draw`.
+`mcp.SERVER_INFO` reads `graphy.__version__` — one copy of the version, never a second literal. In `eat`
+the banner moves after the package is settled, so a refusal is the whole output, and every `EAT REFUSED`
+flushes stdout before it writes stderr, so the streams cannot cross in a terminal. `showcase` with no
+`--work` logs where the clone lands and how to move it before it clones, and names the reuse when the
+clone already stands; the `--work` help says the same. The README sentence names the build as the one
+read and the walk as what never reads a file again; its eval line says `draw` came after the run it measures.
+
+**The floor.** `test_cli`: `_walk_target` over a ring (the ring first), no ring (the first submodule by
+sort, `pkg.alpha` before `pkg.zeta`), a one-module package and a missing shard (the seed stands); an eat of
+an empty directory in a subprocess — stderr starts with `EAT REFUSED` and no `EAT: repo` is printed on either
+stream. `test_mcp`: `serverInfo` equals `{"name": "graphy", "version": graphy.__version__}` and is not
+`0.1.0`. `test_showcase`: a url with no `--work` under a chdir'd tmp — the `SHOWCASE: no --work` line names
+the directory and `--work <dir>` before the clone runs, the clone lands at `./showcase/thing`, and the
+second run says `reusing the clone at …thing` and clones nothing. All four RED against the old engine.
+
+```bash
+cd engine && ../.venv/bin/python -c "from graphy import mcp, __version__; import inspect; assert '__version__' in inspect.getsource(mcp)" && cd ..
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py tests/test_mcp.py tests/test_showcase.py && cd ..
+bash standalone_check.sh | tail -1
+# RED against the old engine
+git stash push -q -- engine/graphy README.md && (cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py tests/test_mcp.py tests/test_showcase.py -k 'RED_walk_example or RED_eat_refusal_prints or RED_the_server_reports or RED_showcase_without_work'); git stash pop -q
+# the live run
+S=/tmp/live && mkdir -p $S && cd $S && git clone -q --depth 1 https://github.com/pallets/click click && graphy eat click | grep 'walk '   # then run the line it prints
+mkdir -p $S/empty && script -qc "graphy eat $S/empty" /dev/null | head -3
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}' | graphy mcp --tenant $S/click/.graphy/tenant.json --tenant-id click 2>/dev/null | head -1
+cd $S && graphy showcase https://github.com/pallets/click | grep '^SHOWCASE'
+python3 measure.py run && python3 measure.py diff recon.before43.json recon.json
+```
+
+| check | result |
+|---|---|
+| the done check | the `__version__` assertion holds; `tests/test_cli.py tests/test_mcp.py tests/test_showcase.py` 50 passed; `GRAPHY_STANDALONE_OK` |
+| RED against the old engine | the four new tests fail on the stashed `engine/graphy`: the target equals the seed, `EAT: repo` is printed on the refusal, `serverInfo.version == '0.1.0'`, no `SHOWCASE: no --work` line |
+| the walk example | pallets/click, empty ring: `EAT OK: click + 0 ring shard(s) … (17 of 17 files parsed, 8.5s)`, the line printed is `walk … --seed click://module/click --target click://module/click._compat`; run as printed: `WALK PATH: … hops=2 visited=16 steps=click://module/click -> __future__://module/__future__ -> click://module/click._compat` |
+| the refusal in a terminal | `graphy eat <empty dir>` under `script`: the first and only line is `EAT REFUSED: no importable package(s) under …; name one with --package` — no banner |
+| the MCP server | `initialize` over the click tenant: `serverInfo {'name': 'graphy', 'version': '0.2.0'}`; `graphy mcp --help`: `six tools — hunt · descend · blast · walk · draw · explain — over one tenant's store` |
+| showcase without `--work` | `SHOWCASE: no --work — the clone lands under …/showcase (the current directory); --work <dir> puts it elsewhere` before `SHOWCASE: git clone --depth 1 …/showcase/click`; `SHOWCASE OK: click · 3 arm(s) (CORE, TERMUI, COMPAT) · 0 ring shard(s) · CHECK GREEN · 3.9s` |
+| the floor | 496 passed · 3 skipped (492 + 4); the graphy tenant's six arm regions verified, `ARMS OK` |
+| the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK`; `CHANGELOG OK` |
+| the receipt | `MEASURE OK: floor 496 passed · gate OK 15.9s · wheel 280,344 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 54.9s`; `diff recon.before43.json recon.json`: `wheel.wheel_bytes` 279,913 → 280,344 (+431 B, `_walk_target` and the log lines), `tenants.hono.rss_kb` −4%, `quickstart.express.seconds` 6.6 → 4.5, `quickstart.httpx.eat_again_seconds` 0.7 → 0.4. The one wrong way: `quickstart.httpx.seconds` 4.6 → 6.0 with `eat_seconds` 4.1 → 4.7 — the first eat is a network pip install of httpx, the load noise §49 names; the eat lane's only new work is one read of the package shard's `nodes.json` for the example's target, and the eat-again lane that reads nothing from the network got faster; `pass.engine_hot_lanes` 1 → 1 as §74 left it. The first receipt read the graphy tenant RED: `ARMS DRIFT` on CLI, `_walk_target` joining `graphy.cli` — the six regions re-rendered (store e94407b1ec1b63a2), `ARMS OK`, and the second receipt reads every tenant OK |

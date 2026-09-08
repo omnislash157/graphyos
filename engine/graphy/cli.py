@@ -1187,12 +1187,12 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
     try:
         meta = json.loads((repo / "package.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        print(f"EAT REFUSED: {repo / 'package.json'} unreadable ({exc})", file=sys.stderr)
+        sys.stdout.flush(); print(f"EAT REFUSED: {repo / 'package.json'} unreadable ({exc})", file=sys.stderr)
         return 2
     name = args.package or (meta.get("name") if isinstance(meta.get("name"), str) else None) or repo.name
     package = smash_lane.slug_for_specifier(name)
     if not package:
-        print(f"EAT REFUSED: {name!r} cannot name a shard — the slug grammar is [a-z0-9_]+", file=sys.stderr)
+        sys.stdout.flush(); print(f"EAT REFUSED: {name!r} cannot name a shard — the slug grammar is [a-z0-9_]+", file=sys.stderr)
         return 2
     corpus = None
     src_field = meta.get("source")
@@ -1207,7 +1207,7 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
                 corpus = cand
                 break
     if corpus is None:
-        print(f"EAT REFUSED: no TypeScript source under {repo} (src/ or the package.json `source`)", file=sys.stderr)
+        sys.stdout.flush(); print(f"EAT REFUSED: no TypeScript source under {repo} (src/ or the package.json `source`)", file=sys.stderr)
         return 2
     return _eat_run(args, repo, package, corpus, "typescript_ast")
 
@@ -1218,14 +1218,13 @@ def _cmd_eat(args: argparse.Namespace) -> int:
     from graphy import container
     target = args.repo or args.repo_pos
     if not target:
-        print("EAT REFUSED: name the codebase to eat — `graphy eat .` for the one you stand in", file=sys.stderr)
+        sys.stdout.flush(); print("EAT REFUSED: name the codebase to eat — `graphy eat .` for the one you stand in", file=sys.stderr)
         return 2
     repo = Path(target).expanduser().resolve()
     if not repo.is_dir():
-        print(f"EAT REFUSED: not a directory: {repo}", file=sys.stderr)
+        sys.stdout.flush(); print(f"EAT REFUSED: not a directory: {repo}", file=sys.stderr)
         return 2
     args._t0 = time.perf_counter()
-    print(f"EAT: repo {repo}")
     candidates = _package_candidates(repo)
     producer = args.producer
     if producer is None:
@@ -1237,23 +1236,24 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         if args.package:
             matches = [c for c in candidates if c.name == args.package]
             if not matches:
-                print(f"EAT REFUSED: no package {args.package!r} under {repo} or {repo / 'src'} "
+                sys.stdout.flush(); print(f"EAT REFUSED: no package {args.package!r} under {repo} or {repo / 'src'} "
                       f"(found: {[c.name for c in candidates] or 'none'})", file=sys.stderr)
                 return 2
             corpus = matches[0]
         elif len(candidates) == 1:
             corpus = candidates[0]
         else:
-            print(f"EAT REFUSED: {'no' if not candidates else len(candidates)} importable package(s) under {repo}"
+            sys.stdout.flush(); print(f"EAT REFUSED: {'no' if not candidates else len(candidates)} importable package(s) under {repo}"
                   f"{' — ' + ', '.join(c.name for c in candidates) if candidates else ''}; name one with --package",
                   file=sys.stderr)
             return 2
+    print(f"EAT: repo {repo}")                                   # after the package is settled: a refusal stands alone (graphyos #43)
     if getattr(args, "no_provision", False):
         # Eating a repo you do not trust runs its build (pip install <repo>, or npm install): this
         # flag runs nothing — the ring is read from an empty directory, so the package is minted
         # from its source alone and every import it makes is left unresolved by name (graphyos #35).
         if args.site_packages:
-            print("EAT REFUSED: --no-provision and --site-packages contradict — the first reads an empty ring, "
+            sys.stdout.flush(); print("EAT REFUSED: --no-provision and --site-packages contradict — the first reads an empty ring, "
                   "the second the install you name", file=sys.stderr)
             return 2
         empty = (Path(args.home).expanduser().resolve() if args.home else repo / ".graphy") / "no-ring"
@@ -1265,7 +1265,7 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         try:
             pv = provision_lane.provision(repo, producer, log=print)
         except RuntimeError as exc:
-            print(f"EAT REFUSED: {exc}", file=sys.stderr)
+            sys.stdout.flush(); print(f"EAT REFUSED: {exc}", file=sys.stderr)
             return 2
         print(f"PROVISION {'OK' if pv.installed else 'PARTIAL'}: {pv.how}")
         args.site_packages = str(pv.site)
@@ -1354,7 +1354,7 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
             return rc
     deps = [s for s in ring["minted"] if s != package]
     seed = f"{package}://module/{package}"
-    target = f"{deps[0]}://module/{deps[0]}" if deps else seed
+    target = _walk_target(sub, package, deps)
     parsed = sum(m.get("parsed", 0) for m in ring["minted"].values())
     unreadable = {f"{s}:{rel}" if s != package else rel: why
                   for s, m in ring["minted"].items() for rel, why in (m.get("unreadable") or {}).items()}
@@ -1364,6 +1364,21 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
           f"({parsed} of {files} files parsed{'; ' + clause if clause else ''}, {time.perf_counter() - t0:.1f}s)")
     print(_next_steps(desc, package, seed, target, home))
     return 0
+
+
+def _walk_target(sub: Path, package: str, deps: list[str]) -> str:
+    """The walk example's target: the first ring shard's root module, else the package's first
+    submodule — never the seed itself, which finds itself in zero hops and shows nothing
+    (graphyos #43). A one-module package with an empty ring is the one case the seed stands."""
+    if deps:
+        return f"{deps[0]}://module/{deps[0]}"
+    prefix = f"{package}://module/{package}."
+    try:
+        nodes = json.loads((sub / f"{package}_graph" / "nodes.json").read_text())
+    except (OSError, ValueError):
+        nodes = {}
+    subs = sorted(n for n in nodes if n.startswith(prefix))
+    return subs[0] if subs else f"{package}://module/{package}"
 
 
 def _graphy_command() -> list[str]:
@@ -1672,7 +1687,7 @@ def _build_parser() -> argparse.ArgumentParser:
                                              "pillars, draw, and write index.html + showcase.txt (the MCP block, three questions, how to add a model)")
     p_show.add_argument("target", nargs="?", default=None, help="a git url, or a repo path (`.`)")
     p_show.add_argument("--out", default=None, help="where the page lands (default <repo>/.graphy/showcase/)")
-    p_show.add_argument("--work", default=None, help="where a url is cloned (default ./showcase/<name>)")
+    p_show.add_argument("--work", default=None, help="where a url is cloned (default ./showcase/<name> under the current directory — the run says so)")
     p_show.add_argument("--no-provision", action="store_true",
                        help="eat with --no-provision: nothing of the repo's runs, the ring is empty")
     p_show.set_defaults(handler=_cmd_showcase)
@@ -1735,7 +1750,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ref.add_argument("--force", action="store_true", help="re-mint over a sibling a previous refresh left at the same release")
     p_ref.set_defaults(handler=_cmd_refresh)
 
-    p_mcp = sub.add_parser("mcp", help="the MCP server on stdio: hunt · descend · blast · walk · explain over one tenant's store")
+    p_mcp = sub.add_parser("mcp", help="the MCP server on stdio: six tools — hunt · descend · blast · walk · draw · explain — over one tenant's store")
     p_mcp.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
     p_mcp.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
     p_mcp.add_argument("--on-stale", default="refuse", help="refuse|warn")

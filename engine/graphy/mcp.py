@@ -17,11 +17,11 @@ import json
 import sys
 from typing import Any, Callable
 
-from graphy import doors, traversal
+from graphy import __version__, doors, traversal
 from graphy import federated_store as fstore
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
-SERVER_INFO = {"name": "graphy", "version": "0.1.0"}
+SERVER_INFO = {"name": "graphy", "version": __version__}      # the package's own, never a second copy (graphyos #43)
 
 _SYMBOL = {"type": "string", "description": "an exact node id (fastapi://func/fastapi.routing.get_request_handler) or its dotted tail (get_request_handler, routing.get_request_handler)"}
 _DEPTH = lambda d: {"type": "integer", "default": d, "minimum": 1, "maximum": 12, "description": f"hops to walk (default {d})"}  # noqa: E731

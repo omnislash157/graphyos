@@ -61,3 +61,14 @@ def test_hunt_walk_explain(tmp_path):
     exp = tools.explain("get_request_handler")
     assert "RECORD: func fastapi.routing.get_request_handler at fastapi/routing.py" in exp
     assert "widgets.tests.test_gadget.test_it" in exp
+
+
+def test_RED_the_server_reports_the_packages_version(tmp_path):
+    """serverInfo.version is graphy.__version__, read from the package — the server said 0.1.0
+    against a 0.2.0 package once (graphyos #43)."""
+    import graphy
+    tools = _tools(tmp_path)
+    init = _rpc(tools, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {"protocolVersion": "2025-03-26"}})[0]["result"]
+    assert init["serverInfo"] == {"name": "graphy", "version": graphy.__version__}
+    assert init["serverInfo"]["version"] != "0.1.0"

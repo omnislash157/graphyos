@@ -693,3 +693,33 @@ def test_RED_check_names_a_working_tree_that_moved_past_the_store(tmp_path, caps
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "j"], cwd=repo, check=True)
     assert cli.main(["check", "--tenant", desc, "--tenant-id", "solo"]) == 1
     assert f"STALE — HEAD moved past the store: built at {head}, HEAD is " in capsys.readouterr().err
+
+
+# graphyos #43 — the first five minutes: the walk example never targets its own seed, and a
+# refusal prints alone, before any banner.
+
+def test_RED_walk_example_targets_the_ring_else_the_first_submodule_never_the_seed(tmp_path):
+    from graphy.cli import _walk_target
+    sub = tmp_path / "sub"
+    (sub / "pkg_graph").mkdir(parents=True)
+    (sub / "pkg_graph" / "nodes.json").write_text(json.dumps({
+        "pkg://module/pkg": {}, "pkg://module/pkg.zeta": {}, "pkg://module/pkg.alpha": {},
+        "pkg://func/pkg.alpha.f": {}}))
+    assert _walk_target(sub, "pkg", ["click"]) == "click://module/click"          # the ring first
+    assert _walk_target(sub, "pkg", []) == "pkg://module/pkg.alpha"               # else the first submodule
+    (sub / "pkg_graph" / "nodes.json").write_text(json.dumps({"pkg://module/pkg": {}}))
+    assert _walk_target(sub, "pkg", []) == "pkg://module/pkg"                     # one module, no ring: the seed stands
+    assert _walk_target(tmp_path / "nowhere", "pkg", []) == "pkg://module/pkg"
+
+
+def test_RED_eat_refusal_prints_alone_before_any_banner(tmp_path):
+    """A directory with no importable package: the refusal is the whole output, on stderr, and
+    no `EAT: repo` banner is printed — the banner used to come first on stdout and the two
+    streams interleaved in a terminal (graphyos #43)."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    proc = subprocess.run([sys.executable, "-m", "graphy", "eat", str(empty)],
+                          cwd=str(Path(__file__).parent.parent), capture_output=True, text=True)
+    assert proc.returncode == 2
+    assert proc.stderr.startswith("EAT REFUSED: no importable package(s) under")
+    assert "EAT: repo" not in proc.stdout + proc.stderr

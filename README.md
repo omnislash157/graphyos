@@ -8,7 +8,8 @@ package it imports into a walkable substrate, resolves who calls what through th
 scope, compiles it into a store, lays parquet beside every shard, and audits the result. Then you
 ask it things: does A reach B, what crosses from my code into that dependency, who calls this
 class across the whole ring. No model decides an edge. Every answer is a walk over structure,
-and every walk is a query, never a load.
+and every walk is a query, never a load — the build reads the shard JSON once into the store,
+and no walk reads a file again.
 
 Created by Matt Hartigan, 2026. Apache 2.0.
 
@@ -29,7 +30,7 @@ list of dependents. Run on this box; the full output is in `RECON.md` §20.
 └────────────────────────────────┴──────────┴───────────┴──────────┴────────────┘
 ```
 
-A cold small model with graphy's five tools and nothing else names the same five functions, with
+A cold small model with graphy's five walk tools (`draw` came after this run) and nothing else names the same five functions, with
 the chain, as a frontier model handed the three right source files by hand. The store alone does
 it in a millisecond.
 
