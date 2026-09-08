@@ -4173,3 +4173,27 @@ python3 measure.py run && python3 measure.py diff recon.before46.json recon.json
 | the floor | 505 passed · 3 skipped (501 + 4); the graphy tenant `ARMS OK` — the six regions re-stamped to store `e672f53fce0cc6d3` (the tests shard grew: 2671 → 2675 nodes, 6677 → 6692 edges), the inventories unchanged |
 | the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` — no new dependency, host or program; `WORKFLOWS OK`; `CHANGELOG OK` |
 | the receipt | `MEASURE OK: floor 505 passed · gate OK 16.1s · wheel 280,722 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 57.9s`; `diff recon.before46.json recon.json`: the wheel +378 B (the comments and the two catches); three wall-clock wrong ways — `quickstart.httpx.seconds` 5.3 → 6.8 (the pip install), `tenants.fastapi.seconds` 2.6 → 3.2, `wheel.seconds` 3.4 → 5.2 (the wheel build) — none of the three runs the changed lines more than once per partition; the first receipt read the graphy tenant RED, and its rebuild run alone is `GRAPHY_TENANT_OK`, the second receipt `graphy=OK` |
+
+## 82 · 0.2.1 — THE TEN RED-TEAM FIXES SHIPPED — the tag's run built and published, PyPI answers 0.2.1, a fresh venv installs it from PyPI (2026-09-08)
+
+**The cut.** The board drained at §81: every red-team finding from §71 closed (graphyos #39–#46), thirteen
+public commits past the `v0.2.0` tag, all green. The version bumped to 0.2.1 in `engine/pyproject.toml`,
+`graphy.__version__` and the README's install line; the changelog regenerated under `## 0.2.1`; `bash release.sh`
+built the wheel and the sdist and `twine check` passed both; the gate read `graphy resolves OK (0.2.1)`; a fresh
+venv installed the built wheel, imported 0.2.1 and showcased §81's specimen. The private commit 28f362a synced as
+graphyos c8932fd, the `v0.2.1` tag pushed on it, and `release.yml` published by trusted publishing — no token.
+
+```bash
+bash release.sh | tail -3                                   # RELEASE OK: graphyos 0.2.1 built and checked
+bash standalone_check.sh | grep -E "resolves|STANDALONE"    # graphy resolves OK (0.2.1) · GRAPHY_STANDALONE_OK
+gh run list --repo omnislash157/graphyos -L 4 --json name,headSha,conclusion
+curl -s https://pypi.org/pypi/graphyos/json | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])"
+python3 -m venv /tmp/v && /tmp/v/bin/pip install -q 'graphyos==0.2.1' && /tmp/v/bin/python -c "import graphy; print(graphy.__version__)" && /tmp/v/bin/graphy --help | head -1
+```
+
+| check | result |
+|---|---|
+| the release | `graphyos-0.2.1-py3-none-any.whl` · `graphyos-0.2.1.tar.gz`, twine check PASSED both; `CHANGELOG OK: 71 entries`; the gate `graphy resolves OK (0.2.1)`, `GRAPHY_STANDALONE_OK` |
+| the tag's run | `v0.2.1` on graphyos c8932fd: release run 34220726510 — build success · publish success; CI run 34220725636 on the same sha success |
+| PyPI | answers `0.2.1` within a minute of the publish; a fresh venv's `pip install --no-cache-dir graphyos==0.2.1` imports `0.2.1` and `graphy --help` runs |
+| what shipped | §72 eat runs no build without `--provision` · §73 the splice hashes its payload · §74 the unparsed counted and named · §75 the dirty-tree cursor · §76 the comment fence · §77 the shell-free cartograph · §78 the venv layout by sysconfig, Linux and macOS · §79 the first five minutes · §80 the keyed markers · §81 the partition carries any name the walk found |
