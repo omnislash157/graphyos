@@ -4354,3 +4354,44 @@ cd engine && ../.venv/bin/python -m pytest -q -o addopts="" | tail -1
 | the gate | `pillars svg OK`; a hand-edited svg → `pillars svg DRIFT — docs/pillars.svg is not what the store draws; run engine/tenants/graphy/rebuild.sh`, exit 3; `BURDEN OK … hosts 8 on the list of 7 · docs 34 tracked · scrub OK`; `GRAPHY_STANDALONE_OK` in 18.1 s |
 | the floor | 519 passed, 3 skipped in 9.1 s (+1: the svg emit is one well-formed standalone document, no script, both themes, the CLI writes the same bytes twice) |
 | the done block | all four lines green: `SHOWCASE OK`, `README.md:61` the uvx line, `docs/pillars.svg` one `<svg` and linked at `README.md:68`, `GRAPHY_STANDALONE_OK` |
+
+## 87 · THE MEMORY LANE SHIPS WITH ITS TAPS — the installed router names lightning, bloodhound and reseed_graph with the installing interpreter's path; and Railway's builder pinned in the repo (2026-09-08 · graphyos issue 52)
+
+**The finding.** The memory lane was in the wheel — `graphy/reseed.py`, `graphy/session_tail.py`,
+`graphy/lightning/` with `bloodhound.py` and `reseed_graph.py`, 28 files in `graphyos-0.2.1` — and
+`graphy shell install` wired PreCompact · SessionEnd · SessionStart to `graphy.reseed capture|inject`. But the
+router the installed repo's cold agent reads first never said so: `grep -n "lightning\|bloodhound\|reseed"
+engine/graphy/shell/claude/GRAPHY.md` → nothing. A dev who installed the hooks got the recovery files and no tap
+to read them. Operator, 2026-09-08: "is our memory system and reseed compact and hooks a part of graphy — can we
+say here's graphy and here is our house scaffold, devs can have complete recall of every session dead cold, and
+lightning and bloodhound". Separately: graphy-os.com was bound to the Railway service and answered Railway's
+404 `Application not found` — the deploy had failed with nothing in the dashboard's build settings, and the
+repo carried nothing that named the builder.
+
+**The change.** The shipped `GRAPHY.md` gains a MEMORY section: one paragraph saying what the two session
+hooks do and where the files land (`.claude/recovery/reseed_tail.md`, `sessions/`), and the seven-tap table
+this repo's CLAUDE.md carries, every tap rendered with `{{python}}` and a new `{{sessions}}`
+(`<repo>/.claude/recovery/sessions`) so each door is declared to its archive, never guessed from the cwd.
+`install.memory_taps` counts the rows from the rendered text (a row that runs `-m graphy.lightning` or
+`-m graphy.reseed`), and `SHELL OK` prints the count. `shell/README.md` says the same; the README's shell row
+names the lane. The march loop (`march.py`, `self-clear`, `rung-discipline`) stays this repo's house scaffold —
+it needs a board. For Railway: `railway.json` at the root pins `builder: DOCKERFILE` and the start command, so
+the dashboard's settings never decide the build; `.dockerignore` admits only what the Dockerfile copies (the
+first local build sent `staging/` — 3.2 G — into the context and died on the tar); the router names both and
+the Dockerfile and the gallery files it never listed.
+
+```bash
+cd ~/graphy/engine && ../.venv/bin/python -m pytest -q tests/test_shell.py -k memory
+R=/tmp/graphy-nondotted && ~/graphy/.venv/bin/graphy shell install --repo $R | tail -1 && grep -c "lightning" $R/GRAPHY.md && grep -n "bloodhound" $R/GRAPHY.md | head -1
+cd ~/graphy && bash standalone_check.sh | tail -1
+cd ~/graphy && sg docker -c "docker build -t graphy-gallery ." 2>&1 | grep -E 'GALLERY OK|Successfully built'
+cd engine && ../.venv/bin/python -m pytest -q -o addopts="" | tail -1
+```
+
+| check | result |
+|---|---|
+| the floor, `-k memory` | 2 passed: the rendered router names the four doors with the installing interpreter and `--path <repo>/.claude/recovery/sessions` on every lightning row, no `{{` survives, 7 taps counted; `graphy.lightning.bloodhound gate --with walk` taken verbatim from the installed router's own row answers over a `sessions/001.md` the test wrote, exit 0 |
+| the done block's second line | `SHELL OK: hooks for tenant hostile under /tmp/graphy-nondotted run on …/.venv/bin/python3 · 7 memory tap(s) in GRAPHY.md`; `grep -c lightning` → 6; the bloodhound row at `GRAPHY.md:38` with the interpreter and the archive path filled |
+| the gate | `GRAPHY_STANDALONE_OK` in 16.5 s; `WORKFLOWS OK`, `BURDEN OK`, `CHANGELOG OK` |
+| the floor | 523 passed, 3 skipped in 8.4 s (+2) |
+| the image | with `.dockerignore`: context 36.5 MB (was the whole tree, `staging/` included, and the tar died); `GALLERY OK: 10 page(s) of 10 checked green … 12.3s` inside the build, `Successfully built`, 401 MB, 26.3 s wall; `docker run -e PORT=8769` answers the index 200 with httpx and click linked. The Railway deploy itself is the operator’s dashboard to read: the repo now names the builder, and graphy-os.com answers Railway’s 404 until a deploy on this commit succeeds |

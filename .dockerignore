@@ -1,0 +1,10 @@
+# the image copies engine/ and the three gallery files; everything else never enters the build context
+*
+!engine
+!gallery.py
+!gallery.sh
+!gallery.txt
+engine/**/__pycache__
+engine/tenants/*/substrate
+engine/tenants/*/tenant.json
+engine/*.egg-info

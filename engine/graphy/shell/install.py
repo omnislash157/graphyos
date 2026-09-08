@@ -2,7 +2,8 @@
 ``<repo>/.graphy/hooks/*.sh`` (the entry points, the installing interpreter's absolute path baked
 in — machine-local, ignored by the repo like everything under .graphy/), merges the three hook
 events into ``<repo>/.claude/settings.json`` (portable: it names only $CLAUDE_PROJECT_DIR), and
-writes ``<repo>/GRAPHY.md``, the router a cold agent reads first, with this tenant's taps."""
+writes ``<repo>/GRAPHY.md``, the router a cold agent reads first, with this tenant's taps and the
+memory lane's — the doors over ``.claude/recovery/sessions/`` the hooks fill."""
 from __future__ import annotations
 
 import json
@@ -46,7 +47,7 @@ def install(repo: str | Path, python: str | None = None) -> dict:
     tid = json.loads(ring.read_text(encoding="utf-8"))["root"]
     py = python or sys.executable
     values = {"python": py, "repo": repo, "desc": desc, "tid": tid, "root_module": f"{tid}://module/{tid}",
-              "graphy": Path(py).parent / "graphy"}
+              "graphy": Path(py).parent / "graphy", "sessions": repo / ".claude" / "recovery" / "sessions"}
     hooks_dir = repo / ".graphy" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
     written = []
@@ -67,4 +68,13 @@ def install(repo: str | Path, python: str | None = None) -> dict:
     router = repo / "GRAPHY.md"
     router.write_text(_fill((HERE / "claude" / "GRAPHY.md").read_text(encoding="utf-8"), values), encoding="utf-8")
     written.append(router)
-    return {"repo": repo, "tenant_id": tid, "python": py, "written": written}
+    return {"repo": repo, "tenant_id": tid, "python": py, "written": written,
+            "memory_taps": memory_taps(router.read_text(encoding="utf-8"))}
+
+
+def memory_taps(router_text: str) -> int:
+    """The memory doors the rendered router names: one table row per tap under MEMORY, each
+    running the installing interpreter over the archive. Counted from the text, never declared."""
+    rows = [ln for ln in router_text.splitlines() if ln.startswith("| ")
+            and ("-m graphy.lightning" in ln or "-m graphy.reseed" in ln)]
+    return len(rows)

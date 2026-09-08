@@ -1544,7 +1544,8 @@ def _cmd_shell(args: argparse.Namespace) -> int:
         return 2
     for w in info["written"]:
         print(f"  wrote {w}")
-    print(f"SHELL OK: hooks for tenant {info['tenant_id']} under {info['repo']} run on {info['python']}")
+    print(f"SHELL OK: hooks for tenant {info['tenant_id']} under {info['repo']} run on {info['python']}"
+          f" · {info['memory_taps']} memory tap(s) in GRAPHY.md")
     print(f"  route the agent:  echo 'Read GRAPHY.md first.' >> {info['repo']}/CLAUDE.md")
     return 0
 

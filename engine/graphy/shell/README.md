@@ -30,6 +30,20 @@ machine-local. `.claude/settings.json` and `GRAPHY.md` are yours to track: the s
 The gate opens (exit 0) when the repo is not eaten, the file is not in the store, or duckdb is
 absent — it confines an agent to a substrate, never to nothing.
 
+## The memory lane — complete recall of every session, dead cold
+
+The two session hooks are the continuity lane, and `GRAPHY.md` carries its taps beside the walk's.
+PreCompact and SessionEnd write the session as 1:1 user/assistant exchanges with tool use stripped
+to `.claude/recovery/reseed_tail.md` and archive every distinct tail under
+`.claude/recovery/sessions/`; SessionStart on startup, clear or compact injects the newest bounded
+edge and names the file to read. No summarizer, no embeddings: the archive is text, and the
+router's MEMORY table names the seven doors over it — `graphy.lightning` (where is X, anchored to
+its function or class · who reads X · does A live inside B · the pipe), `graphy.lightning.bloodhound`
+(when did we say A and B together, with the spans), `graphy.lightning.reseed_graph` (the archive's
+topics · search · heat · one term chained across time) and `graphy.reseed render` (any transcript by
+hand) — each with the installing interpreter and the repo's archive path filled in. `install`
+prints the count. ripgrep makes the doors fast; without it they fall back to Python, correct and slower.
+
 ## Prove it by hand, any harness
 
 ```bash

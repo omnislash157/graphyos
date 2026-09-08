@@ -70,6 +70,9 @@ CHANGELOG.md          derived from RECON.md by release.sh — a build product th
 .claude-plugin/       the Claude Code plugin — the checkout is the plugin: plugin.json runs `graphy mcp --repo "${CLAUDE_PROJECT_DIR}"` over any eaten repo; `claude plugin validate .`
 server.json           the MCP registry entry (io.github.omnislash157/graphyos, PyPI, the same argv); its version is pyproject's — release.sh --check refuses drift
 docs/pillars.svg      the README's picture: the graphy tenant's pillars as one standalone svg, `graphy draw --emit svg` from the store — rebuild.sh writes it, the gate re-renders it and refuses drift
+Dockerfile            the site: the engine from this checkout, gallery.sh over gallery.txt built inside the image, served by the stdlib http.server on $PORT — Railway builds it on every push to the public repo
+gallery.py · gallery.sh · gallery.txt   the gallery: every url in the list showcased into one directory with an index and a receipt; a RED or REFUSED page is named and left out
+railway.json          Railway's config-as-code: the builder is the Dockerfile at the root, the start command the gallery's http.server — pinned in the repo so the dashboard's build settings are never the thing that decides
 quickstart.sh         the production proof: clone a repo, eat it, query it, walk it → GRAPHY_QUICKSTART_OK
 .github/workflows/    CI: the floor on 3.10 and 3.12, the gate, the census and the quick receipt on every push; on every PR the blast radius from the walk and the gate (burden + the receipt diffed against the base on the same runner); an opened issue naming a repo url gets its showcase posted back — the showcase job holds no token and no checkout, a second job posts (§71)
 .venv/                gitignored — the project's own interpreter: graphyos[estate] and nothing else
@@ -92,7 +95,7 @@ index.py                the shard index: push · pull content-addressed shards, 
 converge.py             the seam: wormholes per shard pair; --resolve binds text labels through scope into wormhole_edges.json
 container.py            adjacency.parquet + nodes.parquet + a receipt beside every shard, one duckdb connection per batch; a receipt may say pending (eat defers the ring) and estate() — one view over all of them — emits it on the first ask (duckdb, optional)
 traversal.py            the traversal store: every walk lands as rows under <data_home>/traversals/<generation>/; walks compose (store · splice) and diff (replay)
-shell/                  what bolts graphy onto a repo: gate.py (walk-before-edit, PreToolUse) · install.py · claude/ (settings.json, GRAPHY.md) · hooks/*.sh · README.md
+shell/                  what bolts graphy onto a repo: gate.py (walk-before-edit, PreToolUse) · install.py · claude/ (settings.json, GRAPHY.md — the walk's taps and the MEMORY table below, paths filled at install) · hooks/*.sh · README.md
 federated_store.py      compile_store → the sqlite store; open_for · path_to · spread — the reader
 cross_substrate.py      load_set · derive_roster · query_set · explanations — walk across substrates
 bridge.py               open_sides · verify_joins · cross — two tenants in one process, each reading only its own data_home; the walk crosses only on a declared join scheme
