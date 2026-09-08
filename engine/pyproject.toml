@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "graphyos"
-version = "0.2.0"
+version = "0.2.1"
 description = "GraphyOS — compile any codebase into a walkable substrate, and generate the fan-out that makes an agent competent in it"
 readme = "README.md"
 requires-python = ">=3.10"

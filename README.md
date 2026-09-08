@@ -47,7 +47,7 @@ over any eaten repo. Six tools: `hunt` · `descend` · `blast` · `walk` · `dra
 ## Install, then eat — two lines
 
 ```bash
-pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.0 — the extras are optional
+pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.1 — the extras are optional
 cd /path/to/your/repo && graphy eat .        # a repo with several packages: graphy eat . --package <name>
 graphy showcase .                            # the page: .graphy/showcase/index.html — open it in a browser
 ```
