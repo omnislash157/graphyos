@@ -4244,3 +4244,31 @@ bash standalone_check.sh | tail -1
 | the floor | 510 passed · 3 skipped (505 + 5, `tests/test_gallery.py`); the first build test passed for the wrong reason (the fake read the wrong argument and the assertion allowed an empty green list) — tightened to assert the good page green, linked, and the refused one out |
 | the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` — no new dependency, host or program in the engine (the gallery is a root script over the `graphy` CLI and `git`; docker is Railway's builder, proven here, never a burden of the wheel); `CHANGELOG OK: 72 entries` |
 | what waits on the operator | the Railway service connected to omnislash157/graphyos on main with the root directory `/` — it picks up the Dockerfile on its own; the custom domain graphy-os.com is already set on the service and pointed through Cloudflare on public port 8080; `gh repo edit omnislash157/graphyos --homepage https://graphy-os.com` once the first deploy answers (graphyos #48) |
+
+## 84 · THE TOPICS — ten set by name, so the repo is found by anyone searching GitHub for mcp, code-graph, tree-sitter or claude-code; the homepage waits on the first Railway deploy (2026-09-08 · graphyos issue 48)
+
+**The finding.** `gh repo view omnislash157/graphyos --json repositoryTopics,homepageUrl` read
+`"repositoryTopics": null`, `"homepageUrl": ""` two days after the cut. A repo with no topics is in no
+GitHub topic page and no topic search. Operator, 2026-09-08: "agreed on all of it".
+
+**The change.** Metadata only, no file in the tree: `gh repo edit --add-topic` for what the code is —
+`mcp` · `mcp-server` · `code-graph` · `static-analysis` · `tree-sitter` · `claude-code` · `python` ·
+`typescript` · `dependency-graph` · `codebase-analysis`. The description kept. The homepage is
+`https://graphy-os.com` once the gallery answers there (§83): at this writing the domain answers Railway's
+`{"status":"error","code":404,"message":"Application not found"}` — the custom domain and the Cloudflare
+proxy stand on the service, but no deployment is live behind it until the service is connected to the
+repo and deploys the root `Dockerfile`. The homepage is set by hand after that, never guessed.
+
+```bash
+gh repo view omnislash157/graphyos --json repositoryTopics -q '[.repositoryTopics[].name] | sort | join(" ")'   # the ten, sorted
+gh repo view omnislash157/graphyos --json homepageUrl,description -q '.homepageUrl, .description'
+curl -s -o /dev/null -w '%{http_code}\n' https://graphy-os.com/                    # 200 once the deploy is live; 404 until then
+curl -s https://graphy-os.com/ | grep -c 'href="'                                  # 12 when the gallery answers
+```
+
+| check | result |
+|---|---|
+| the done check | `claude-code code-graph codebase-analysis dependency-graph mcp mcp-server python static-analysis tree-sitter typescript` — the ten, sorted, exact |
+| the description | unchanged: "Compile any codebase into a walkable substrate: …" |
+| the homepage | `""` — held: graphy-os.com answers 404 `Application not found` (0 `href=`); the hold is `gh repo edit omnislash157/graphyos --homepage https://graphy-os.com` once the curl reads 200 and 12 |
+| the gate | `GRAPHY_STANDALONE_OK`; `CHANGELOG OK: 73 entries` |
