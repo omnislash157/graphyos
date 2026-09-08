@@ -151,11 +151,11 @@ def test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carrie
     body = "x\n`````\n  \\`\\`\\`\nend"                       # a five-run: the old fence of four opens a new block
     for rc, log in ((0, ""), (2, "SHOWCASE REFUSED: ``````` seven\n")):
         home = tmp_path / f"rc{rc}"
-        (home / "showcase" / "x" / ".graphy" / "showcase").mkdir(parents=True)
-        (home / "showcase" / "x" / ".graphy" / "showcase" / "showcase.txt").write_text(body)
+        (home / "page").mkdir(parents=True)                # the page lands at --out, never at the clone (graphyos #58)
+        (home / "page" / "showcase.txt").write_text(body)
         (home / "showcase.log").write_text(log)
         script = run[run.index('page="$RUNNER_TEMP'):]
-        proc = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin", "RUNNER_TEMP": str(home), "NAME": "x",
+        proc = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin", "RUNNER_TEMP": str(home),
                                                             "URL": "https://example.invalid/x", "rc": str(rc)}, capture_output=True, text=True)
         assert proc.returncode == 0, proc.stderr
         comment = (home / "comment.md").read_text()
@@ -175,6 +175,8 @@ def test_RED_showcase_without_work_says_where_the_clone_lands(tmp_path, monkeypa
     calls = []
 
     def fake_run(argv, **kw):
+        if argv[:2] == ["git", "-C"]:                 # the reuse reads the clone's origin (graphyos #58)
+            return subprocess.CompletedProcess(argv, 0, "https://example.invalid/o/thing.git\n", "")
         calls.append(argv)
         repo = Path(argv[-1])
         (repo / ".git").mkdir(parents=True)
@@ -184,12 +186,75 @@ def test_RED_showcase_without_work_says_where_the_clone_lands(tmp_path, monkeypa
         showcase.showcase("https://example.invalid/o/thing.git", log=logged.append, no_provision=True)
     where = str((tmp_path / "showcase").resolve())
     assert any(line.startswith("SHOWCASE: no --work") and where in line and "--work <dir>" in line for line in logged), logged
-    assert calls and calls[0][-1] == str(tmp_path / "showcase" / "thing")
+    assert calls and calls[0][-1] == str(tmp_path / "showcase" / "o" / "thing")   # keyed on owner and name
     logged.clear()
     with pytest.raises(showcase.ShowcaseError):
         showcase.showcase("https://example.invalid/o/thing.git", log=logged.append, no_provision=True)
-    assert any(line.startswith("SHOWCASE: reusing the clone at") and line.endswith("thing") for line in logged), logged
+    assert any(line.startswith("SHOWCASE: reusing the clone at") and line.endswith("o/thing") for line in logged), logged
     assert len(calls) == 1
+
+
+def test_GREEN_repo_of_and_clone_dir_key_on_owner_and_name(tmp_path):
+    """One parse for the clone key and the gallery's slug (graphyos #58): `.git` and a trailing slash fold,
+    two repos of one name land in two directories, a url with no owner/name tail refuses."""
+    assert showcase.repo_of("https://github.com/pallets/click.git") == ("pallets", "click")
+    assert showcase.repo_of("https://gitlab.com/Some-Org/My.Repo/") == ("Some-Org", "My.Repo")
+    assert showcase.repo_of("git@github.com:pallets/click.git") == ("pallets", "click")
+    assert showcase.clone_dir(tmp_path, "https://github.com/pallets/click") == tmp_path / "pallets" / "click"
+    assert showcase.clone_dir(tmp_path, "https://github.com/some-fork/click.git") == tmp_path / "some-fork" / "click"
+    # a GitLab group path is the whole owner: two groups' `tools/repo` are two directories
+    assert showcase.repo_of("https://gitlab.com/groupA/tools/repo.git") == ("groupA/tools", "repo")
+    assert showcase.clone_dir(tmp_path, "https://gitlab.com/groupB/tools/repo") == tmp_path / "groupB" / "tools" / "repo"
+    assert showcase.repo_of("https://git.sr.ht/~sircmpwn/aerc") == ("~sircmpwn", "aerc")
+    assert showcase.repo_of("https://x-access-token:abc@github.com/pallets/click") == ("pallets", "click")
+    for bad in ("https://github.com/click", "https://github.com/", "click", "https://git.example.com/click.git",
+                "https://github.com/pallets/..", "https://github.com/../..", "https://github.com/pallets/.git",
+                "https://github.com/./click", "https://github.com/pallets/click?x#y"):
+        with pytest.raises(showcase.ShowcaseError, match="not an <owner>/<name> git url"):
+            showcase.repo_of(bad)
+    # the same repo under two spellings is one repo; a token never travels in a message
+    assert showcase._same_repo("git@github.com:pallets/click.git", "https://github.com/pallets/click")
+    assert showcase._same_repo("https://x-access-token:abc@GitHub.com/pallets/click", "https://github.com/pallets/click/")
+    assert not showcase._same_repo("https://github.com/pallets/click", "https://github.com/some-fork/click")
+    assert not showcase._same_repo("", "https://github.com/pallets/click")
+    assert showcase._shown("https://x-access-token:abc@github.com/pallets/click") == "https://github.com/pallets/click"
+
+
+def test_RED_showcase_refuses_a_standing_clone_of_another_repo(tmp_path):
+    """A directory under --work that is a clone of another url is never reused (graphyos #58): the
+    origin read from the clone itself decides, and the refusal names both. Proven on a real git."""
+    src = tmp_path / "src"
+    subprocess.run(["git", "init", "-q", str(src)], check=True)
+    (src / "a.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(src), "-c", "user.email=a@b", "-c", "user.name=a", "add", "."], check=True)
+    subprocess.run(["git", "-C", str(src), "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "-m", "one"], check=True)
+    work = tmp_path / "work"
+    stands = showcase.clone_dir(work, "https://github.com/some-fork/click.git")
+    subprocess.run(["git", "clone", "-q", str(src), str(stands)], check=True)   # git makes the owner dir
+    logged = []
+    with pytest.raises(showcase.ShowcaseError) as exc:
+        showcase._clone("https://github.com/some-fork/click.git", work, logged.append)
+    assert str(exc.value) == f"{stands} is a clone of {src}, not https://github.com/some-fork/click.git"
+    assert not logged
+    # the same repo, spelled with or without .git or a trailing slash, is the clone it stands for
+    assert showcase._clone(f"{src}/", work.parent / "w2", logged.append) == showcase.clone_dir(work.parent / "w2", str(src))
+    assert showcase._clone(str(src), work.parent / "w2", logged.append) == showcase.clone_dir(work.parent / "w2", str(src))
+    assert any(line.startswith("SHOWCASE: reusing the clone at") for line in logged), logged
+
+
+def test_RED_showcase_names_git_refusing_to_read_a_standing_clone(tmp_path, monkeypatch):
+    """A `.git` that stands but git cannot open (dubious ownership, a corrupt config) is git's reason,
+    never `<no origin>` (graphyos #58)."""
+    work = tmp_path / "w"
+    stands = showcase.clone_dir(work, "https://github.com/pallets/click.git")
+    (stands / ".git").mkdir(parents=True)
+
+    def fake_run(argv, **kw):
+        assert argv[:2] == ["git", "-C"]
+        return subprocess.CompletedProcess(argv, 128, "", "fatal: detected dubious ownership in repository")
+    monkeypatch.setattr(showcase.subprocess, "run", fake_run)
+    with pytest.raises(showcase.ShowcaseError, match="stands but git cannot read it: fatal: detected dubious ownership"):
+        showcase._clone("https://github.com/pallets/click.git", work, lambda *_: None)
 
 
 def test_RED_showcase_non_dotted_partition_refuses_on_one_line_never_a_stack(tmp_path, capsys, monkeypatch):

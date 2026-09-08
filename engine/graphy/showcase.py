@@ -25,7 +25,7 @@ from graphy import draw as draw_lane
 from graphy import fanout, pillars as pillars_lane
 from graphy import sugiyama as S
 
-__all__ = ["ShowcaseError", "compose", "fence_safe", "showcase", "PAGE", "TEXT"]
+__all__ = ["ShowcaseError", "clone_dir", "compose", "fence_safe", "repo_of", "showcase", "PAGE", "TEXT"]
 
 PAGE, TEXT = "index.html", "showcase.txt"
 
@@ -139,11 +139,62 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     return "\n".join(h) + "\n", fence_safe("\n".join(text))
 
 
+_SEG = r"[A-Za-z0-9_~][A-Za-z0-9_.-]*"      # a path segment: never `.`, `..` or `.git`; `~user` is sr.ht's owner
+_REPO = re.compile(r"^(?:[a-z][a-z0-9+.-]*://(?:[^/@]*@)?(?P<host>[^/]+)/|(?:[^@]*@)?(?P<sshhost>[^:/]+):|/)"
+                   r"(?P<owner>" + _SEG + r"(?:/" + _SEG + r")*)/(?P<name>" + _SEG + r"?)(?:\.git)?/?$")
+
+
+def _parse(url: str) -> tuple[str, str, str]:
+    m = _REPO.match(url.strip())
+    if not m or not m.group("name") or m.group("name") == ".git":
+        raise ShowcaseError(f"not an <owner>/<name> git url: {url!r} (an https, ssh or absolute path ending in "
+                            f"<owner>/<name>[.git]; a segment is never `.`, `..` or `.git`)")
+    return (m.group("host") or m.group("sshhost") or "").lower(), m.group("owner"), m.group("name")
+
+
+def repo_of(url: str) -> tuple[str, str]:
+    """(owner, name) from a git url or an absolute path: the name is the last segment, the owner every
+    segment before it under the host (a GitLab group path stays whole: `groupA/tools` and `groupB/tools` are
+    two owners), `.git` and a trailing slash folded, userinfo ignored. The one parse the clone key and the
+    gallery's slug share (graphyos #58); a url with no owner/name tail, or a `.`/`..`/`.git` segment that
+    would walk out of --work, refuses by name."""
+    _, owner, name = _parse(url)
+    return owner, name
+
+
+def clone_dir(work: Path, url: str) -> Path:
+    """Where a url's clone lands under --work: `<work>/<owner>/<name>`. Two repos of one name never share
+    a directory, and the directory is still named for the repo — an eat that falls back to the directory's
+    name (a package.json with no name) says the same thing it said (graphyos #58)."""
+    owner, name = repo_of(url)
+    return work.joinpath(*owner.split("/")) / name
+
+
+def _same_repo(a: str, b: str) -> bool:
+    """One repo under two spellings: https or ssh, `.git` or not, a trailing slash, userinfo, the host's case."""
+    try:
+        return _parse(a) == _parse(b)
+    except ShowcaseError:
+        return False
+
+
+def _shown(url: str) -> str:
+    """A url for a message: userinfo (a token) never travels."""
+    return re.sub(r"^([a-z][a-z0-9+.-]*://)[^/@]*@", r"\1", url)
+
+
 def _clone(url: str, work: Path, log) -> Path:
-    name = url.rstrip("/").rsplit("/", 1)[-1]
-    name = name[:-4] if name.endswith(".git") else name
-    repo = work / name
+    repo = clone_dir(work, url)
     if (repo / ".git").is_dir():
+        # A directory that stands is reused only when it is a clone of the url asked for: the origin is read
+        # from the clone itself, and a mismatch refuses by name — never a page drawn from another repo's tree.
+        proc = subprocess.run(["git", "-C", str(repo), "config", "--get", "remote.origin.url"],
+                              capture_output=True, text=True)
+        if proc.returncode not in (0, 1):                       # 1 is git's "no such key"; anything else, git refused
+            raise ShowcaseError(f"{repo} stands but git cannot read it: {(proc.stderr or '').strip()[-300:]}")
+        origin = (proc.stdout or "").strip()
+        if not _same_repo(origin, url):
+            raise ShowcaseError(f"{repo} is a clone of {_shown(origin) or '<no origin>'}, not {_shown(url)}")
         log(f"SHOWCASE: reusing the clone at {repo}")
     else:
         work.mkdir(parents=True, exist_ok=True)

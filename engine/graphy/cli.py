@@ -1745,7 +1745,7 @@ def _build_parser() -> argparse.ArgumentParser:
                                              "pillars, draw, and write index.html + showcase.txt (the MCP block, three questions, how to add a model)")
     p_show.add_argument("target", nargs="?", default=None, help="a git url, or a repo path (`.`)")
     p_show.add_argument("--out", default=None, help="where the page lands (default <repo>/.graphy/showcase/)")
-    p_show.add_argument("--work", default=None, help="where a url is cloned (default ./showcase/<name> under the current directory — the run says so)")
+    p_show.add_argument("--work", default=None, help="where a url is cloned (default ./showcase/<owner>/<name> under the current directory — the run says so)")
     p_show.add_argument("--no-provision", action="store_true",
                        help="eat with --no-provision: nothing of the repo's runs, the ring is empty")
     p_show.set_defaults(handler=_cmd_showcase)

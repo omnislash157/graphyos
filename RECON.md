@@ -4603,3 +4603,57 @@ python3 measure.py diff recon.before57.json recon.json | tail -1
 | the golden | re-minted, `MINT OK: fastapi 507 nodes / 3715 edges`, PROVENANCE producer graphy 0.2.3 · source 4b10ecce7c83db60; 179 records carry 342 bindable annotations, 1,851 characters (the first cut stored every annotation's text: 1,611 keys, 101,053 characters, `nodes.json` 349 KB — now 245 KB against 213 KB before, the widened `args` the rest); the parity test against the corpus venv: 2 passed |
 | the constraints | `BURDEN OK` (wheel 283,572 → 285,468 B, under the cap); `MEASURE DIFF OK: 6 number(s) moved, none the wrong way past tolerance` (the before pinned on the pre-change tree in the same hour; a first diff read the floor +18 % while a parity test and a second floor ran beside it — alone, 10.1 s against 9.0, inside tolerance); the floor 525 passed, 3 skipped; the gate `GRAPHY_STANDALONE_OK`, `pillars svg OK` |
 | the review, `/code-review medium` | eight findings, every one fixed: a `decorates` label resolved in the parameter scope (confirmed on a synthetic ring — fixed by side); a nested def's parameter shadowing the annotated name (fixed by the rebinding rule); a loop, comprehension or assignment rebinding it (the same rule); an unannotated parameter still falling through to module scope — a name match the law forbids (fixed: a parameter never falls through); `args` and `annotations` disagreeing on the parameter list (`args` widened, the IR asserts the subset); 98 % of the stored annotation text unbindable (`_name_chain` keeps only a name); an unfilled template token committed to main in this table (this row fills it); the law and converge's docstring naming four doors while the engine emitted five (both name the annotation). Found on the way: the splice reusing another producer's records (above) |
+
+## 93 · THE CLONE IS KEYED ON OWNER AND NAME AND CHECKED AGAINST ITS ORIGIN — `<work>/<owner>/<name>`, one parse the gallery's slug shares; a standing directory is reused only when its `remote.origin.url` is the url asked for; the ten gallery pages the same byte for byte (2026-09-08 · graphyos issue 58)
+
+**The number.** The review of §90 named the cause behind the gallery's duplicate-slug refusal: `showcase._clone`
+keyed the clone directory by the repo's bare name and reused any directory with a `.git` in it. On this box,
+with `pallets/click` cloned at `<work>/click`, `graphy showcase https://github.com/some-fork/click.git --work
+<work>` said `reusing the clone` and drew the fork's page from pallets' tree, the receipt attesting pallets' commit
+under the fork's name. The gallery's pre-check (§90) covered one list; `graphy showcase <url> --work` by hand and
+the showcase-on-issue workflow had nothing.
+
+**The change.** `showcase.repo_of(url)` is the one parse — `(owner, name)` from an https, ssh or absolute-path
+url: the name is the last segment, the owner every segment before it under the host (a GitLab group path stays
+whole), `.git`, a trailing slash and userinfo folded, no owner/name tail refused by name, and a segment of `.`, `..`
+or `.git` refused before it can walk out of `--work` — and `showcase.clone_dir(work, url)` is
+`<work>/<owner>/<name>`. The owner is the parent directory, not a prefix on
+the name: the eat's fallback for a `package.json` with no name is the directory's name, and `owner__name` renamed
+zod's whole page (`COLINHACKS__ZOD` as the arm) before the key moved one level up. `gallery.slug_of` keeps its
+github/gitlab gate and derives owner and name through `repo_of`; the receipt's `commit` reads the head at
+`clone_dir`, the second copy of the key logic gone. On reuse `_clone` reads `git -C <dir> config --get
+remote.origin.url` from the clone itself and compares it to the url asked for through the same parse (host,
+owner, name: https and ssh, `.git` or not, a token in the url are one repo); a mismatch is `SHOWCASE REFUSED:
+<dir> is a clone of <other>, not <url>` with userinfo stripped from both, never a page; a git that cannot open the
+standing clone (dubious ownership) refuses with git's own reason. The showcase-on-issue workflow passes `--out`
+and reads the page there — it no longer knows the clone's key at all, so the PyPI engine it installs and this
+one both post the page (the review's first finding: the key had moved under a workflow that still installs the
+release before it); the
+gallery's duplicate-slug refusal stays, now guarding only the page directory — the clone race is impossible by
+construction. `gallery.py` imports the key from `graphy.showcase`, falling back to this checkout's `engine/` when
+no venv is on the path (the floor runs it under the bare interpreter).
+
+**The issue's done line, refused by name.** It asked for the refusal with pallets' clone standing at
+`<work>/pallets__click` and the fork asked — under the owner key that is two directories, so the fork simply
+clones (and a fork that does not exist is `clone failed`). The origin check fires when a directory stands at the
+*fork's* key holding another repo's clone: `git clone pallets/click <work>/some-fork/click` then the fork's url →
+the refusal, which is the done proof below. The same url spelled `https://github.com/pallets/click` against a
+clone made from `…/click.git` reuses.
+
+```bash
+cd engine && W=/tmp/graphy-58 && rm -rf $W && mkdir -p $W && git clone -q --depth 1 https://github.com/pallets/click.git $W/some-fork/click && ../.venv/bin/python -m graphy showcase https://github.com/some-fork/click.git --no-provision --work $W --out $W/page 2>&1 | tail -1
+cd engine && python3 -m pytest -q -k "showcase or gallery" | tail -1
+git stash && bash gallery.sh --jobs 4 /tmp/graphy-gallery-58-before $(cat gallery.txt) | tail -1 && git stash pop && bash gallery.sh --jobs 4 /tmp/graphy-gallery-58-after $(cat gallery.txt) | tail -1
+cd engine && ../.venv/bin/python -m graphy blast showcase._clone --tenant tenants/graphy/tenant.json --tenant-id graphy --depth 2 | head -1
+python3 measure.py diff recon.before58.json recon.json | tail -1
+```
+
+| check | result |
+|---|---|
+| the done proof | `SHOWCASE REFUSED: /tmp/graphy-58/some-fork/click is a clone of https://github.com/pallets/click.git, not https://github.com/some-fork/click.git`, exit 2; the same url reuses: `SHOWCASE: reusing the clone at /tmp/graphy-58/pallets/click` → `SHOWCASE OK: click · 1 arm(s) (CORE) · 0 ring shard(s) · CHECK GREEN · 0.6s` |
+| blast radius, before the edit | `BLAST seed=graphy://func/graphy.showcase._clone … dependents=5 own=2 ring=3`: `showcase.showcase`, `cli._cmd_showcase`, three showcase tests; `gallery.slug_of` names no node — `gallery.py` is a root file outside the tenant, read by hand |
+| the same answer | the ten pages built on the pre-change tree and on this one: 22 files, 0 differ once the clone path, the build time and the seconds are normalized; `gallery.json`'s ten `commit`s equal; the clone dirs `.work/click …` → `.work/pallets/click …` the one visible change |
+| the floor | 528 passed, 3 skipped (+3: `repo_of`/`clone_dir` on urls, ssh, paths, sr.ht's `~owner`, a GitLab group path, a token url, and every `.`/`..`/`.git` shape refused; the origin refusal proven on a real `git init` + `git clone`, the spelling fold reusing; git refusing to read a standing clone named by its reason); the workflow's comment step re-run as bash against the `--out` page; `WORKFLOWS OK` |
+| the tenant | graphy rebuilt, six arm regions re-rendered (the walk gained `repo_of` · `clone_dir` · `_parse` · `_same_repo` · `_shown`), `ARMS OK: 6 arm(s) match the walk` |
+| the constraints | `BURDEN OK` (wheel 285,468 → 286,542 B); `CENSUS OK`; `MEASURE DIFF OK: 41 number(s) moved, none the wrong way past tolerance` (a first diff read quickstart httpx +21 % while the gallery built beside it — alone, inside tolerance; the clone is the network's); the gate `GRAPHY_STANDALONE_OK` |
+| the review, `/code-review medium` | eight findings, every one fixed: the workflow's page path moved under the key while the job installs the PyPI release whose clone still lands at `<work>/<name>` — every issue showcase would have posted an empty refusal until a release shipped (fixed by `--out`: the workflow reads the page where it asked for it and carries no copy of the key); `.`, `..` and `.git` admitted as a segment, so `https://github.com/pallets/..` cloned into `--work` itself (refused by name); the origin fold narrower than the key, so a clone made over ssh was refused against its https spelling and a token url was echoed verbatim (one parse decides both, userinfo never shown); sr.ht's `~owner` refused (admitted); GitLab nested groups colliding on the last two segments (the owner is the whole group path); gallery's fallback catching only `ModuleNotFoundError`, so an installed engine older than the key died on a traceback (an `ImportError` with `graphy` already imported is `GALLERY REFUSED` naming the stale engine, proven by a stub module); the `--work` help text still saying `<name>`; git's exit on the origin read ignored, dubious ownership reported as `<no origin>` (git's reason, when its exit is neither 0 nor 1). A single-segment self-hosted remote (`https://git.example.com/click.git`) now refuses where it once cloned — accepted: a key needs an owner, and the refusal names the shape |

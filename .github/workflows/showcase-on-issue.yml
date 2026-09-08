@@ -30,7 +30,7 @@ jobs:
         run: |
           urls=$(printf '%s' "$BODY" | grep -oE 'https://(github\.com|gitlab\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?' | sed 's/\.git$//' | sort -u)
           n=$(printf '%s\n' "$urls" | grep -c . || true)
-          if [ "$n" -ne 1 ]; then echo "no single repo url in the issue ($n found) — nothing to showcase"; else echo "url=$urls" >> "$GITHUB_OUTPUT"; echo "name=$(basename "$urls")" >> "$GITHUB_OUTPUT"; fi
+          if [ "$n" -ne 1 ]; then echo "no single repo url in the issue ($n found) — nothing to showcase"; else echo "url=$urls" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-python@v5
         if: steps.url.outputs.url != ''
         with:
@@ -44,13 +44,12 @@ jobs:
         if: steps.url.outputs.url != ''
         env:
           URL: ${{ steps.url.outputs.url }}
-          NAME: ${{ steps.url.outputs.name }}
         run: |
           set +e
-          timeout 900 graphy showcase "$URL.git" --work "$RUNNER_TEMP/showcase" --no-provision > "$RUNNER_TEMP/showcase.log" 2>&1
+          timeout 900 graphy showcase "$URL.git" --work "$RUNNER_TEMP/showcase" --out "$RUNNER_TEMP/page" --no-provision > "$RUNNER_TEMP/showcase.log" 2>&1
           rc=$?
           echo "rc=$rc"
-          page="$RUNNER_TEMP/showcase/$NAME/.graphy/showcase/showcase.txt"
+          page="$RUNNER_TEMP/page/showcase.txt"       # --out names the page; the clone's key is the engine's alone (graphyos #58)
           body="$RUNNER_TEMP/body.txt"
           if [ "$rc" -eq 0 ] && [ -f "$page" ]; then
             head -c 60000 "$page" > "$body"

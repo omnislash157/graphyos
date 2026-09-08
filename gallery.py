@@ -24,9 +24,19 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from graphy.showcase import clone_dir, repo_of   # one parse: the slug and the clone dir come from it (graphyos #58)
+except ImportError as exc:
+    if "graphy" in sys.modules:                      # a graphy is on the path and it predates the key: say so, never guess
+        sys.stderr.write(f"GALLERY REFUSED: the graphy on the path has no showcase.repo_of ({exc}) — "
+                         f"the gallery runs on the engine from this checkout (bash gallery.sh)\n")
+        sys.exit(2)
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "engine"))   # no graphy at all: this checkout's engine
+    from graphy.showcase import clone_dir, repo_of
+
 PAGE = "index.html"
 TEXT = "showcase.txt"
-_URL = re.compile(r"^https://(github\.com|gitlab\.com)/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(\.git)?/?$")
+_URL = re.compile(r"^https://(github\.com|gitlab\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?(\.git)?/?$")
 _ARM = re.compile(r"^  (\S+)\s+(crown|the floor)\s")
 _RING = re.compile(r"^THE RING: (\d+) package\(s\) minted beside (\S+)")
 _OK = re.compile(r"^SHOWCASE OK: (\S+) · (\d+) arm\(s\) \(([^)]*)\) · (\d+) ring shard\(s\) · CHECK (GREEN|RED[^·]*) · ([\d.]+)s")
@@ -38,10 +48,9 @@ class GalleryError(Exception):
 
 def slug_of(url: str) -> tuple[str, str]:
     """(slug, 'owner/name') from a github or gitlab https url; anything else refuses."""
-    m = _URL.match(url.strip())
-    if not m:
+    if not _URL.match(url.strip()):
         raise GalleryError(f"not a github.com or gitlab.com repo url: {url!r}")
-    owner, name = m.group(2), m.group(3)
+    owner, name = repo_of(url)
     return re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-") or "repo", f"{owner}/{name}"
 
 
@@ -76,7 +85,7 @@ def _run_showcase(graphy: list[str], url: str, out: Path, work: Path, log) -> di
                 lines[-1] if lines else f"SHOWCASE exited {proc.returncode} with no SHOWCASE line")
     entry = {"url": url, "repo": full, "slug": slug, "line": last, "rc": proc.returncode,
              "seconds": round(time.perf_counter() - t0, 1), "commit": None, "check": None, "arms": [], "ring": None}
-    clone = work / Path(url.rstrip("/")).name.removesuffix(".git")
+    clone = clone_dir(work, url)                     # the same key the showcase clones under (graphyos #58)
     if (clone / ".git").is_dir():
         head = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], capture_output=True, text=True)
         entry["commit"] = head.stdout.strip() or None
@@ -164,12 +173,12 @@ def build(out: str | Path, urls: list[str], *, graphy: list[str] | None = None, 
     seen: dict[str, str] = {}
     for u in urls:
         slug, full = slug_of(u)                      # every url refused before any clone
-        if slug in seen:                             # two repos of one name would share a clone and a page —
-            raise GalleryError(f"two urls share the slug {slug!r}: {seen[slug]} and {full}")   # a race side by side
+        if slug in seen:                             # two urls of one slug would share a page dir (the clone is
+            raise GalleryError(f"two urls share the slug {slug!r}: {seen[slug]} and {full}")   # keyed on owner too, #58)
         seen[slug] = full
     t0 = time.perf_counter()
     # The showcases run side by side (graphyos #55): each is its own subprocess with its own clone under
-    # .work/<name> and its own --out, and more than half of a sequential build was the parent waiting on
+    # .work/<owner>/<name> and its own --out, and more than half of a sequential build was the parent waiting on
     # one `git clone` at a time. `map` hands the pages back in url order, so the index, the receipt and
     # `green` are the sequential build's byte for byte; only the log lines interleave.
     width = jobs_for(len(urls), jobs)
