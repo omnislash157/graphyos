@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """gallery — ten showcases of repos people know, one index, one receipt (graphyos #47).
 
-    python3 gallery.py <out dir> <git url>…        (bash gallery.sh does the same with the project's venv)
+    python3 gallery.py [--jobs N] <out dir> <git url>…   (bash gallery.sh does the same with the project's venv)
 
 For every url: `graphy showcase <url> --no-provision --work <out>/.work --out <out>/<slug>/` — the clone is
 shallow, nothing of the stranger's repo executes. Then `<out>/index.html`, the list of pages with each
@@ -145,18 +145,18 @@ pip install 'graphyos[typescript]' &amp;&amp; graphy showcase https://github.com
 """
 
 
-def jobs_for(n: int) -> int:
-    """How many showcases run at once: every core, never more than the urls, `GALLERY_JOBS` overrides
-    (a box that must stay quiet says 1); a value that is not a positive integer is refused by name."""
-    raw = os.environ.get("GALLERY_JOBS")
+def jobs_for(n: int, jobs: int | None = None) -> int:
+    """How many showcases run at once: `jobs` when given (`--jobs N`), else `GALLERY_JOBS`, else every core —
+    never more than the urls, never fewer than 1. A value that is not a count is refused by name."""
+    raw = os.environ.get("GALLERY_JOBS") if jobs is None else str(jobs)
     if raw is None:
         return max(1, min(n, os.cpu_count() or 2))
-    if not raw.isdigit() or int(raw) < 1:
-        raise GalleryError(f"GALLERY_JOBS must be a positive integer, not {raw!r}")
+    if not re.fullmatch(r"[0-9]+", raw) or int(raw) < 1:
+        raise GalleryError(f"jobs must be a positive integer, not {raw!r} (--jobs N or GALLERY_JOBS)")
     return max(1, min(n, int(raw)))
 
 
-def build(out: str | Path, urls: list[str], *, graphy: list[str] | None = None, log=print) -> dict:
+def build(out: str | Path, urls: list[str], *, graphy: list[str] | None = None, log=print, jobs: int | None = None) -> dict:
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     work = out / ".work"
@@ -172,8 +172,12 @@ def build(out: str | Path, urls: list[str], *, graphy: list[str] | None = None, 
     # .work/<name> and its own --out, and more than half of a sequential build was the parent waiting on
     # one `git clone` at a time. `map` hands the pages back in url order, so the index, the receipt and
     # `green` are the sequential build's byte for byte; only the log lines interleave.
-    with ThreadPoolExecutor(max_workers=jobs_for(len(urls))) as pool:
-        pages = list(pool.map(lambda u: _run_showcase(graphy, u, out, work, log), urls))
+    width = jobs_for(len(urls), jobs)
+    if width == 1:                                   # one job is the old build, literally: no pool, no threads
+        pages = [_run_showcase(graphy, u, out, work, log) for u in urls]
+    else:
+        with ThreadPoolExecutor(max_workers=width) as pool:
+            pages = list(pool.map(lambda u: _run_showcase(graphy, u, out, work, log), urls))
     from graphy import __version__ as engine
     green = [p for p in pages if p["rc"] == 0 and p["check"] == []]
     mcp = ""
@@ -183,7 +187,9 @@ def build(out: str | Path, urls: list[str], *, graphy: list[str] | None = None, 
             break
     built_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     (out / PAGE).write_text(compose_index(pages, built_at=built_at, engine=engine, mcp=mcp), encoding="utf-8")
-    receipt = {"built_at": built_at, "engine": engine, "seconds": round(time.perf_counter() - t0, 1),
+    # `seconds` is the build's wall; `jobs` says how many pages ran at once, so two receipts can be told
+    # apart — each page's own `seconds` is its wall while the others ran beside it.
+    receipt = {"built_at": built_at, "engine": engine, "seconds": round(time.perf_counter() - t0, 1), "jobs": width,
                "pages": pages, "green": [p["slug"] for p in green],
                "left_out": [{"repo": p["repo"], "line": p["line"], "check": p["check"]} for p in pages if p not in green]}
     (out / "gallery.json").write_text(json.dumps(receipt, indent=1) + "\n", encoding="utf-8")
@@ -192,11 +198,17 @@ def build(out: str | Path, urls: list[str], *, graphy: list[str] | None = None, 
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    jobs: int | None = None
+    if argv[:1] == ["--jobs"]:                       # --jobs N, before the out dir; GALLERY_JOBS is the other door
+        if len(argv) < 2 or not re.fullmatch(r"[0-9]+", argv[1]) or int(argv[1]) < 1:
+            print(f"GALLERY REFUSED: --jobs must be a positive integer, not {argv[1] if len(argv) > 1 else ''!r}", file=sys.stderr)
+            return 2
+        jobs, argv = int(argv[1]), argv[2:]
     if len(argv) < 2:
-        print("GALLERY REFUSED: python3 gallery.py <out dir> <git url>…", file=sys.stderr)
+        print("GALLERY REFUSED: python3 gallery.py [--jobs N] <out dir> <git url>…", file=sys.stderr)
         return 2
     try:
-        r = build(argv[0], argv[1:])
+        r = build(argv[0], argv[1:], jobs=jobs)
     except GalleryError as exc:
         print(f"GALLERY REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -204,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     for p in r["left_out"]:
         print(f"GALLERY LEFT OUT: {p['repo']} — {p['line']}" + (f" — check: {'; '.join(p['check'])}" if p["check"] else ""))
     print(f"GALLERY OK: {len(r['green'])} page(s) of {len(r['pages'])} checked green -> {out / PAGE} · "
-          f"{len(r['left_out'])} left out · receipt {out / 'gallery.json'} · {r['seconds']}s")
+          f"{len(r['left_out'])} left out · receipt {out / 'gallery.json'} · {r['seconds']}s · {r['jobs']} job(s)")
     return 0 if r["green"] and not r["left_out"] else 1
 
 

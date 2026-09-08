@@ -4494,7 +4494,9 @@ the same test fail on the wall — the red proof.
 
 ```bash
 rm -rf /tmp/graphy-gallery-55 && /usr/bin/time -f 'wall %e s' bash gallery.sh /tmp/graphy-gallery-55 $(cat gallery.txt) 2>&1 | grep -E '^GALLERY OK|^wall'
-python3 burden.py | tail -1 · python3 measure.py diff recon.before55.json recon.json | tail -1 · bash standalone_check.sh | tail -1
+python3 burden.py | tail -1
+python3 measure.py diff recon.before55.json recon.json | tail -1
+bash standalone_check.sh | tail -1
 docker build -t graphy-gallery:55 . && docker run --rm graphy-gallery:55 python3 -c "import json; print(json.load(open('/site/gallery.json'))['seconds'])"
 ```
 
@@ -4503,9 +4505,11 @@ docker build -t graphy-gallery:55 . && docker run --rm graphy-gallery:55 python3
 | before → after, this box | `wall 11.29 s` → `wall 2.92 s` (the receipt 11.3 → 2.9; the slowest page 2.5 s is the floor of the lane); rss 53 MB unchanged; cpu user 5.1 → 5.9 s |
 | the same answer | the ten pages' `index.html` and `showcase.txt` against the sequential build: 0 of 20 differ once the out-directory path (the MCP block names it) and the per-page seconds are normalized; the receipt's pages identical but `seconds`; `green` identical and in url order |
 | inside the image | `docker build` 17.3 s on this box (cached layers); `/site/gallery.json` says 2.6 s for 10 green pages (§87: 12.3 s); the container serves the index 200 |
+| on Railway | the push of graphyos 825885e redeployed: `https://graphy-os.com/gallery.json` says built 18:27 UTC, 4.1 s for 10 green pages on 0.2.3 — the deploy before it (17:51 UTC, sequential) read 16.8 s on Railway's builder. Re-derive: `curl -s https://graphy-os.com/gallery.json \| python3 -c "import json,sys; r=json.load(sys.stdin); print(r['built_at'], r['seconds'])"` |
 | the constraints | `BURDEN OK` with `burden.json` unchanged (`concurrent.futures` is stdlib); the same ten clones and nothing else fetched; `MEASURE DIFF OK: 7 number(s) moved, none the wrong way past tolerance` — the before re-pinned on the pre-change tree in the same hour (`git stash` · `measure.py run --quick --out recon.before55.json` · pop), since the first pin was a stale 16:41 receipt and the box reads 20% slower this hour on every hot frame |
-| the review's one finding | two urls of one repo name (a/click and b/click) shared `.work/click` and the page directory — a silent overwrite in sequence, a race side by side; `build` now refuses the pair by name before any clone (`GALLERY REFUSED: two urls share the slug 'click': a/click and b/click`, exit 2), with a test that proves the runner never starts |
-| the floor | 525 passed, 3 skipped (+2); the pool test green three runs in a row, red under `GALLERY_JOBS=1` |
+| the review, `/code-review medium` | seven findings, every one fixed or refused by name. **Confirmed, the cause of a red CI run (34263086102):** the pool test asserted three starts within 50 ms, which holds only with three cores and no `GALLERY_JOBS` in the inherited environment — the runner has two; now the width is handed in (`build(…, jobs=3)`, `--jobs N` at the CLI, `GALLERY_JOBS` the other door, an explicit argument wins), the overlap is proven by a `threading.Barrier(3)` every fake waits at — a sequential build would break it — and the test passes under `GALLERY_JOBS=1 taskset -c 0,1`. The 40 ms stopwatch bound: gone with it. `os.cpu_count()` as the width inside a builder with a quota: the Dockerfile pins `--jobs 4` (the lane waits on clones, not cores) — 4.4 s on this box, 4.3 s inside the image. The receipt carries `jobs`, and `jobs == 1` runs the old list comprehension, no pool. `str.isdigit` admitting `'²'` (a traceback, not a refusal): `re.fullmatch('[0-9]+')`, proven at the CLI. The re-derive fence joined by ` · `: three lines. **Refused by name, filed:** the clone keyed on the bare repo name and reused without an origin check is `showcase._clone`, an engine change outside this issue's blast radius — graphyos #58 |
+| the pre-review finding | two urls of one repo name (a/click and b/click) shared `.work/click` and the page directory — a silent overwrite in sequence, a race side by side; `build` now refuses the pair by name before any clone (`GALLERY REFUSED: two urls share the slug 'click': a/click and b/click`, exit 2), with a test that proves the runner never starts |
+| the floor | 525 passed, 3 skipped (+2); the barrier test green on two cores under `GALLERY_JOBS=1` |
 | the gate | `GRAPHY_STANDALONE_OK`, `BURDEN OK`, `WORKFLOWS OK` |
 
 ## 91 · THE MARKETPLACE — the repo is its own Claude Code marketplace; `claude plugin marketplace add omnislash157/graphyos` · `claude plugin install graphy@graphyos`, proven end to end from this box (2026-09-08 · graphyos issue 56)

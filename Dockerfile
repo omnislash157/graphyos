@@ -9,7 +9,8 @@ WORKDIR /src
 COPY engine /src/engine
 RUN pip install --no-cache-dir -q "/src/engine[typescript]"
 COPY gallery.py gallery.sh gallery.txt /src/
-RUN bash gallery.sh /site $(cat gallery.txt) && rm -rf /site/.work
+# --jobs 4: the lane waits on clones, not cores (RECON §90); the builder's core count and memory cap are not this repo's to read
+RUN bash gallery.sh --jobs 4 /site $(cat gallery.txt) && rm -rf /site/.work
 ENV PORT=8080
 EXPOSE 8080
 CMD ["sh", "-c", "exec python3 -m http.server \"${PORT:-8080}\" --directory /site --bind 0.0.0.0"]

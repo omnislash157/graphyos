@@ -106,42 +106,60 @@ def test_build_refuses_two_urls_of_one_slug_before_any_clone(tmp_path, monkeypat
 
 
 def test_build_runs_the_showcases_side_by_side_and_keeps_url_order(tmp_path, monkeypatch):
-    """graphyos #55: the pages come back in url order even when the first url is the slowest, the
-    showcases overlap in time, and GALLERY_JOBS bounds them — refused by name when it is not a count.
-    The showcase runner is replaced in-process (a sleep per slug), so the floor pays 0.12 s, not a clone."""
-    delay = {"slow": 0.12, "mid": 0.06, "fast": 0.0}
-    starts: dict[str, float] = {}
+    """graphyos #55: with jobs=3 the three showcases are in flight at once — every fake waits at a barrier
+    that only opens when all three have arrived, so a sequential build would hang at the timeout and fail —
+    and the pages still come back in url order. The width is handed in, never read from the box: the
+    review's finding was a two-core runner and an inherited GALLERY_JOBS turning this red. jobs=1 is the
+    old build, literally; a width that is not a count is refused by name."""
+    import threading
+    gate = threading.Barrier(3, timeout=2.0)
+    order: list[str] = []
 
     def fake_run(graphy, url, out, work, log):
         slug = url.rsplit("/", 1)[-1].removesuffix(".git")
-        starts[slug] = time.perf_counter()
-        time.sleep(delay[slug])
+        gate.wait()                                  # BrokenBarrierError after 2 s if fewer than 3 ran together
+        order.append(slug)
         (out / slug).mkdir(parents=True, exist_ok=True)
         (out / slug / "showcase.txt").write_text(TEXT, encoding="utf-8")
         return {"url": url, "repo": f"a/{slug}", "slug": slug, "line": f"SHOWCASE OK: {slug} · 0 arm(s) () · 0 ring shard(s) · CHECK GREEN · 0.1s",
-                "rc": 0, "seconds": delay[slug], "commit": None, "check": [], "arms": [], "ring": None, "package": slug}
+                "rc": 0, "seconds": 0.0, "commit": None, "check": [], "arms": [], "ring": None, "package": slug}
 
     monkeypatch.setattr(gallery, "_run_showcase", fake_run)
+    monkeypatch.setenv("GALLERY_JOBS", "1")          # the box's env must not decide: jobs= wins
     urls = ["https://github.com/a/slow.git", "https://github.com/a/mid.git", "https://github.com/a/fast.git"]
-    t0 = time.perf_counter()
-    r = gallery.build(tmp_path / "site", urls, graphy=["never-run"], log=lambda s: None)
-    wall = time.perf_counter() - t0
-    assert [p["slug"] for p in r["pages"]] == ["slow", "mid", "fast"] == r["green"]
-    assert wall < 0.16, wall                       # sequential would be ≥ 0.18 s: they overlapped
-    assert max(starts.values()) - min(starts.values()) < 0.05   # all three started before the slow one finished
-    assert 'href="slow/index.html"' in (tmp_path / "site" / "index.html").read_text()
-    monkeypatch.setenv("GALLERY_JOBS", "1")
-    assert gallery.jobs_for(3) == 1
-    monkeypatch.setenv("GALLERY_JOBS", "zero")
-    with pytest.raises(gallery.GalleryError, match="GALLERY_JOBS must be a positive integer"):
-        gallery.jobs_for(3)
+    r = gallery.build(tmp_path / "site", urls, graphy=["never-run"], log=lambda s: None, jobs=3)
+    assert [p["slug"] for p in r["pages"]] == ["slow", "mid", "fast"] == r["green"] and sorted(order) == ["fast", "mid", "slow"]
+    assert r["jobs"] == 3 and 'href="slow/index.html"' in (tmp_path / "site" / "index.html").read_text()
+    # jobs=1: no pool — the barrier never fills, so the first fake times out; prove it by a fake that records
+    gate2 = threading.Barrier(3, timeout=0.3)
+    seen: list[str] = []
+
+    def fake_seq(graphy, url, out, work, log):
+        seen.append(url)
+        with pytest.raises(threading.BrokenBarrierError):
+            gate2.wait()
+        return {"url": url, "repo": url, "slug": url.rsplit("/", 1)[-1].removesuffix(".git"), "line": "SHOWCASE REFUSED: x",
+                "rc": 2, "seconds": 0.0, "commit": None, "check": None, "arms": [], "ring": None}
+    monkeypatch.setattr(gallery, "_run_showcase", fake_seq)
+    r1 = gallery.build(tmp_path / "seq", urls[:1], graphy=["never-run"], log=lambda s: None, jobs=1)
+    assert r1["jobs"] == 1 and seen == urls[:1]
+    # the width's rules
     monkeypatch.delenv("GALLERY_JOBS")
-    assert 1 <= gallery.jobs_for(3) <= 3 and gallery.jobs_for(0) == 1
+    assert gallery.jobs_for(3, 1) == 1 and gallery.jobs_for(3, 8) == 3 and 1 <= gallery.jobs_for(3) <= 3 and gallery.jobs_for(0) == 1
+    monkeypatch.setenv("GALLERY_JOBS", "2")
+    assert gallery.jobs_for(3) == 2 and gallery.jobs_for(3, 3) == 3
+    for bad in ("zero", "0", "²", "-1"):
+        monkeypatch.setenv("GALLERY_JOBS", bad)
+        with pytest.raises(gallery.GalleryError, match="jobs must be a positive integer"):
+            gallery.jobs_for(3)
 
 
 def test_cli_refuses_without_two_arguments_and_a_bad_url_before_any_clone(tmp_path):
     proc = subprocess.run([sys.executable, str(ROOT / "gallery.py"), str(tmp_path)], capture_output=True, text=True)
-    assert proc.returncode == 2 and proc.stderr.startswith("GALLERY REFUSED: python3 gallery.py <out dir>")
+    assert proc.returncode == 2 and proc.stderr.startswith("GALLERY REFUSED: python3 gallery.py [--jobs N] <out dir>")
+    proc = subprocess.run([sys.executable, str(ROOT / "gallery.py"), "--jobs", "²", str(tmp_path), "https://github.com/ok/ok.git"],
+                          capture_output=True, text=True)
+    assert proc.returncode == 2 and proc.stderr.startswith("GALLERY REFUSED: --jobs must be a positive integer, not '²'")
     proc = subprocess.run([sys.executable, str(ROOT / "gallery.py"), str(tmp_path), "https://github.com/ok/ok.git", "ftp://nope"],
                           capture_output=True, text=True)
     assert proc.returncode == 2 and "not a github.com or gitlab.com repo url: 'ftp://nope'" in proc.stderr
