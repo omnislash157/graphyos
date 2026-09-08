@@ -4467,6 +4467,6 @@ python3 -c "import urllib.request, json; d=json.load(urllib.request.urlopen('htt
 | the wheel | `graphyos-0.2.3-py3-none-any.whl` METADATA line 291 is the marker; twine check PASSED both |
 | the registry's validator | `mcp-publisher validate` (v1.8.1, installed at `~/.local/bin` from the release tarball, linux amd64) → `✅ server.json is valid`; before the cut, 422 on the description |
 | the floor | 523 passed, 3 skipped in 9.2 s under `.venv` (unchanged: the manifest test gained two assertions, no new test); the system `python3` without the extras reads 508 passed, 14 skipped — every skip names duckdb, tree-sitter or the corpus venv by name |
-| the tag's run | TAG_RUN_ROW |
-| PyPI | PYPI_ROW |
+| the tag's run | `v0.2.3` on graphyos abf4aaa (private 8df3b09): release run 34259552202 — build success · publish success by trusted publishing |
+| PyPI | answers `0.2.3` within a minute of the publish (17:52 UTC) and its description carries `mcp-name: io.github.omnislash157/graphyos` → `0.2.3 True`; 0.2.2 read `False` fifteen seconds earlier |
 | the hold | `mcp-publisher login github` (a browser OAuth on the operator's GitHub) then `mcp-publisher publish` from the public checkout — the operator's step; every mechanical door before it is green |
