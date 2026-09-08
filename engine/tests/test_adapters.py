@@ -24,10 +24,15 @@ FASTAPI = HERE / "fixtures" / "fastapi_graph"
 GRAPHOS = HERE.parent
 
 
+@pytest.fixture(scope="module")
+def engine_ir():
+    """The engine's own package minted once for the module: three tests read the same mint, which
+    cost the floor a second apiece when each minted it again (graphyos #61)."""
+    return build_ast(str(GRAPHOS / "graphy"))
 
 
-def test_python_ast_ingests_two_corpora_and_anchors_source():
-    ast_n, ast_e = build_ast(str(GRAPHOS / "graphy"))
+def test_python_ast_ingests_two_corpora_and_anchors_source(engine_ir):
+    ast_n, ast_e = engine_ir
     alt_n, alt_e = build_ast(str(CORPUS))
     assert ast_n != alt_n, "python-ast returned identical nodes for different corpora"
     assert any("resolve_graph" in str(x.get("id", "")) for x in ast_n), \
@@ -36,13 +41,13 @@ def test_python_ast_ingests_two_corpora_and_anchors_source():
         "no source-derived anchor: the lightning corpus defines resolve_widget"
 
 
-def test_python_ast_validates_under_own_vocabulary():
-    ast_n, ast_e = build_ast(str(GRAPHOS / "graphy"))
+def test_python_ast_validates_under_own_vocabulary(engine_ir):
+    ast_n, ast_e = engine_ir
     assert validate_graph(ast_n, ast_e, PYTHON_AST_VOCABULARY) > 0
 
 
-def test_python_ast_refused_under_foreign_vocabulary():
-    ast_n, ast_e = build_ast(str(GRAPHOS / "graphy"))
+def test_python_ast_refused_under_foreign_vocabulary(engine_ir):
+    ast_n, ast_e = engine_ir
     with pytest.raises(IRError):
         validate_graph(ast_n, ast_e, OUTLINE_VOCABULARY)
 

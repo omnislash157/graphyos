@@ -4786,3 +4786,68 @@ python3 measure.py diff recon.before60.json recon.json | grep -E 'network|MEASUR
 | the floor | 544 passed, 3 skipped (+8: the hunt's window and exchange over a synthetic archive with a header-less note and a nested file that are never sessions; the story over a fake store — time order, the hottest of two captures speaking for one session, the numbers against the receipt before it, an unmatched session named; a store with no history shard refused by name; commits ordered by the instant, not the string; an undated receipt nobody's before; the refusals, one mode per call; cold under a second over this tenant; the MCP table; +1 on `measure.diff`: the floor, the network tag and `mint_seconds` judged) |
 | the constraints | `BURDEN OK` (wheel 294,097 → 299,820 B); `CENSUS OK`; `MEASURE DIFF OK: 42 number(s) moved, none the wrong way past tolerance` (the sixth run on this tree; the four before the review above, one after it red on the flip); the gate `GRAPHY_STANDALONE_OK`; bloodhound's own output unchanged — its module untouched |
 | the review, `/code-review medium` | eight findings, every one fixed: a session captured twice rendered twice with its fan-out doubled (one node, the hottest capture speaks — `bloodhound` alone: 5 files, 4 sessions); a store with no history shard answered `0 hold both` and a remedy that cannot mint, and the MCP tool over the fastapi tenant hunted this box's archive (refused by name: `this store carries no history shard — mint it …`; the header counts the hit files and the sessions in the shard apart); the hunt enumerated `rglob('*.md')` where the producer mints the top level behind a header gate (the door searches the producer's own files — `read_sessions` — so a hit is always a session the shard can carry); the verb switched modes on the bare term alone, so timeline flags without a term were refused in the mint's words and a stray term beside `--verify` never verified (one mode per call, refused by name when mixed); `eat_seconds` tagged network though the eat's clock spans the mint (`PROVISION OK … (N.Ns)` printed by eat, `mint_seconds` in the receipt, judged; the dead clause gone); commits ordered by the raw `%aI` string, wrong across offsets (the instant); an undated receipt sorting first as everyone's before (excluded); "six tools" in `graphy mcp --help`, the showcase page's MCP block and DOORS.md's prose (the count dropped — a number in an arm's prose) |
+
+## 96 · THE OPTIMIZATION PASS READS 0 — the floor's "hottest engine frame" was the profiler's clock charging `_write_parquet` for duckdb's own threads (self 3.01 s over cumulative 1.76 s: impossible for a real frame); the wall clock says 94 parquet writes cost 182 ms of a 10 s floor; the floor 10.9 → 9.7 s by minting the engine once in the adapter tests (2026-09-08 · graphyos issue 61)
+
+**The number.** The receipt after #58: `pass.engine_hot_lanes` 1, the floor, hottest frame
+`container._write_parquet 3.75 s ENGINE`. Two receipts in one hour then read 1 and 0 on one tree (the
+comment on #61): the number the pass ends on was a coin at its threshold — the before pinned for this issue
+(`recon.before61.json`, the last receipt of #60) itself read 0, with `_write_parquet 3.04 s ENGINE` second
+behind `select.poll` by 0.15 s.
+
+**Two sources.** The receipt's frame, and a wall-clock log of every `_write_parquet` call in the floor (a
+pytest plugin wrapping the function, each call's rows and milliseconds by test): **94 writes, 182 ms** in a
+10.4 s floor — 47 `nodes` and 47 `adj`, none over 5 ms, the container tests 12–15 ms apiece. A single write
+on a fresh connection: connect 7 ms, `read_json` 2–4 ms, `COPY … PARQUET` 1 ms. The two instruments disagreed
+by 16×, and the profile itself said why: `_write_parquet` self time 3.01 s against cumulative time 1.76 s —
+a frame's own time cannot exceed the time of everything under it. DuckDB runs `con.execute` on its own
+thread pool and releases the GIL; cProfile's clock charges the calling frame for the wall time of work it
+never saw. §57 had named the mechanism ("the profiler cannot see pybind11 — its time lands in the caller's
+self time; a lane hot on such a frame is judged by the wall clock, never by the frame"); the receipt had
+not learned it.
+
+**The door.** The fact is narrower than "self over cumulative": a pybind11 call is invisible to cProfile,
+so its wall time lands in the self time of the innermost *engine* frame that made it. Those frames are
+enumerable: `measure.native_boundary()` walks the engine's own source and names every function that calls
+`duckdb.connect`, a connection's `execute`/`sql` in a module that names duckdb (sqlite's `execute` is a
+builtin the profiler sees), or a tree-sitter parser's `parse` (never `ast.parse`) — thirteen frames today,
+`container._write_parquet · emit · emit_all · estate`, `traversal.store_walk · load_walk`,
+`index_estate._load · emit_index · estate_index`, `cli._cmd_estate · _cmd_estate_index`, `gate._cited`,
+`typescript_ast.mint_records`; the floor asserts the set and its refusals (`Spec.parse`, `compile_store`).
+`summarize_profiles` shows such a frame as `NATIVE`, a frame whose self time exceeds its cumulative past
+rounding as `ARTIFACT` (threads under the clock), and judges the lane — `stdlib_hot`, and `judged_on`
+names the frame — on its hottest frame over the whole profile that is neither; a lane with no such frame
+is `null` and `pass.unjudged`, never a verdict that ends the pass. The review's first cut of this rule
+(self over cumulative alone, judged inside the top three) is what the review found: an all-artifact lane
+judged on nothing, honest thread-pool frames hidden, `emit`'s inflated self time passing as honest. The
+floor's judged frame is `posix.fsync` / `select.poll` — the stdlib's, the stores' durability and the
+subprocess waits — so `engine_hot_lanes` reads **0** and stays there across runs.
+
+**The floor, made cheaper on the way.** The three python_ast tests in `test_adapters.py` each minted the
+whole engine package (72 files): 0.35 · 0.34 · 0.33 s apiece by `--durations` unprofiled, ~1 s apiece under
+the profiler, which triples Python-heavy work. One module-scoped mint serves all three (0.34 s of setup
+once, then 0.03 s a test): A/B on the wall clock, `pytest -q` three times each on one box in one
+sitting — HEAD 12.15 · 12.20 · 12.57 s, this tree 9.76 · 11.31 · 9.90 s; the receipt's own floor read 9.7,
+12.2 and 11.6 s on three runs of this tree against a before of 10.9 — the receipt's floor is a noisy
+instrument at ±15 %, the A/B by hand is the one that resolves a two-second move. The floor's answer is
+the same: 546 passed, 3 skipped.
+
+**Found on the way, on the board.** In the profiled run `posix.fsync` reads 7.3 s of self time across
+the floor — 99 `compile_store`s and their `_sync_then_replace`, each paying durability for a store a test
+throws away: graphyos #62, with the re-derive and a done block.
+
+```bash
+cd engine && ../.venv/bin/python -m cProfile -o /tmp/tc.prof -m pytest -q -p no:cacheprovider tests/test_container.py && ../.venv/bin/python -c "import pstats; st=pstats.Stats('/tmp/tc.prof'); [print(k[2], 'self', round(v[2],2), 'cum', round(v[3],2)) for k,v in st.stats.items() if k[2]=='_write_parquet']"
+cd engine && for i in 1 2; do /usr/bin/time -f 'floor wall %e s' ../.venv/bin/python -m pytest -q -p no:cacheprovider 2>&1 | grep wall; done
+python3 measure.py run --out recon.json | tail -1 && python3 -c "import json; r=json.load(open('recon.json')); print(r['pass']['engine_hot_lanes'], r['floor']['seconds'], r['floor']['hot'])"
+python3 measure.py diff recon.before61.json recon.json | tail -1
+```
+
+| check | result |
+|---|---|
+| the artifact, two sources | the profile: `_write_parquet ncalls 11 self 1.613 cum 0.541` over `test_container.py` alone, `62 self 3.01 cum 1.76` over the floor; the wall log: 94 writes, 182 ms, the largest 4.9 ms (12 rows) |
+| the pass | `engine_hot_lanes` 1 → **0**, `unjudged` empty; the floor's `hot`: `posix.fsync`, `select.poll`, `container._write_parquet … ENGINE NATIVE` — the native frame shown, `judged_on` the stdlib frame |
+| the floor | A/B by hand, three each: HEAD 12.15 · 12.20 · 12.57 s → 9.76 · 11.31 · 9.90 s; the receipt's floor 9.7 · 12.2 · 11.6 against 10.9 before (inside tolerance each way — noise, named); 546 passed, 3 skipped (+2: the boundary derived from the source, and a lane judged past it — null when nothing is left) |
+| blast radius, before the edit | `blast container._write_parquet --depth 2`: `emit` · `emit_all` · `traversal.store_walk` and their tests — none touched: the engine's bytes are unchanged; the edit is the instrument and one test module |
+| the constraints | `BURDEN OK` (`burden.json` unchanged; the wheel 299,820 → 299,851 B is #60's last commit, `cli.py`'s import move, landing in this issue's before/after — neither the test module nor `measure.py` ships in the wheel); `CENSUS OK`; `MEASURE DIFF OK`; the gate `GRAPHY_STANDALONE_OK`; `container.py`'s bytes unchanged |
+| the review, `/code-review medium` | eight findings, every one fixed: the artifact rule judged inside the top three and fell through to a verdict on an all-artifact lane (the boundary is now named from the source, the judgement runs over the whole profile, nothing left is `null` and `unjudged`); self-over-cumulative is true of any thread-pool lane, hiding honest frames (the rule is the native boundary; the clock artifact is a label only); a boundary frame's caller inflated the same way (`emit` calls `duckdb.connect` itself and is in the set); the fsync finding kept as prose (graphyos #62); the wheel's 31 bytes attributed to a docstring not in the wheel (cli.py, #60's last commit); "~0.95 s apiece, the three slowest" was the profiler's number (0.35 s unprofiled, third to fifth); `measure.py`'s docstring still defining the old rule (rewritten); dead imports and a hand-copied threshold in the test (gone) |

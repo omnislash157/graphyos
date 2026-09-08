@@ -166,3 +166,42 @@ def test_GREEN_adoption_names_a_source_that_does_not_answer_never_a_zero(tmp_pat
     assert a["stars"]["value"] is None and "down" in a["stars"]["note"] and a["pypi"]["value"] is None
     # the run receipt never carries the key, so diff over two runs never sees it
     assert "adoption" not in measure.flatten({"floor": {"passed": 1}}) and "adoption" not in measure.BETTER
+
+
+def test_GREEN_the_native_boundary_is_derived_from_the_engines_source():
+    """graphyos #61: the engine frames that call straight into duckdb or tree-sitter — the profiler
+    cannot see those calls and charges their time to the calling frame."""
+    b = measure.native_boundary()
+    assert ("container.py", "_write_parquet") in b and ("container.py", "emit") in b and ("container.py", "emit_all") in b
+    assert ("traversal.py", "store_walk") in b and ("index_estate.py", "estate_index") in b or ("index_estate.py", "emit_index") in b
+    assert ("typescript_ast.py", "mint_records") in b and ("gate.py", "_cited") in b
+    assert not any(f == "python_ast.py" for f, _ in b), "ast.parse is a builtin the profiler sees"
+    assert not any(f == "farm.py" for f, _ in b), "Spec.parse is the engine's own"
+    assert ("cli.py", "main") not in b and ("federated_store.py", "compile_store") not in b, "sqlite's execute is visible"
+
+
+def test_GREEN_a_lane_is_judged_on_its_hottest_frame_past_the_native_boundary_and_the_clock(tmp_path):
+    """The receipt's number: `_write_parquet` at 3 s self over 1.8 s cumulative is duckdb's threads under
+    cProfile's clock — NATIVE by the boundary (and an ARTIFACT by the clock); the lane is judged on the
+    first frame that is neither. No such frame: null, never a verdict that ends the pass."""
+    import marshal
+    wp = (str(measure.ENGINE / "graphy" / "container.py"), 102, "_write_parquet")
+    poll = ("~", 0, "<method 'poll' of 'select.poll' objects>")
+    main = (str(measure.ENGINE / "graphy" / "cli.py"), 1, "main")
+    stats = {wp: (62, 62, 3.01, 1.76, {}), poll: (384, 384, 0.906, 0.9, {}), main: (1, 1, 0.3, 5.0, {})}
+    prof = tmp_path / "floor-1.prof"
+    prof.write_bytes(marshal.dumps(stats))
+    out = measure.summarize_profiles(tmp_path)
+    assert out["hot"][0].endswith("_write_parquet 3.01s  ENGINE  NATIVE"), out["hot"]
+    assert out["stdlib_hot"] is True and out["judged_on"].startswith("~:<method 'poll'"), out
+    stats[poll] = (384, 384, 0.2, 0.2, {})
+    prof.write_bytes(marshal.dumps(stats))
+    out = measure.summarize_profiles(tmp_path)
+    assert out["stdlib_hot"] is False and out["judged_on"].startswith("graphy/cli.py:main"), out
+    # a thread-inflated stdlib frame past the top three is still found; nothing honest is null
+    stats = {wp: (62, 62, 3.01, 1.76, {}), ("~", 0, "<method 'read' of '_io.BufferedReader' objects>"): (9, 9, 0.137, 0.025, {})}
+    prof.write_bytes(marshal.dumps(stats))
+    out = measure.summarize_profiles(tmp_path)
+    assert out["stdlib_hot"] is None and out["judged_on"].startswith("nothing") and "ARTIFACT" in out["hot"][1]
+    r = {"floor": out, "tenants": {}, "quickstart": {}, "index": {}}
+    assert measure.pass_summary(r)["engine_hot_lanes"] == 0 and measure.pass_summary(r)["unjudged"] == ["floor"]

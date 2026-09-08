@@ -13,9 +13,13 @@
 
 Every timed lane also carries `hot` (the three top self-time functions of every graphy verb the lane
 ran, from a second run under GRAPHY_PROFILE_DIR — the timed run is never the profiled one),
-`rss_kb` (the peak resident set of the heaviest verb, and its name), and `stdlib_hot` (true when the
-hottest function is not the engine's). `pass.engine_hot_lanes` counts the lanes whose hottest function
-lives under graphy/: the optimization pass ends when it reads 0. --no-profile skips the second runs.
+`rss_kb` (the peak resident set of the heaviest verb, and its name), `judged_on` (the hottest frame that
+is neither NATIVE — an engine frame calling straight into duckdb or tree-sitter, whose time the profiler
+cannot see and charges to that frame (RECON §96); the set is derived from the engine's own source — nor
+ARTIFACT — self time past cumulative, threads under the clock) and `stdlib_hot` (true when that judged
+frame is not the engine's; null when no frame can be judged). `pass.engine_hot_lanes` counts the lanes
+whose judged frame lives under graphy/, `pass.unjudged` names the rest: the optimization pass ends when
+engine_hot_lanes reads 0. --no-profile skips the second runs.
 
 A number without the command that re-derives it is a lie waiting to happen; this file is the
 commands. The receipt is the before-and-after the improvement gate compares: a change is positive
@@ -102,6 +106,60 @@ def _engine_owned(file: str) -> bool:
     return file.startswith(str(ENGINE / "graphy") + os.sep) or "/site-packages/graphy/" in file
 
 
+_NATIVE_CACHE: dict = {}
+_CONNECTION_NAMES = frozenset({"con", "cur", "conn", "connection", "db"})
+
+
+def _calls_native(fn, *, duckdb_module: bool, tree_sitter_module: bool) -> bool:
+    """Does this function's own body call a pybind11 library: `duckdb.connect(...)`; `<con>.execute(...)` /
+    `<con>.sql(...)` on a connection name, in a module that names duckdb (sqlite's execute is a builtin the
+    profiler sees); a parser's `.parse(...)` in a module that imports tree-sitter (never `ast.parse`)."""
+    import ast as _ast
+    for node in _ast.walk(fn):
+        if not isinstance(node, _ast.Call) or not isinstance(node.func, _ast.Attribute):
+            continue
+        f = node.func
+        if isinstance(f.value, _ast.Name) and f.value.id == "duckdb":
+            return True
+        if duckdb_module and f.attr in ("execute", "sql") and isinstance(f.value, _ast.Name) and f.value.id in _CONNECTION_NAMES:
+            return True
+        if tree_sitter_module and f.attr == "parse" and not (isinstance(f.value, _ast.Name) and f.value.id == "ast"):
+            return True
+    return False
+
+
+def native_boundary(engine: Path | None = None) -> frozenset:
+    """The engine's frames that call into a pybind11 library directly (duckdb, tree-sitter) — as (file
+    basename, function name), derived from the engine's own source on every call and cached per tree. A
+    duckdb connection is named con · cur · conn · connection · db in this engine; a new name is a new rule."""
+    import ast as _ast
+    root = Path(engine or ENGINE / "graphy")
+    if root in _NATIVE_CACHE:
+        return _NATIVE_CACHE[root]
+    found = set()
+    for py in sorted(root.rglob("*.py")):
+        try:
+            src = py.read_text(encoding="utf-8")
+            tree = _ast.parse(src)
+        except (OSError, SyntaxError):
+            continue
+        has_duckdb, has_ts = "duckdb" in src, "tree_sitter" in src
+        for node in _ast.walk(tree):
+            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)) \
+                    and _calls_native(node, duckdb_module=has_duckdb, tree_sitter_module=has_ts):
+                found.add((py.name, node.name))
+    _NATIVE_CACHE[root] = frozenset(found)
+    return _NATIVE_CACHE[root]
+
+
+def _tag(file: str, func: str, tt: float, ct: float, boundary) -> str:
+    if _engine_owned(file) and (Path(file).name, func) in boundary:
+        return "NATIVE"
+    if tt > ct * 1.05 + 0.01:                 # past rounding: a real one is 3.0 s over 1.8
+        return "ARTIFACT"
+    return ""
+
+
 def _fmt_frame(file: str, line: int, func: str, secs: float) -> str:
     owned = _engine_owned(file)
     if owned:
@@ -130,10 +188,18 @@ def summarize_profiles(prof_dir: Path) -> dict:
     if skipped:
         out["unreadable"] = skipped
     if st is not None:
-        rows = sorted(((tt, file, line, func) for (file, line, func), (cc, nc, tt, ct, callers) in st.stats.items()),
-                      reverse=True)[:HOT_N]
-        out["hot"] = [_fmt_frame(f, l, fn, tt) for tt, f, l, fn in rows]
-        out["stdlib_hot"] = not _engine_owned(rows[0][1]) if rows else True
+        # cProfile cannot see a pybind11 call (duckdb, tree-sitter): its wall time lands in the self time
+        # of the innermost engine frame that made it — `container._write_parquet` read 3 s for 182 ms of
+        # writes (RECON §96). Those frames are the native boundary, enumerated from the engine's own
+        # source, shown as NATIVE and never the frame a lane is judged on. A frame whose self time
+        # exceeds its cumulative time (threads under the clock) is shown as ARTIFACT, likewise unjudged.
+        boundary = native_boundary()
+        rows = sorted(((tt, file, line, func, _tag(file, func, tt, ct, boundary))
+                       for (file, line, func), (cc, nc, tt, ct, callers) in st.stats.items()), reverse=True)
+        out["hot"] = [_fmt_frame(f, l, fn, tt) + (f"  {tag}" if tag else "") for tt, f, l, fn, tag in rows[:HOT_N]]
+        honest = [r for r in rows if not r[4]]
+        out["stdlib_hot"] = (not _engine_owned(honest[0][1])) if honest else None
+        out["judged_on"] = _fmt_frame(honest[0][1], honest[0][2], honest[0][3], honest[0][0]) if honest else "nothing — every frame native or artifact"
     if sides:
         top = max(sides, key=lambda r: r.get("rss_kb") or 0)
         out["rss_kb"], out["rss_verb"] = top.get("rss_kb"), top.get("verb")
@@ -247,8 +313,11 @@ def pass_summary(r: dict) -> dict:
     lanes = {"floor": r.get("floor", {}), **{f"tenants.{k}": v for k, v in r.get("tenants", {}).items()},
              **{f"quickstart.{k}": v for k, v in r.get("quickstart", {}).items()}, "index": r.get("index", {})}
     engine_hot = sorted(k for k, v in lanes.items() if v.get("stdlib_hot") is False)
-    return {"engine_hot_lanes": len(engine_hot), "engine_hot": engine_hot,
-            "profiled": bool(PROFILE), "rule": "the pass ends when engine_hot_lanes reads 0"}
+    unjudged = sorted(k for k, v in lanes.items() if "stdlib_hot" in v and v.get("stdlib_hot") is None)
+    return {"engine_hot_lanes": len(engine_hot), "engine_hot": engine_hot, "unjudged": unjudged,
+            "profiled": bool(PROFILE),
+            "rule": "the pass ends when engine_hot_lanes reads 0 — a lane is judged on its hottest frame that is neither "
+                    "a native boundary (a pybind11 call's time, invisible to the profiler) nor a clock artifact"}
 
 
 def run(out: Path, quick: bool, profile: bool = True) -> dict:
