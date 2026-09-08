@@ -67,6 +67,8 @@ CHANGELOG.md          derived from RECON.md by release.sh — a build product th
 .private_markers.sha256  the keyed digests of the words that must not travel (the words live in no tracked file; no wordlist reverses a digest without the key)
 .private_key          gitignored — the scrub's HMAC key, this box only: without it a digest is noise and the sweep says SKIPPED
 .mcp.json             Claude Code's pointer at the FastAPI tenant's MCP server (engine/tenants/fastapi/mcp.sh)
+.claude-plugin/       the Claude Code plugin — the checkout is the plugin: plugin.json runs `graphy mcp --repo "${CLAUDE_PROJECT_DIR}"` over any eaten repo; `claude plugin validate .`
+server.json           the MCP registry entry (io.github.omnislash157/graphyos, PyPI, the same argv); its version is pyproject's — release.sh --check refuses drift
 quickstart.sh         the production proof: clone a repo, eat it, query it, walk it → GRAPHY_QUICKSTART_OK
 .github/workflows/    CI: the floor on 3.10 and 3.12, the gate, the census and the quick receipt on every push; on every PR the blast radius from the walk and the gate (burden + the receipt diffed against the base on the same runner); an opened issue naming a repo url gets its showcase posted back — the showcase job holds no token and no checkout, a second job posts (§71)
 .venv/                gitignored — the project's own interpreter: graphyos[estate] and nothing else

@@ -637,12 +637,63 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
     return 0
 
 
+EAT_HOME = ".graphy"
+
+
+def repo_tenant(repo: str | Path) -> tuple[Path, str]:
+    """The tenant `graphy eat` left under a repo: (<repo>/.graphy/tenant.json, the root package
+    the ring receipt names). Declared by eat, never guessed here — a repo that was not eaten, a
+    descriptor without its ring, or a ring without a root refuses by name (graphyos #49). This is
+    what lets a static manifest (the Claude Code plugin, the MCP registry) address any eaten repo
+    without knowing its package."""
+    from graphy import smash as smash_lane
+    root = Path(repo).expanduser().resolve()
+    desc = root / EAT_HOME / "tenant.json"
+    if not desc.is_file():
+        raise TenantError(f"no tenant at {desc} — run `graphy eat {root}` first")
+    try:
+        data_home = Path(json.loads(desc.read_text(encoding="utf-8"))["data_home"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise TenantError(f"the descriptor at {desc} names no data_home ({type(exc).__name__}: {exc})") from exc
+    ring = data_home / smash_lane.RING_NAME
+    if not ring.is_file():
+        raise TenantError(f"no ring receipt at {ring} beside the tenant — re-run `graphy eat {root}`")
+    try:
+        package = json.loads(ring.read_text(encoding="utf-8"))["root"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise TenantError(f"the ring receipt at {ring} names no root package ({type(exc).__name__}: {exc})") from exc
+    if not isinstance(package, str) or not package.strip():
+        raise TenantError(f"the ring receipt at {ring} names an empty root package")
+    return desc, package
+
+
+def mcp_args(desc: Path, package: str) -> list[str]:
+    """The argv after `graphy` that serves a tenant: `mcp --repo <repo>` when the descriptor is
+    the one eat writes at <repo>/.graphy/tenant.json (what the plugin manifest runs), else the
+    explicit --tenant/--tenant-id pair."""
+    desc = Path(desc)
+    if desc.name == "tenant.json" and desc.parent.name == EAT_HOME:
+        return ["mcp", "--repo", str(desc.parent.parent)]
+    return ["mcp", "--tenant", str(desc), "--tenant-id", package]
+
+
 def _cmd_mcp(args: argparse.Namespace) -> int:
     from graphy import federated_store as fstore
     from graphy import mcp as mcp_server
+    if args.repo and (args.tenant or args.tenant_id):
+        print("MCP REFUSED: --repo names the tenant eat left under the repo; it does not combine with "
+              "--tenant/--tenant-id", file=sys.stderr)
+        return 2
+    if args.repo:
+        try:
+            desc, tenant_id = repo_tenant(args.repo)
+        except TenantError as exc:
+            print(f"MCP REFUSED: {exc}", file=sys.stderr)
+            return 2
+        args.tenant, args.tenant_id = str(desc), tenant_id
     if not args.tenant or not args.tenant_id:
-        print("MCP REFUSED: --tenant and --tenant-id are required — graphy resolves identity only "
-              "through a declared Tenant", file=sys.stderr)
+        print("MCP REFUSED: --tenant and --tenant-id (or --repo <eaten repo>) are required — graphy "
+              "resolves identity only through a declared Tenant", file=sys.stderr)
         return 2
     try:
         tenant = _load_tenant(args.tenant)
@@ -1395,13 +1446,14 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path) ->
     """What a stranger does next, printed once at the end of eat: the MCP block for the client
     they already use, the drawing, three questions. Any model; the walk is graphy's."""
     cmd = _graphy_command()
-    mcp = json.dumps({"mcpServers": {"graphy": {"command": cmd[0], "args": cmd[1:] + ["mcp", "--tenant", str(desc), "--tenant-id", package]}}}, indent=2)
+    mcp = json.dumps({"mcpServers": {"graphy": {"command": cmd[0], "args": cmd[1:] + mcp_args(desc, package)}}}, indent=2)
     g = " ".join(cmd)
     tenant = f"--tenant {desc} --tenant-id {package}"
     return "\n".join([
         "",
         "  ADD YOUR MODEL — paste this into .mcp.json (Claude Code) or your client's MCP settings; the model is yours, the walk is graphy's:",
         *("  " + ln for ln in mcp.splitlines()),
+        "  or, in Claude Code, the plugin — one command, no pointer to write:  claude plugin install graphy@omnislash157/graphyos",
         "",
         "  SEE IT",
         f"    {g} pillars {tenant} --write {home / 'partition.json'}        # the arms the walk proposes",
@@ -1757,6 +1809,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_mcp = sub.add_parser("mcp", help="the MCP server on stdio: six tools — hunt · descend · blast · walk · draw · explain — over one tenant's store")
     p_mcp.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
     p_mcp.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
+    p_mcp.add_argument("--repo", default=None,
+                       help="an eaten repo: <repo>/.graphy/tenant.json and the root package its ring names — what the Claude Code plugin runs (.claude-plugin/plugin.json)")
     p_mcp.add_argument("--on-stale", default="refuse", help="refuse|warn")
     p_mcp.set_defaults(handler=_cmd_mcp)
 

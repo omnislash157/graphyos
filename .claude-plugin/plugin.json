@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "graphy",
+  "version": "0.2.1",
+  "description": "The MCP server over the repo graphy ate: hunt · descend · blast · walk · draw · explain — every answer a walk over the code's structure, no model decides an edge. Run `graphy eat .` first; the server reads .graphy/tenant.json under the project root.",
+  "author": {"name": "Matt Hartigan", "url": "https://github.com/omnislash157"},
+  "homepage": "https://graphy-os.com",
+  "repository": "https://github.com/omnislash157/graphyos",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "code-graph", "static-analysis", "tree-sitter", "dependency-graph", "codebase-analysis"],
+  "mcpServers": {
+    "graphy": {
+      "command": "graphy",
+      "args": ["mcp", "--repo", "${CLAUDE_PROJECT_DIR}"]
+    }
+  }
+}

@@ -44,6 +44,17 @@ Point any MCP client at the same server: Claude Code reads it from this repo's `
 anywhere else, `bash engine/tenants/fastapi/mcp.sh` on stdio, or `graphy mcp --tenant … --tenant-id …`
 over any eaten repo. Six tools: `hunt` · `descend` · `blast` · `walk` · `draw` · `explain`.
 
+Over your own repo, no pointer to write: `graphy eat .` once, then the Claude Code plugin at
+[`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) runs `graphy mcp --repo "${CLAUDE_PROJECT_DIR}"` —
+the server reads `.graphy/tenant.json` under the project root and the package name from the ring
+receipt eat left, and refuses by name when the repo has not been eaten. The same argv is the MCP
+registry's entry, [`server.json`](server.json) (`uvx graphyos mcp --repo <repo>`).
+
+```bash
+claude plugin install graphy@omnislash157/graphyos     # Claude Code, once the marketplace lists it; until then:
+claude --plugin-dir /path/to/graphyos                   # the checkout is the plugin
+```
+
 ## Install, then eat — two lines
 
 ```bash
@@ -169,6 +180,8 @@ literal it would need and the reason no node carries it. No name match is ever a
 | a worked tenant with four walk-derived arms | [`engine/tenants/fastapi/FASTAPI.md`](engine/tenants/fastapi/FASTAPI.md) |
 
 Not here yet, by name: the shard index. The board is GitHub Issues on this repo.
+
+<!-- mcp-name: io.github.omnislash157/graphyos -->
 
 ## The working repo
 

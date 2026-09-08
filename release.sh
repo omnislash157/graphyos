@@ -30,17 +30,36 @@ print("\n".join(out) + "\n", end="")
 PY
 }
 
+# The version lives once, in pyproject.toml; the plugin manifest and the registry entry repeat it
+# and drift is refused here (graphyos #49) — never a second literal a hand forgot.
+versions() {
+    "$PY" - "$HERE" "$VERSION" <<'PYV'
+import json, sys
+from pathlib import Path
+root, version = Path(sys.argv[1]), sys.argv[2]
+plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+server = json.loads((root / "server.json").read_text(encoding="utf-8"))
+found = {".claude-plugin/plugin.json": plugin["version"], "server.json": server["version"],
+         "server.json packages[0]": server["packages"][0]["version"]}
+drift = {k: v for k, v in found.items() if v != version}
+if drift:
+    sys.exit(f"VERSION DRIFT: pyproject.toml says {version}; " + "; ".join(f"{k} says {v}" for k, v in drift.items()))
+print(f"versions           OK  ({version} in pyproject.toml, .claude-plugin/plugin.json, server.json)")
+PYV
+}
+
 case "${1:-}" in
     --changelog) changelog > "$HERE/CHANGELOG.md"; echo "CHANGELOG OK: $(grep -c '^- §' "$HERE/CHANGELOG.md") entries -> CHANGELOG.md"; exit 0 ;;
     --check)
         if [ ! -f "$HERE/CHANGELOG.md" ] || ! diff -q <(changelog) "$HERE/CHANGELOG.md" > /dev/null; then
             echo "CHANGELOG DRIFT: CHANGELOG.md differs from what RECON.md derives — bash release.sh --changelog" >&2; exit 1
         fi
-        echo "changelog          OK"; exit 0 ;;
+        echo "changelog          OK"; versions; exit 0 ;;
     "") ;;
     *) echo "usage: release.sh [--changelog | --check]" >&2; exit 2 ;;
 esac
 
+versions
 "$PY" -c "import build, twine" 2>/dev/null || { echo "RELEASE REFUSED: $PY lacks build/twine — $PY -m pip install build twine" >&2; exit 2; }
 rm -rf "$HERE/dist"
 "$PY" -m build --outdir "$HERE/dist" "$HERE/engine" > "$HERE/dist.log" 2>&1 || { tail -20 "$HERE/dist.log"; exit 1; }

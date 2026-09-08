@@ -62,8 +62,9 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     svg, script = S.emit_svg(lo_u, title=f"{package} · the modules", orient="LR", interactive=True, node_meta=pic_u.meta)
     g = " ".join(graphy_cmd)
     tenant = f"--tenant {desc} --tenant-id {package}"
+    from graphy.cli import mcp_args
     mcp = json.dumps({"mcpServers": {"graphy": {"command": graphy_cmd[0],
-                                                 "args": graphy_cmd[1:] + ["mcp", "--tenant", str(desc), "--tenant-id", package]}}}, indent=2)
+                                                 "args": graphy_cmd[1:] + mcp_args(desc, package)}}}, indent=2)
     crowns = list(proposal.crowns.items())
     asks = []
     if crowns:

@@ -13,6 +13,7 @@ dependencies = []
 
 [project.scripts]
 graphy = "graphy.cli:main"
+graphyos = "graphy.cli:main"   # the distribution's own name, so `uvx graphyos mcp --repo .` runs (the MCP registry's runtimeHint)
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]

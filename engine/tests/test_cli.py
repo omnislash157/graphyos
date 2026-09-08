@@ -723,3 +723,73 @@ def test_RED_eat_refusal_prints_alone_before_any_banner(tmp_path):
     assert proc.returncode == 2
     assert proc.stderr.startswith("EAT REFUSED: no importable package(s) under")
     assert "EAT: repo" not in proc.stdout + proc.stderr
+
+
+# --- graphyos #49: a static manifest addresses any eaten repo through `graphy mcp --repo` ------------
+
+def _eaten_repo(tmp_path: Path, root: str = "click") -> Path:
+    repo = tmp_path / "repo"
+    home = repo / ".graphy"
+    sub = home / "substrate"
+    sub.mkdir(parents=True)
+    (home / "tenant.json").write_text(json.dumps({"data_home": str(sub)}), encoding="utf-8")
+    (sub / "ring.json").write_text(json.dumps({"root": root, "minted": {root: {}}}), encoding="utf-8")
+    return repo
+
+
+def test_repo_tenant_reads_the_descriptor_eat_wrote_and_the_root_the_ring_names(tmp_path):
+    repo = _eaten_repo(tmp_path)
+    desc, package = cli.repo_tenant(repo)
+    assert desc == repo / ".graphy" / "tenant.json" and package == "click"
+    assert cli.mcp_args(desc, package) == ["mcp", "--repo", str(repo)]
+    # a descriptor anywhere else keeps the explicit pair — the plugin form only fits eat's layout
+    assert cli.mcp_args(tmp_path / "t.json", "x") == ["mcp", "--tenant", str(tmp_path / "t.json"), "--tenant-id", "x"]
+
+
+@pytest.mark.parametrize("breakage", ["no-repo", "no-ring", "no-root", "empty-root", "no-data-home"])
+def test_RED_repo_tenant_refuses_by_name_never_guesses(tmp_path, breakage):
+    repo = _eaten_repo(tmp_path)
+    sub = repo / ".graphy" / "substrate"
+    if breakage == "no-repo":
+        repo = tmp_path / "never-eaten"
+    elif breakage == "no-ring":
+        (sub / "ring.json").unlink()
+    elif breakage == "no-root":
+        (sub / "ring.json").write_text(json.dumps({"minted": {}}), encoding="utf-8")
+    elif breakage == "empty-root":
+        (sub / "ring.json").write_text(json.dumps({"root": "  "}), encoding="utf-8")
+    elif breakage == "no-data-home":
+        (repo / ".graphy" / "tenant.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(cli.TenantError) as exc:
+        cli.repo_tenant(repo)
+    assert "graphy eat" in str(exc.value) or "names no" in str(exc.value) or "empty root" in str(exc.value)
+
+
+def test_mcp_repo_flag_refuses_an_uneaten_repo_and_a_mixed_form(tmp_path, capsys):
+    assert cli.main(["mcp", "--repo", str(tmp_path)]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("MCP REFUSED: no tenant at") and "graphy eat" in err
+    repo = _eaten_repo(tmp_path)
+    assert cli.main(["mcp", "--repo", str(repo), "--tenant-id", "click"]) == 2
+    assert "does not combine" in capsys.readouterr().err
+    assert cli.main(["mcp"]) == 2
+    assert "--repo <eaten repo>" in capsys.readouterr().err
+
+
+def test_plugin_manifest_and_registry_entry_run_the_repo_door_at_the_package_version():
+    """The two static manifests at the root run `graphy mcp --repo` and carry the package's
+    version — the release gate refuses drift; this is the floor under it."""
+    import graphy
+    root = Path(__file__).parents[2]
+    plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    server = json.loads((root / "server.json").read_text(encoding="utf-8"))
+    assert plugin["name"] == "graphy" and plugin["version"] == graphy.__version__
+    assert plugin["mcpServers"]["graphy"]["command"] == "graphy"
+    assert plugin["mcpServers"]["graphy"]["args"] == ["mcp", "--repo", "${CLAUDE_PROJECT_DIR}"]
+    assert server["name"] == "io.github.omnislash157/graphyos" and server["version"] == graphy.__version__
+    (pkg,) = server["packages"]
+    assert pkg["registryType"] == "pypi" and pkg["identifier"] == "graphyos" and pkg["version"] == graphy.__version__
+    assert pkg["transport"] == {"type": "stdio"}
+    assert [a.get("value") or a.get("name") for a in pkg["packageArguments"]] == ["mcp", "--repo"]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert f"mcp-name: {server['name']}" in readme   # the registry's ownership proof for a PyPI package

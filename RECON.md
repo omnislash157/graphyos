@@ -4272,3 +4272,43 @@ curl -s https://graphy-os.com/ | grep -c 'href="'                               
 | the description | unchanged: "Compile any codebase into a walkable substrate: …" |
 | the homepage | `""` — held: graphy-os.com answers 404 `Application not found` (0 `href=`); the hold is `gh repo edit omnislash157/graphyos --homepage https://graphy-os.com` once the curl reads 200 and 12 |
 | the gate | `GRAPHY_STANDALONE_OK`; `CHANGELOG OK: 73 entries` |
+
+## 85 · THE PLUGIN — a Claude Code plugin manifest and an MCP registry server.json at the root, both running `graphy mcp --repo`; the repo door reads the tenant eat left and refuses an uneaten repo by name (2026-09-08 · graphyos issue 49)
+
+**The finding.** `claude plugin --help` lists init · validate · install; graphy's server was reached by hand —
+`.mcp.json` in this repo points at one tenant's `mcp.sh`, and a stranger writes their own pointer after
+`graphy eat`. `ls engine/graphy/shell/claude-plugin` → nothing; no `server.json` anywhere. A static manifest
+cannot know the eaten package's name, and `graphy mcp` refused without `--tenant-id`. Operator, 2026-09-08:
+"get listed where MCP users look … agreed on all of it".
+
+**The change.** `graphy mcp --repo <abs>` (`cli.repo_tenant`): the descriptor at `<repo>/.graphy/tenant.json`
+and the root package from the ring receipt eat wrote beside it (`ring.json` `root`) — both declared by eat,
+neither guessed; an uneaten repo, a descriptor without its ring, a ring without a root, and `--repo` mixed with
+`--tenant` each refuse with the line that names it, exit 2. `cli.mcp_args` picks the form: `mcp --repo <repo>`
+when the descriptor is eat's, the explicit pair otherwise — the block `eat` and `showcase` print now uses it.
+`.claude-plugin/plugin.json` at the root (the checkout is the plugin) runs `graphy mcp --repo "${CLAUDE_PROJECT_DIR}"`;
+`server.json` (schema 2025-12-11, `io.github.omnislash157/graphyos`, registryType pypi, runtimeHint uvx) names
+the same argv; `graphyos = "graphy.cli:main"` joins `[project.scripts]` so `uvx graphyos` resolves. The version
+is pyproject's: `release.sh --check` reads both manifests and refuses `VERSION DRIFT`. The README carries the
+plugin paragraph and the registry's ownership proof (`<!-- mcp-name: … -->`). PyPI's 0.2.1 has neither the flag
+nor the script — the release is graphyos #53; the marketplace listing and the registry submission are outside
+accounts (the hold below).
+
+```bash
+claude plugin validate . 2>&1 | tail -1                                                          # the plugin root is the repo root
+cd engine && ../.venv/bin/python -m graphy mcp --repo /tmp/np </dev/null 2>&1 | head -1           # an eaten repo: served, no id typed
+cd engine && ../.venv/bin/python -m graphy mcp --repo /tmp; echo rc=$?                            # uneaten: refused by name, 2
+cd /tmp/np && PATH="$HOME/graphy/.venv/bin:$PATH" claude -p --plugin-dir ~/graphy --allowedTools 'mcp__plugin_graphy_graphy__*' --model haiku 'Using only the graphy MCP tools, run blast on the symbol "Command" and reply with one line: the tool name you called and how many symbols it reported.'
+bash release.sh --check | tail -1                                                                  # versions OK (…)
+python3 burden.py | tail -1; bash standalone_check.sh | tail -1
+```
+
+| check | result |
+|---|---|
+| `claude plugin validate .` | `✔ Validation passed with warnings` — the one warning: `CLAUDE.md at the plugin root is not loaded as project context` (the router is the repo's, not the plugin's; `--strict` would refuse it) |
+| the repo door, live | `graphy mcp: serving tenant 'click' generation 3fc4694d09fa052f on stdio (hunt, descend, blast, walk, draw, explain)` over `/tmp/np`; `--repo /tmp` → `MCP REFUSED: no tenant at /tmp/.graphy/tenant.json — run \`graphy eat /tmp\` first`, rc 2 |
+| the plugin in Claude Code | `claude -p --plugin-dir ~/graphy` over `/tmp/np` answered `mcp__plugin_graphy_graphy__blast reported 3 symbols` in 7.7 s — the server's honest answer: `Command` names three nodes (`click.core.Command` · `click.decorators.command` · `click.core.Group.command`), a door never guesses |
+| the versions | `versions OK (0.2.1 in pyproject.toml, .claude-plugin/plugin.json, server.json)` |
+| the floor | 518 passed, 3 skipped in 8.3 s (+8: `repo_tenant` reads eat's layout, five refusals by name, the CLI's three refusals, the two manifests run the repo door at the package version) |
+| the gate | `BURDEN OK … docs 34 tracked · scrub OK`; `GRAPHY_STANDALONE_OK` in 15.9 s |
+| the hold | the marketplace listing and the registry submission are outside accounts; the registry entry resolves only after graphyos #53 ships 0.2.2 to PyPI |
