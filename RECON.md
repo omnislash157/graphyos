@@ -3910,3 +3910,47 @@ python3 measure.py run && python3 measure.py diff recon.before40.json recon.json
 | the floor | 505 passed · 3 skipped (503 + 2); both RED against the old showcase.py and the old workflow; the graphy tenant's six arm regions re-rendered for `fence_safe` (the first receipt read graphy RED on `ARMS DRIFT`), `ARMS OK` |
 | the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK: 5 file(s)` — the comment step parses as before; `BURDEN OK`: runtime deps 0 · extras 3 · wheel 280,886 B (cap 400,000) · subprocess sites 26 over 6 programs |
 | the receipt | `MEASURE OK: floor 505 passed · gate OK 14.9s · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 57.0s`; `diff recon.before40.json recon.json`: `quickstart.httpx.eat_seconds` 5.0 → 4.9, `quickstart.express.eat_seconds` 3.3 → 3.7, the eat-again numbers flat — the change touches no lane the receipt times. The wrong way: `floor.seconds` 9.1 → 10.8 with the two new tests at 0.04 s together (`--durations`), and `index.verify_seconds` 0.5 → 0.6 — the load noise §49 names, both; `pass.engine_hot_lanes` 1 → 1 as §75 left it |
+
+## 77 · CARTOGRAPH RAN A DESCRIPTOR STRING THROUGH A SHELL — the dead lane is deleted and the burden refuses any shell by name (2026-09-08 · graphyos issue 41)
+
+**The finding.** Red-team finding 8 (§71). `cartograph._build` ran a tenant descriptor's build-lane command
+string with `shell=True` from the tenant's root, and `burden.json` named it a `subprocess_delegates` entry so
+the scan trusted it by name. Its only callers, `ensure_fresh` (stats.json against HEAD, rebuild on drift) and
+`code_graph_publish_inplace` (the atomic swap through a sibling temp dir), had no caller in the package — the
+rebuild-tables era's walk-time auto-rebuild, dead since the store became the reader (§4) — but a committed
+`.graphy/tenant.json` made it a second code-execution path waiting for one caller.
+
+**The change.** The lane is gone: `_build` · `ensure_fresh` · `code_graph_publish_inplace` · `_shell_quote_out`
+· `_behind_commits` and the `_NT_STALE_REFUSE_COMMITS` cap, with `shlex` and `shutil`. `cartograph` keeps
+`resolve_graph` · `repo_cursor` · `cursor_drift` · `working_tree_dirt` · `tenant_exclude` · `write_graph` and the
+JSONL CLI. The descriptor's `build_lanes` field stays — it is the roster (`<slug>_graph:<kind>`), read by
+`build` · `check` · `bridge` — but no engine code reads its command half again. `burden.py` grows a rule with no
+list to grow: `shell=True` on any `subprocess` call (or a `shell=` keyword that is not the literal `False`), and
+`os.system`, is named with its file and line — `a shell over a string (shell=True) — the engine runs argv only,
+never shell=True`; `subprocess_delegates` is deleted from `burden.json` and the scan no longer reads it. If a
+build lane is ever run again it runs as argv.
+
+**The floor.** `test_cartograph_freshness`: the fifteen tests of the dead lane are gone with it; the removal
+audit asserts `shell=True` absent from the source and the five names absent from the module (RED against the
+old cartograph.py). `test_burden`: a synthetic `cartograph.py` with `shell=True`, `shell=flag` and `os.system`
+under a name an older burden.json called a delegate — all three named with their line, `shell=False` passes,
+and `burden.json` carries no `subprocess_delegates` (RED against the old burden.py, which trusted the
+delegate). The new burden.py over the old cartograph.py names `graphy/cartograph.py:170`.
+
+```bash
+! rg -n 'shell=True' engine/graphy
+python3 burden.py | tail -1 && bash standalone_check.sh | tail -1
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cartograph_freshness.py tests/test_burden.py
+# the old code under the new floor and the new scan
+mkdir -p /tmp/old/graphy && git show HEAD~1:engine/graphy/cartograph.py > /tmp/old/graphy/cartograph.py \
+  && python3 -c "import burden, json; from pathlib import Path; print(burden.scan_subprocess(Path('/tmp/old/graphy'), json.loads(Path('burden.json').read_text())))"
+python3 measure.py run && python3 measure.py diff recon.before41.json recon.json
+```
+
+| check | result |
+|---|---|
+| the done check | `rg -n 'shell=True' engine/graphy` prints nothing, exit 1; `BURDEN OK: runtime deps 0 · extras 3 · wheel 280,886 B (cap 400,000) · hosts 7 on the list of 6 · subprocess sites 24 over 6 program(s)` — two sites fewer, the delegate's and the `_behind_commits` `git rev-list`; `GRAPHY_STANDALONE_OK` |
+| the old code under the new scan | `graphy/cartograph.py:170: a shell over a string (shell=True) — the engine runs argv only, never shell=True` |
+| the floor | 491 passed · 3 skipped (505 − 15 + 1); the removal audit and the shell test both RED against the old engine; the graphy tenant's six arm regions re-rendered — SEAM's cartograph line loses the five names — `ARMS OK` |
+| the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK`; `CHANGELOG OK` |
+| the receipt | `MEASURE OK: floor 491 passed · gate OK 16.5s · wheel 278,954 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 56.6s`; `diff recon.before41.json recon.json`: `floor.passed` 505 → 491 and `tenants.graphy.nodes` 2674 → 2653 · `edges` 6700 → 6626 read as regressions — the deleted lane and its tests counted down, by design; `floor.seconds` 10.8 → 8.1, `wheel.wheel_bytes` 280,886 → 278,954, `tenants.fastapi.seconds` 3.1 → 2.7. The wrong way: `quickstart.express.eat_seconds` 3.7 → 6.0 (the clone-and-`npm install` lane, no line of this change runs in it) — the load noise §49 names; `pass.engine_hot_lanes` 1 → 1 as §74 left it |

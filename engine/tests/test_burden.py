@@ -40,6 +40,25 @@ def test_RED_a_host_and_a_program_off_the_list_are_named_with_their_line(tmp_pat
                            "graphy/a.py:16: subprocess target 'wget' is not in burden.json"]
 
 
+def test_RED_a_shell_over_a_string_is_refused_with_no_list_to_grow(tmp_path):
+    """graphyos #41: shell=True on any subprocess call, or os.system, is named with its line — even
+    inside a function an older burden.json called a delegate; shell=False is argv and passes."""
+    root = tmp_path / "graphy"
+    root.mkdir()
+    (root / "cartograph.py").write_text(
+        'import os, subprocess\n'
+        'def _build(command):\n    subprocess.run(command, shell=True)\n'
+        'def other(flag):\n    subprocess.Popen(["git", "status"], shell=flag)\n    os.system("git status")\n'
+        'def fine():\n    subprocess.run(["git", "status"], shell=False)\n')
+    rules = dict(RULES, subprocess_delegates=["cartograph._build"])
+    red, n = burden.scan_subprocess(root, rules)
+    assert n == 4
+    assert red == ["graphy/cartograph.py:3: a shell over a string (shell=True) — the engine runs argv only, never shell=True",
+                   "graphy/cartograph.py:5: a shell over a string (shell=flag) — the engine runs argv only, never shell=True",
+                   "graphy/cartograph.py:6: a shell over a string (os.system) — the engine runs argv only, never shell=True"]
+    assert "subprocess_delegates" not in RULES, "a delegate list is a hole; burden.json carries none"
+
+
 def test_GREEN_the_wheel_cap(tmp_path):
     dist = tmp_path / "dist"
     dist.mkdir()

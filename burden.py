@@ -136,13 +136,29 @@ def _is_subprocess_call(node) -> bool:
             or (isinstance(fn, ast.Attribute) and fn.attr == "system" and isinstance(fn.value, ast.Name) and fn.value.id == "os"))
 
 
+def _is_shell(node) -> bool:
+    fn = node.func
+    if isinstance(fn, ast.Attribute) and fn.attr == "system":
+        return True
+    for kw in node.keywords:
+        if kw.arg == "shell" and not (isinstance(kw.value, ast.Constant) and kw.value.value is False):
+            return True
+    return False
+
+
+def _shell_spelling(node) -> str:
+    fn = node.func
+    if isinstance(fn, ast.Attribute) and fn.attr == "system":
+        return "os.system"
+    return next(f"shell={ast.unparse(kw.value)}" for kw in node.keywords if kw.arg == "shell")
+
+
 def scan_subprocess(root: Path, rules: dict) -> tuple[list[str], int]:
     """Every program the engine runs. A direct call names it; a call whose command is a local
     list is resolved to that list's head; a call whose command is a parameter makes its function
-    a runner, and every call of that runner is checked instead; a function burden.json names as a
-    delegate (a tenant's declared build lane, run as declared) is trusted by name."""
+    a runner, and every call of that runner is checked instead. A shell is refused by name — ``shell=True``
+    on any call, or ``os.system`` — with no list to grow: every program the engine runs is argv (graphyos #41)."""
     allowed = set(rules.get("subprocess_targets", []))
-    delegates = set(rules.get("subprocess_delegates", []))
     red, n = [], 0
     runners: dict[str, str] = {}          # function name -> module (a call to it is a subprocess call)
     modules: dict[Path, ast.Module] = {}
@@ -174,7 +190,9 @@ def scan_subprocess(root: Path, rules: dict) -> tuple[list[str], int]:
                 if not (isinstance(node, ast.Call) and _is_subprocess_call(node)):
                     continue
                 n += 1
-                if qual in delegates:
+                if _is_shell(node):
+                    red.append(f"{f.relative_to(root.parent)}:{node.lineno}: a shell over a string "
+                               f"({_shell_spelling(node)}) — the engine runs argv only, never shell=True")
                     continue
                 if not node.args:
                     continue
