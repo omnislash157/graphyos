@@ -4542,7 +4542,7 @@ cd /tmp/np && claude -p "Using the graphy plugin's MCP tools only, call blast on
 | the gate | `GRAPHY_STANDALONE_OK`, `BURDEN OK` (json, not a tracked doc) |
 | the hold | the official directory: the submission form at clau.de/plugin-directory-submission on the operator's account |
 
-## 92 · THE RESOLVER BINDS AN ANNOTATED PARAMETER — `ctx: Context` makes `ctx.invoke` an edge to `Context.invoke`; blast on click 1 → 6, 37 edges bound on click, 116 on SQLAlchemy, 42 on graphy itself (2026-09-08 · graphyos issue 57)
+## 92 · THE RESOLVER BINDS AN ANNOTATED PARAMETER — `ctx: Context` makes `ctx.invoke` an edge to `Context.invoke`; blast on click 1 → 6, 36 edges bound on click, 113 on SQLAlchemy, 42 on graphy itself; a parameter never falls through to module scope; the splice keys on the producer's code (2026-09-08 · graphyos issue 57)
 
 **The number.** Over the eaten click checkout at `/tmp/np` (the repo §85 and §91 answered through the
 plugin): `graphy blast click.core.Context.invoke --depth 3` → `dependents=1` — `Context.forward`'s
@@ -4556,21 +4556,34 @@ src/click` → core.py 62 · types.py 29 · decorators.py 4: a class the whole p
 **The law.** A text label becomes an edge only through the scope that binds it. A parameter's annotation is
 that kind of binding: `def f(ctx: Context)` names `Context`, which resolves through the module's own definition
 or its `imports` edge — the same two doors a call label walks — to exactly one class node; `ctx.invoke` inside
-`f` is then `Context.invoke` by scope, the way `self.go` is the container's `go`. `Optional[Context]`,
-`Context | None`, a string, a `TypeVar`, a name that reaches no class node, or a parameter the function does not
-annotate: text, never a guess.
+`f` is then `Context.invoke` by scope, the way `self.go` is the container's `go`. And a parameter is the
+innermost scope: it never falls through to the module's definitions or imports it shadows — `def bare(json):
+json.dumps()` is not the stdlib's `json`, whatever the module imported. `Optional[Context]`, `Context | None`,
+a string, a `TypeVar`, a name that reaches no class node, a parameter the function does not annotate, or one the
+body rebinds anywhere (an assignment, a loop or comprehension target, a nested def's own parameter, an
+except/with alias): text, never a guess. The law in `CLAUDE.md` names the door.
 
 **The change.** The producer says the annotation: `python_ast` emits `annotations: {param: text}` on every func
-and method record (positional-only, positional, keyword-only), `_expr_repr` over the annotation node. The IR
-carries it: `Node.annotations`, validated as a mapping of strings. The resolver binds it: `_class_in_scope` takes
-an annotation that is a bare or dotted name, walks the module's own definition then `_qualify` (imports,
-re-exports), and answers only a node whose type is `class`; `_resolve_one` uses it after `self`/`super` and before
-the local rule — `via: "annotation"` in the sidecar and the RESOLVE line, `unbound-attribute` when the class
-has no such member. The golden `tests/fixtures/fastapi_graph` re-minted by its own PROVENANCE command (288 of
-507 records now carry annotations; producer graphy 0.2.3); the fastapi, sqlalchemy and graphy tenants rebuilt,
-the graphy tenant's six arm regions re-rendered (the walk moved: `_class_in_scope` joined SEAM). TypeScript is
-untouched: its producer records parameter patterns, not types; the seam is python's alone until a typed parameter
-is an edge there.
+and method record — only a bare or dotted name (`_name_chain`), only for a parameter the body never rebinds
+(`_rebound_names` walks the whole subtree) — and `args` is now every named parameter in signature order
+(positional-only, positional, `*args`, keyword-only, `**kwargs`; it was positional only, and `graphy explain`
+printed a truncated signature for every keyword-only function). The IR carries it: `Node.annotations`, a mapping
+of strings whose keys must be in `args`. The resolver binds it: `_class_in_scope` walks the module's own
+definition then `_qualify` (imports, re-exports) and answers only a node whose type is `class`; `_resolve_one`
+takes a parameter head before the local rule — the annotation binds it or nothing does, `via: "annotation"` in
+the sidecar, `unbound-attribute` when the class has no such member; a `decorates` label (the `src` side) never
+enters the branch, since a decorator is evaluated in the enclosing scope where no parameter exists. The golden
+`tests/fixtures/fastapi_graph` re-minted by its own PROVENANCE command; the fastapi, sqlalchemy and graphy
+tenants rebuilt, the graphy tenant's arm regions re-rendered. TypeScript is untouched: its producer records
+parameter patterns, not types; the seam is python's alone until a typed parameter is an edge there.
+
+**The splice, found on the way.** The second mint refused its own output: `annotations name parameters that
+args does not` — the IR's new check caught records the splice had reused from the *earlier* producer of the
+same day, because `_reuse_from` keyed reuse on `adapter · graphy version · python version` and the tree's
+version had not moved while the producer's code moved twice. A version string is not a producer's identity;
+its source bytes are. The producer block now carries `source`, sha256 of the adapter module's own file (16 hex),
+and a shard minted by other code never splices — proven in `test_smash`: the digest overwritten in PROVENANCE,
+every file parses again and the shard's bytes equal a fresh mint.
 
 ```bash
 cd /tmp/np && ~/graphy/.venv/bin/graphy eat . && ~/graphy/.venv/bin/graphy blast click.core.Context.invoke --tenant /tmp/np/.graphy/tenant.json --tenant-id click --depth 3 | head -1
@@ -4582,11 +4595,11 @@ python3 measure.py diff recon.before57.json recon.json | tail -1
 
 | check | result |
 |---|---|
-| click, before → after | `blast Context.invoke --depth 3`: `dependents=1` → `dependents=6 own=6` — hop1 `Command.invoke` (the annotated site), `Context.forward`, `Group.invoke`; hop2 `Command.main`; hop3 `Command.__call__`, `CliRunner.invoke`. `Context.fail` 4, `lookup_default` 5, `get_help` 1 where the door had nothing to say. The shard's RESOLVE: `annotation 37` beside import 159 · local 187 · self 160 · super 30; the 37 land on Context 17 · HelpFormatter 13 · _OptionParser 5 · Command 2, every one a `calls` edge |
-| the same answer | every one of the 37: the source annotates the label's head with the target's class, checked over the sidecar against the node records — 0 exceptions; no edge exists that a scope did not bind |
+| click, before → after | `blast Context.invoke --depth 3`: `dependents=1` → `dependents=6 own=6` — hop1 `Command.invoke` (the annotated site), `Context.forward`, `Group.invoke`; hop2 `Command.main`; hop3 `Command.__call__`, `CliRunner.invoke`. `Context.fail` 4, `lookup_default` 5, `get_help` 1 where the door had nothing to say. The shard's RESOLVE: `annotation 36` beside import 159 · local 187 · self 160 · super 30 (37 before the rebinding rule; the one it dropped was a parameter the body reassigned) |
+| the same answer | every one of the 36: a `calls` edge on the `dst` side whose source annotates the label's head with the target's class, checked over the sidecar against the node records — 0 exceptions; no edge exists that a scope did not bind |
 | the class itself | `blast click.core.Context --depth 2` stays `dependents=0`: a binding is not an edge onto the class, and `annotates` is not one of the nine words — the issue's second done line asked for what the law does not give, refused by name |
-| the seam test | `w: Widget` binds `w.ping` through gamma's re-export (`resolver:annotation`); `u` (bare), `o: t.Optional[Widget]`, `s: 'Widget'` stay `unresolved`; `w.nothing` is `unbound-attribute` on the class; the ring's counts move by exactly the five calls the fixture gained |
-| the other tenants | sqlalchemy `annotation 116` of 11,237 resolved, `ARMS OK: 5 arm(s) match`, 4.9 s; graphy `annotation 42` of 1,707, six regions re-rendered then `ARMS OK: 6 arm(s) match`, `DRAW OK` (the svg byte-identical); fastapi, the fixture placed alone: no annotation binds — every annotated class is starlette's or pydantic's and the fixture carries no ring, so nothing resolves to a class node |
-| the golden | re-minted, `MINT OK: fastapi 507 nodes / 3715 edges`, PROVENANCE producer graphy 0.2.3; the parity test against the corpus venv: 2 passed |
-| the constraints | `BURDEN OK` (wheel 283,572 → 284,370 B, under the cap); `MEASURE DIFF OK: 6 number(s) moved, none the wrong way past tolerance` (the before pinned on the pre-change tree in the same hour); the floor 525 passed, 3 skipped; the gate `GRAPHY_STANDALONE_OK`, `pillars svg OK` |
-| the review | REVIEW_ROW |
+| the seam test | `w: Widget` and keyword-only `k: Widget` bind through gamma's re-export (`resolver:annotation`); `u` (bare), `o: t.Optional[Widget]`, `s: 'Widget'` stay `unresolved`; `w.nothing` is `unbound-attribute` on the class; `@router.ping` on `def deco(router: Widget)` leaves no `decorates` edge while the call inside binds; `shadow` (a nested def's `w`), `loop` (`for w in xs`) and `bare(js)` over an imported `json` all stay text |
+| the other tenants | sqlalchemy `annotation 113` of 11,222 resolved, `ARMS OK: 5 arm(s) match`; graphy `annotation 42` of 1,715, six regions re-rendered then `ARMS OK: 6 arm(s) match`; fastapi, the fixture placed alone: no annotation binds — every annotated class is starlette's or pydantic's and the fixture carries no ring |
+| the golden | re-minted, `MINT OK: fastapi 507 nodes / 3715 edges`, PROVENANCE producer graphy 0.2.3 · source 4b10ecce7c83db60; 179 records carry 342 bindable annotations, 1,851 characters (the first cut stored every annotation's text: 1,611 keys, 101,053 characters, `nodes.json` 349 KB — now 245 KB against 213 KB before, the widened `args` the rest); the parity test against the corpus venv: 2 passed |
+| the constraints | `BURDEN OK` (wheel 283,572 → 285,468 B, under the cap); `MEASURE DIFF OK: 6 number(s) moved, none the wrong way past tolerance` (the before pinned on the pre-change tree in the same hour; a first diff read the floor +18 % while a parity test and a second floor ran beside it — alone, 10.1 s against 9.0, inside tolerance); the floor 525 passed, 3 skipped; the gate `GRAPHY_STANDALONE_OK`, `pillars svg OK` |
+| the review, `/code-review medium` | eight findings, every one fixed: a `decorates` label resolved in the parameter scope (confirmed on a synthetic ring — fixed by side); a nested def's parameter shadowing the annotated name (fixed by the rebinding rule); a loop, comprehension or assignment rebinding it (the same rule); an unannotated parameter still falling through to module scope — a name match the law forbids (fixed: a parameter never falls through); `args` and `annotations` disagreeing on the parameter list (`args` widened, the IR asserts the subset); 98 % of the stored annotation text unbindable (`_name_chain` keeps only a name); the unfilled `REVIEW_ROW` on main (this row); the law and converge's docstring naming four doors while the engine emitted five (both name the annotation). Found on the way: the splice reusing another producer's records (above) |

@@ -239,6 +239,8 @@ class Node:
         if annotations is not None:
             if not isinstance(annotations, Mapping) or not all(isinstance(k, str) and isinstance(v, str) for k, v in annotations.items()):
                 raise IRError(f"{where}: annotations must be an object of parameter name to annotation text")
+            if args_tuple is not None and not set(annotations) <= set(args_tuple):
+                raise IRError(f"{where}: annotations name parameters that args does not: {sorted(set(annotations) - set(args_tuple))}")
             annotations_tuple = tuple(annotations.items())
         else:
             annotations_tuple = None

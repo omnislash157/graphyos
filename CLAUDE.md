@@ -24,7 +24,8 @@ lens : the whole world is traversable through our lens
   a node id in two or more graphs — free by construction), or an admitted weld (an exact,
   byte-identical literal carried by two or more rostered corpora, through the gate). A text label
   becomes an edge only through the scope that binds it — the module's own definitions and
-  `imports` edges, `self`, `super` — never through a name match. Similarity parks forever and
+  `imports` edges, `self`, `super`, a parameter's annotation naming one class in that scope — never through
+  a name match. Similarity parks forever and
   never graduates.
 - **A node id is a name, never a version. The roster is the resolution.** `<scheme>://<node_type>/<dotted>`
   carries no release, which is what makes a wormhole free and what makes two releases of one package

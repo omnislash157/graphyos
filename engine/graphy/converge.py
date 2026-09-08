@@ -4,7 +4,9 @@ construction. ``resolve`` turns the producer's text labels (a ``calls`` target, 
 base, a ``decorates`` decorator left as ``dst_repr``/``src_repr``) into edges by walking the
 module's own scope: a definition in the same module, the module's ``imports`` edges (through
 re-exports, one hop at a time), ``self``/``cls``/``this`` against the containing class, ``super`` against
-a resolved base. Every step is structural; a name that no rule reaches stays text. The result is
+a resolved base, and a parameter's annotation against the one class it names in that scope (``ctx: Context``
+makes ``ctx.invoke`` ``Context.invoke``; a parameter is the innermost scope and never falls through to the
+module's names). Every step is structural; a name that no rule reaches stays text. The result is
 a sidecar, ``wormhole_edges.json``, that the shard loader admits beside ``edges.json``."""
 from __future__ import annotations
 
@@ -217,7 +219,7 @@ def _class_in_scope(ring: Ring, module_id: str, module_dotted: str, ann: str) ->
     return nid if nid and ring.nodes.get(nid, {}).get("node_type") == "class" else None
 
 
-def _resolve_one(ring: Ring, src_node: str, label: str, bases: dict[str, str]) -> dict:
+def _resolve_one(ring: Ring, src_node: str, label: str, bases: dict[str, str], side: str = "dst") -> dict:
     """One label against the scopes that can bind it. Returns a record with ``dst`` when a node
     carries the literal, else ``qualified``/``kind`` naming what it is."""
     base = label.replace("(...)", "")
@@ -257,9 +259,12 @@ def _resolve_one(ring: Ring, src_node: str, label: str, bases: dict[str, str]) -
     # or its imports — to a class node. A bare name or a dotted one only; `Optional[X]`, `X | None`, a
     # string, a TypeVar or a name that reaches no class stays text — never a guess.
     src = ring.nodes.get(src_node) or {}
-    ann = (src.get("annotations") or {}).get(head) if tail else None   # a key is a parameter, by construction
-    if ann is not None:
-        cls_id = _class_in_scope(ring, module_id, module_dotted, ann)
+    if side == "dst" and head in (src.get("args") or ()):
+        # a parameter is the innermost scope: it never resolves through the module's definitions or
+        # imports it shadows. Its annotation binds it to one class, or nothing does. A decorator label
+        # (the src side) is evaluated in the enclosing scope, where the parameter does not exist.
+        ann = (src.get("annotations") or {}).get(head)
+        cls_id = _class_in_scope(ring, module_id, module_dotted, ann) if ann and tail else None
         if cls_id is None or len(tail) != 1:
             return {"kind": "unresolved"}
         q = f"{ring.dotted(cls_id)}.{tail[0]}"
@@ -298,7 +303,7 @@ def resolve(ring: Ring, slug: str, *, write: bool = True) -> dict:
     by_via: Counter = Counter()
     for e, side, label in ordered:
         anchor = e["src"] if side == "dst" else e["dst"]
-        r = _resolve_one(ring, anchor, label, bases)
+        r = _resolve_one(ring, anchor, label, bases, side)
         if r.get("dst"):
             rec = {"kind": "edge", "edge_type": e["edge_type"], "via": f"resolver:{r['via']}",
                    "label": label, "side": side}

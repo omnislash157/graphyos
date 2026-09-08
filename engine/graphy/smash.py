@@ -289,6 +289,14 @@ def unreadable_phrase(unreadable: dict[str, str], *, limit: int = 8) -> str:
     return f"{len(unreadable)} unreadable: " + ", ".join(names) + (f", and {more} more" if more > 0 else "")
 
 
+def producer_source(name: str) -> str:
+    """sha256 (16 hex) of the adapter module's own source bytes — the producer's identity for the splice."""
+    module = {"python_ast": python_ast, "typescript_ast": typescript_ast}.get(name)
+    if module is None:
+        return "unknown"
+    return hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()[:16]
+
+
 def _reuse_from(shard_dir: Path, producer_block: dict):
     """The splice over the shard already at ``shard_dir``: a callable the producer asks per file,
     ``(pin, relpath, sha256) -> (node_records, edge_records) | None``, and the receipt it reads.
@@ -377,7 +385,11 @@ def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
     corpus = Path(corpus).resolve()
     shard_dir = Path(shard_dir).resolve()
     prod = PRODUCERS[producer] if isinstance(producer, str) else producer
-    producer_block = {"adapter": prod.name, "graphy": _graphy_version(), "python": platform.python_version()}
+    # the producer's identity is its code, not its version string (graphyos #57's review): the splice
+    # reused records minted by an earlier producer of the same version, so the block carries the
+    # adapter module's source digest and a changed producer never splices
+    producer_block = {"adapter": prod.name, "graphy": _graphy_version(), "python": platform.python_version(),
+                      "source": producer_source(prod.name)}
     reuse, refusal = _reuse_from(shard_dir, producer_block) if shard_dir.is_dir() else (None, None)
     if refusal:
         print(refusal, file=sys.stderr)

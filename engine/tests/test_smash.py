@@ -316,6 +316,15 @@ def test_RED_a_receipt_that_does_not_fit_is_discarded_and_the_full_mint_runs(tmp
     smash.mint(sp / "alpha", live, mint_command="m")
     assert len(parsed) == 2 and _shard_bytes(live) == want
 
+    # the producer's code moved under the same version (graphyos #57's review): the source digest is the identity
+    prov = json.loads((live / smash.PROVENANCE_NAME).read_text(encoding="utf-8"))
+    assert prov["producer"]["source"] == smash.producer_source("python_ast") and len(prov["producer"]["source"]) == 16
+    prov["producer"]["source"] = "0" * 16
+    (live / smash.PROVENANCE_NAME).write_text(json.dumps(prov), encoding="utf-8")
+    parsed.clear()
+    smash.mint(sp / "alpha", live, mint_command="m")
+    assert len(parsed) == 2 and _shard_bytes(live) == want
+
     # a repo root: a new top-level package changes how every file's imports resolve — the pin moves
     root = tmp_path / "repo"
     shutil.copytree(sp / "alpha", root / "alpha")

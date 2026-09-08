@@ -5,9 +5,10 @@
   "producer": {
     "adapter": "python_ast",
     "graphy": "0.2.3",
-    "python": "3.12.3"
+    "python": "3.12.3",
+    "source": "4b10ecce7c83db60"
   },
-  "minted_at": "2026-09-08T20:26:30+00:00",
+  "minted_at": "2026-09-08T20:46:54+00:00",
   "corpus": {
     "scheme": "fastapi",
     "kind": "package",
@@ -38,8 +39,8 @@
   },
   "files": {
     "nodes.json": {
-      "bytes": 349093,
-      "sha256": "a086964a309ec3224518767c27e65dd8e71b717c7b2a9204458a5ea779a13b58"
+      "bytes": 245445,
+      "sha256": "59e1737d1f8b58d6b8f23ab70bee97012d4458afee43e6fae319400b21b17d3c"
     },
     "edges.json": {
       "bytes": 542805,

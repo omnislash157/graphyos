@@ -216,6 +216,65 @@ def _defs_in(body: list) -> Iterator[ast.AST]:
             yield from _defs_in(getattr(stmt, "finalbody", []) or [])
 
 
+def _param_names(fn: ast.AST) -> list[str]:
+    """Every named parameter, in signature order: positional-only, positional, *args, keyword-only, **kwargs."""
+    a = fn.args
+    return [p.arg for p in a.posonlyargs] + [p.arg for p in a.args] + ([a.vararg.arg] if a.vararg else []) \
+        + [p.arg for p in a.kwonlyargs] + ([a.kwarg.arg] if a.kwarg else [])
+
+
+def _name_chain(node: ast.AST) -> str | None:
+    """`Name` or an `Attribute` chain of names, as dotted text; anything else (a subscript, a string, a
+    union, a call) is None — the one shape a scope can bind."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        head = _name_chain(node.value)
+        return f"{head}.{node.attr}" if head else None
+    return None
+
+
+def _rebound_names(fn: ast.AST) -> set[str]:
+    """Every name the function's body binds again, anywhere under it — an assignment or augmented
+    assignment target, a for/with/except alias, a comprehension target, a walrus, a nested def or lambda's
+    own parameter or name, an import, a global/nonlocal — so a parameter's annotation binds only a name that
+    means one thing from the signature to the last line."""
+    out: set[str] = set()
+    for node in ast.walk(fn):
+        if node is fn:
+            continue
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            out.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out.add(node.name); out.update(_param_names(node))
+        elif isinstance(node, ast.Lambda):
+            out.update(_param_names(node))
+        elif isinstance(node, ast.ClassDef):
+            out.add(node.name)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            out.add(node.name)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            out.update(node.names)
+        elif isinstance(node, ast.alias):
+            out.add((node.asname or node.name).split(".")[0])
+        elif isinstance(node, ast.MatchAs) and node.name:
+            out.add(node.name)
+    return out
+
+
+def _bindable_annotations(fn: ast.AST) -> dict[str, str] | None:
+    a = fn.args
+    rebound = _rebound_names(fn)
+    out = {}
+    for p in (*a.posonlyargs, *a.args, *a.kwonlyargs):
+        if p.annotation is None or p.arg in rebound:
+            continue
+        text = _name_chain(p.annotation)
+        if text:
+            out[p.arg] = text
+    return out or None
+
+
 def _walk_stmt(
     stmt: ast.AST,
     parent_id: str,
@@ -274,11 +333,11 @@ def _walk_stmt(
             "file": file_rel,
             "line": stmt.lineno,
             "is_async": isinstance(stmt, ast.AsyncFunctionDef),
-            "args": [a.arg for a in stmt.args.args],
-            # every parameter's annotation as the producer saw it (graphyos #57): the resolver binds
-            # `ctx.invoke` through `ctx: Context` the way it binds `self.` through the class — by scope
-            "annotations": {a.arg: _expr_repr(a.annotation)
-                            for a in (*stmt.args.posonlyargs, *stmt.args.args, *stmt.args.kwonlyargs) if a.annotation is not None} or None,
+            "args": _param_names(stmt),
+            # a parameter's annotation when it is a name the resolver can bind (graphyos #57): `ctx: Context`
+            # makes `ctx.invoke` `Context.invoke` the way `self.` binds the container — by scope. Only a bare
+            # or dotted name is kept, and only when the body never rebinds the parameter; the rest is text
+            "annotations": _bindable_annotations(stmt),
             "returns": _expr_repr(stmt.returns) if stmt.returns else None,
             "docstring": (ast.get_docstring(stmt) or "")[:200],
             "container_class": container_class,
