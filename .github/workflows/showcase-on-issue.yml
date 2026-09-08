@@ -51,16 +51,24 @@ jobs:
           rc=$?
           echo "rc=$rc"
           page="$RUNNER_TEMP/showcase/$NAME/.graphy/showcase/showcase.txt"
+          body="$RUNNER_TEMP/body.txt"
+          if [ "$rc" -eq 0 ] && [ -f "$page" ]; then
+            head -c 60000 "$page" > "$body"
+          else
+            { grep -E 'REFUSED|FAILED|RED|timeout' "$RUNNER_TEMP/showcase.log" | head -20 || tail -20 "$RUNNER_TEMP/showcase.log"; } > "$body"
+          fi
+          # the fence is longer than any backtick run the body carries (graphyos #40): a module named
+          # with backticks is escaped by showcase.txt and, whatever the text, cannot close this fence
+          longest=$(grep -oE '`+' "$body" | awk '{ if (length($0) > m) m = length($0) } END { print m + 0 }')
+          n=$(( longest + 1 )); [ "$n" -lt 4 ] && n=4
+          fence=$(printf '%*s' "$n" '' | tr ' ' '`')
           {
             echo "### Your codebase, drawn by graphy in one command"
             echo
             echo "\`pip install graphyos && cd <repo> && graphy eat . && graphy showcase .\` — on $URL, on this runner, no model involved."
             echo
-            if [ "$rc" -eq 0 ] && [ -f "$page" ]; then
-              echo '````text'; head -c 60000 "$page"; echo '````'
-            else
-              echo "It refused, and this is what it said:"; echo; echo '````text'; grep -E 'REFUSED|FAILED|RED|timeout' "$RUNNER_TEMP/showcase.log" | head -20 || tail -20 "$RUNNER_TEMP/showcase.log"; echo '````'
-            fi
+            if [ "$rc" -ne 0 ] || [ ! -f "$page" ]; then echo "It refused, and this is what it said:"; echo; fi
+            echo "${fence}text"; cat "$body"; [ -n "$(tail -c1 "$body")" ] && echo; echo "$fence"
           } > "$RUNNER_TEMP/comment.md"
       - uses: actions/upload-artifact@v4
         if: steps.url.outputs.url != ''

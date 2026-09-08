@@ -3860,3 +3860,53 @@ python3 measure.py run && python3 measure.py diff recon.before39.json recon.json
 | the floor | 503 passed · 3 skipped (500 + 3); all three RED against the old engine; the graphy tenant's six arm regions re-rendered for the new symbols (`repo_cursor` · `working_tree_dirt` · `cursor_drift` · `tenant_exclude`), `ARMS OK` |
 | the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK`: runtime deps 0 · extras 3 · wheel 280,503 B (cap 400,000) · subprocess sites 26 over 6 programs — git was on the list |
 | the receipt | the first run read hono · express RED — their git cursor was the checkout's HEAD read against the root (fixed above, the content cursor) — and graphy RED on `ARMS DRIFT` for the new symbols (re-rendered); the second: `MEASURE OK: floor 503 passed · gate OK 16.4s · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 56.2s`; `diff recon.before39.json recon.json`: `quickstart.httpx.eat_again_seconds` 0.4 → 0.4 and `quickstart.express.eat_again_seconds` 1.2 → 1.2 — the one `git status` the eat adds costs nothing the receipt can see; `quickstart.express.eat_seconds` 6.3 → 3.3. The wrong way: `floor.seconds` 7.5 → 9.1 with the three new tests at 0.2 s together (0.15 + 0.05 + 0.01 under `--durations`), and `quickstart.httpx.eat_seconds` 4.0 → 5.0 (the clone-and-install lane) — the load noise §49 names, both; `pass.engine_hot_lanes` 1 → 1 as §74 left it |
+
+## 76 · A FILE NAMED WITH BACKTICKS COULD CLOSE THE SHOWCASE COMMENT'S FENCE — the text page is escaped and the workflow's fence is computed (2026-09-08 · graphyos issue 40)
+
+**The finding.** Red-team finding 7 (§71), not reproduced on the eat path. `showcase-on-issue.yml` wrapped
+`showcase.txt` in a fixed four-backtick fence and `compose` printed arm and module names verbatim into the
+text: a line of three or more backticks at most three spaces in closes a Markdown fence, and whatever follows
+lands as Markdown or HTML in a bot-authored comment. Module names are not slug-checked, so nothing in the lane
+refused one. The live run found why the finding never reproduced end to end, and it is a different bug: a
+module named `` ```.ts `` eats green and then the showcase dies with a `FanoutError` stack at the partition
+check (`non-dotted prefix 'hostile.```'`), before `compose` runs, and under `--no-provision` the ring's
+unresolved list is empty, so no import name reaches the page either — graphyos #46. The comment step, in that
+case, posts the stack's tail inside the fence.
+
+**The change.** Two layers, so neither has to be the last one. `showcase.fence_safe` writes the text page for
+the fence: every line that could close one — up to three spaces, then three or more backticks — has that run
+backslash-escaped (`` \`\`\` ``), visible in the fence, never a zero-width character; four spaces in is code
+and stays; every other line is untouched. `compose` returns the text through it. The workflow's comment step
+no longer fences with a fixed four: the body it posts (the page's first 60,000 bytes, or the refusal lines) is
+written first, the longest backtick run inside it is measured (`grep -oE '`+' | awk`), and the fence is one
+longer, four at least — so whatever the text carries, the fence closes exactly where the step closes it. The
+html page is unchanged; it escapes for html, as before.
+
+**The floor.** `test_showcase`: `fence_safe` on the closing shapes (bare, indented, with a name, five
+backticks with trailing space), the non-closing ones (four spaces in, `x```` `, two backticks, tildes, plain,
+empty) and a multi-line text; `compose` over arms named `` ``` `` and `` ````.ts `` with the origin `` ```` ``:
+no line of the text matches the closing shape, the names are escaped rather than dropped, the html carries the
+raw names and no backslash, and the page passes the draw check. The workflow's comment step is run as bash —
+the script sliced from the parsed workflow — over a body carrying a five-backtick line (rc 0) and a refusal log
+carrying a seven-backtick line (rc 2): the comment ends with a fence exactly one longer than the longest run,
+the body verbatim between, and the refusal phrase only on the refusal. Both RED against the old showcase.py
+and the old workflow (`git stash push -- engine/graphy .github`).
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_showcase.py -k fence
+git stash push -- engine/graphy .github && (cd engine && ../.venv/bin/python -m pytest -q tests/test_showcase.py -k fence); git stash pop    # RED on the old engine
+cd .. && python3 workflows.py && bash standalone_check.sh | tail -1
+# the step, by hand, over a page built to close a four-backtick fence
+S=/tmp/graphy-fence; rm -rf $S && mkdir -p $S/showcase/x/.graphy/showcase && printf 'line\n`````\n  ```\\`\\`\\`\nend' > $S/showcase/x/.graphy/showcase/showcase.txt \
+  && RUNNER_TEMP=$S NAME=x URL=https://example.invalid/x rc=0 bash -c "$(sed -n '/page="\$RUNNER_TEMP/,/} > "\$RUNNER_TEMP\/comment.md"/p' .github/workflows/showcase-on-issue.yml)" && cat $S/comment.md
+python3 measure.py run && python3 measure.py diff recon.before40.json recon.json
+```
+
+| check | result |
+|---|---|
+| the step, by hand | a page with a five-backtick line and an escaped `` ```\`\`\` `` line: the comment fences with six backticks, the body verbatim between; a refusal log with `SHOWCASE REFUSED: x`: four backticks, `It refused, and this is what it said:` above it — the old step's fixed four would have opened a new block at the five |
+| the same answer | a page with no backtick run longer than three fences with four backticks, byte-for-byte the old step's comment; a TypeScript repo eaten with `--no-provision` (three files, `import { f } from "```"`) showcased in 0.1 s → `SHOWCASE OK`, its comment fenced with four |
+| the live finding | the module named `` ```.ts `` → `EAT OK … (3 of 3 files parsed)` then the `FanoutError` stack, exit 1, no `SHOWCASE` line — graphyos #46 |
+| the floor | 505 passed · 3 skipped (503 + 2); both RED against the old showcase.py and the old workflow; the graphy tenant's six arm regions re-rendered for `fence_safe` (the first receipt read graphy RED on `ARMS DRIFT`), `ARMS OK` |
+| the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK: 5 file(s)` — the comment step parses as before; `BURDEN OK`: runtime deps 0 · extras 3 · wheel 280,886 B (cap 400,000) · subprocess sites 26 over 6 programs |
+| the receipt | `MEASURE OK: floor 505 passed · gate OK 14.9s · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 57.0s`; `diff recon.before40.json recon.json`: `quickstart.httpx.eat_seconds` 5.0 → 4.9, `quickstart.express.eat_seconds` 3.3 → 3.7, the eat-again numbers flat — the change touches no lane the receipt times. The wrong way: `floor.seconds` 9.1 → 10.8 with the two new tests at 0.04 s together (`--durations`), and `index.verify_seconds` 0.5 → 0.6 — the load noise §49 names, both; `pass.engine_hot_lanes` 1 → 1 as §75 left it |

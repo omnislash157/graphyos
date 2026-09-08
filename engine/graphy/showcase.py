@@ -7,11 +7,15 @@ the pillars and the unit map, and write one self-contained page: the interactive
 ASCII beside it, the arms the walk proposed with their crowns and evidence, the ring the repo
 carries and what it could not, the MCP block to paste into Claude Code or Cursor, three questions
 to ask, and how to add a model in three lines. `showcase.txt` is the same as plain text for a
-README or a post. The page passes the draw check and carries nothing fetched.
+README or a post, written for a Markdown fence: a module or arm name is printed verbatim, so any
+line that could close a backtick fence (up to three spaces, then three or more backticks) has its
+backticks backslash-escaped — visible, never a hidden character (graphyos #40). The page passes the
+draw check and carries nothing fetched.
 """
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -21,7 +25,7 @@ from graphy import draw as draw_lane
 from graphy import fanout, pillars as pillars_lane
 from graphy import sugiyama as S
 
-__all__ = ["ShowcaseError", "compose", "showcase", "PAGE", "TEXT"]
+__all__ = ["ShowcaseError", "compose", "fence_safe", "showcase", "PAGE", "TEXT"]
 
 PAGE, TEXT = "index.html", "showcase.txt"
 
@@ -32,6 +36,18 @@ class ShowcaseError(RuntimeError):
 
 def _esc(s) -> str:
     return S._esc(s)
+
+
+_FENCE_LINE = re.compile(r"^( {0,3})(`{3,})")
+
+
+def fence_safe(text: str) -> str:
+    """The text page written for a Markdown fence: every line that could close one — at most three
+    spaces of indent, then three or more backticks — has that run backslash-escaped (`\\``), so a
+    file named ```` ``` ```` cannot break out of the comment the workflow posts it in. Every other
+    line is untouched; the escape is visible in the fence, never a zero-width character."""
+    return "\n".join(_FENCE_LINE.sub(lambda m: m.group(1) + "".join("\\`" for _ in m.group(2)), ln)
+                     for ln in text.split("\n"))
 
 
 def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring: dict, graphy_cmd: list[str],
@@ -119,7 +135,7 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     if script:
         h.append(script)
     h += ["</body>", "</html>"]
-    return "\n".join(h) + "\n", "\n".join(text)
+    return "\n".join(h) + "\n", fence_safe("\n".join(text))
 
 
 def _clone(url: str, work: Path, log) -> Path:
