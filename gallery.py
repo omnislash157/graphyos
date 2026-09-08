@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -143,15 +145,35 @@ pip install 'graphyos[typescript]' &amp;&amp; graphy showcase https://github.com
 """
 
 
+def jobs_for(n: int) -> int:
+    """How many showcases run at once: every core, never more than the urls, `GALLERY_JOBS` overrides
+    (a box that must stay quiet says 1); a value that is not a positive integer is refused by name."""
+    raw = os.environ.get("GALLERY_JOBS")
+    if raw is None:
+        return max(1, min(n, os.cpu_count() or 2))
+    if not raw.isdigit() or int(raw) < 1:
+        raise GalleryError(f"GALLERY_JOBS must be a positive integer, not {raw!r}")
+    return max(1, min(n, int(raw)))
+
+
 def build(out: str | Path, urls: list[str], *, graphy: list[str] | None = None, log=print) -> dict:
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     work = out / ".work"
     graphy = graphy or [sys.executable, "-m", "graphy"]
+    seen: dict[str, str] = {}
     for u in urls:
-        slug_of(u)                                   # every url refused before any clone
+        slug, full = slug_of(u)                      # every url refused before any clone
+        if slug in seen:                             # two repos of one name would share a clone and a page —
+            raise GalleryError(f"two urls share the slug {slug!r}: {seen[slug]} and {full}")   # a race side by side
+        seen[slug] = full
     t0 = time.perf_counter()
-    pages = [_run_showcase(graphy, u, out, work, log) for u in urls]
+    # The showcases run side by side (graphyos #55): each is its own subprocess with its own clone under
+    # .work/<name> and its own --out, and more than half of a sequential build was the parent waiting on
+    # one `git clone` at a time. `map` hands the pages back in url order, so the index, the receipt and
+    # `green` are the sequential build's byte for byte; only the log lines interleave.
+    with ThreadPoolExecutor(max_workers=jobs_for(len(urls))) as pool:
+        pages = list(pool.map(lambda u: _run_showcase(graphy, u, out, work, log), urls))
     from graphy import __version__ as engine
     green = [p for p in pages if p["rc"] == 0 and p["check"] == []]
     mcp = ""

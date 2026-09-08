@@ -4470,3 +4470,40 @@ python3 -c "import urllib.request, json; d=json.load(urllib.request.urlopen('htt
 | the tag's run | `v0.2.3` on graphyos abf4aaa (private 8df3b09): release run 34259552202 — build success · publish success by trusted publishing |
 | PyPI | answers `0.2.3` within a minute of the publish (17:52 UTC) and its description carries `mcp-name: io.github.omnislash157/graphyos` → `0.2.3 True`; 0.2.2 read `False` fifteen seconds earlier |
 | the registry | the operator ran `mcp-publisher login github` (the GitHub device flow) and `mcp-publisher publish` from `~/graphyos`, 2026-09-08 18:07 UTC: `io.github.omnislash157/graphyos` 0.2.3 listed, status active, isLatest true, one package — pypi `graphyos` 0.2.3, runtimeHint uvx. Re-derive: `curl -s 'https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.omnislash157/graphyos' \| python3 -c "import json,sys; s=json.load(sys.stdin)['servers'][0]; print(s['server']['version'], s['_meta']['io.modelcontextprotocol.registry/official']['status'])"` → `0.2.3 active`. §85's registry hold is released; the marketplace listing stays the operator's |
+
+## 90 · THE GALLERY BUILDS ITS TEN PAGES SIDE BY SIDE — 11.3 s → 2.9 s on this box, 12.3 s → 2.6 s inside the image; the first issue of the optimization pass (2026-09-08 · graphyos issue 55)
+
+**The number.** The gallery — the Railway image's one slow step and the site's whole rebuild on every push —
+ran its ten showcases one after another. Two instruments on this box (8 cores): `/usr/bin/time` over
+`gallery.sh` read `wall 11.29 s · rss 53284 kB · cpu user 5.12 sys 0.88`, and the receipt's `seconds` 11.3, the
+sum of its ten pages, the slowest 2.3 (fastapi). The merged profile of the ten showcase processes
+(`GRAPHY_PROFILE_DIR`, `pstats` over `showcase-*.prof`): of 14.8 s, **8.0 s in `select.poll`** — the parent
+waiting on `git clone --depth 1`; the engine's hottest frame `tree_sitter.Parser.parse` at 0.6 s; one clone
+alone 1.86 s. Ten network waits laid end to end on eight idle cores.
+
+**The cause.** `gallery.build` was `[_run_showcase(…) for u in urls]`. Each showcase is its own subprocess with
+its own clone under `.work/<name>` and its own `--out`; nothing is shared; the index is composed after the list.
+
+**The change.** `build` runs the showcases through a `ThreadPoolExecutor` (stdlib) with `map` over the urls, so
+the pages come back in url order and the index, the receipt's `pages` and `green` are the sequential build's byte
+for byte; only the log lines interleave. `jobs_for(n)`: every core, never more than the urls, `GALLERY_JOBS`
+overrides and a value that is not a positive integer is refused by name. Nothing in the engine moves; the
+Dockerfile keeps its one line. The floor: the pool proven in-process (the runner replaced by a sleep per slug —
+the slowest url first, three starts within 50 ms, the order kept, 0.12 s of floor), and `GALLERY_JOBS=1` makes
+the same test fail on the wall — the red proof.
+
+```bash
+rm -rf /tmp/graphy-gallery-55 && /usr/bin/time -f 'wall %e s' bash gallery.sh /tmp/graphy-gallery-55 $(cat gallery.txt) 2>&1 | grep -E '^GALLERY OK|^wall'
+python3 burden.py | tail -1 · python3 measure.py diff recon.before55.json recon.json | tail -1 · bash standalone_check.sh | tail -1
+docker build -t graphy-gallery:55 . && docker run --rm graphy-gallery:55 python3 -c "import json; print(json.load(open('/site/gallery.json'))['seconds'])"
+```
+
+| check | result |
+|---|---|
+| before → after, this box | `wall 11.29 s` → `wall 2.92 s` (the receipt 11.3 → 2.9; the slowest page 2.5 s is the floor of the lane); rss 53 MB unchanged; cpu user 5.1 → 5.9 s |
+| the same answer | the ten pages' `index.html` and `showcase.txt` against the sequential build: 0 of 20 differ once the out-directory path (the MCP block names it) and the per-page seconds are normalized; the receipt's pages identical but `seconds`; `green` identical and in url order |
+| inside the image | `docker build` 17.3 s on this box (cached layers); `/site/gallery.json` says 2.6 s for 10 green pages (§87: 12.3 s); the container serves the index 200 |
+| the constraints | `BURDEN OK` with `burden.json` unchanged (`concurrent.futures` is stdlib); the same ten clones and nothing else fetched; `MEASURE DIFF OK: 7 number(s) moved, none the wrong way past tolerance` — the before re-pinned on the pre-change tree in the same hour (`git stash` · `measure.py run --quick --out recon.before55.json` · pop), since the first pin was a stale 16:41 receipt and the box reads 20% slower this hour on every hot frame |
+| the review's one finding | two urls of one repo name (a/click and b/click) shared `.work/click` and the page directory — a silent overwrite in sequence, a race side by side; `build` now refuses the pair by name before any clone (`GALLERY REFUSED: two urls share the slug 'click': a/click and b/click`, exit 2), with a test that proves the runner never starts |
+| the floor | 525 passed, 3 skipped (+2); the pool test green three runs in a row, red under `GALLERY_JOBS=1` |
+| the gate | `GRAPHY_STANDALONE_OK`, `BURDEN OK`, `WORKFLOWS OK` |
