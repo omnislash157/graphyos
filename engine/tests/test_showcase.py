@@ -190,3 +190,36 @@ def test_RED_showcase_without_work_says_where_the_clone_lands(tmp_path, monkeypa
         showcase.showcase("https://example.invalid/o/thing.git", log=logged.append, no_provision=True)
     assert any(line.startswith("SHOWCASE: reusing the clone at") and line.endswith("thing") for line in logged), logged
     assert len(calls) == 1
+
+
+def test_RED_showcase_non_dotted_partition_refuses_on_one_line_never_a_stack(tmp_path, capsys, monkeypatch):
+    """A module named outside the dotted identifier eats green and the showcase must still end on one
+    line (graphyos #46): a FanoutError or a PillarsError under the showcase is `SHOWCASE REFUSED: …`,
+    exit 2 — the classes the verb did not catch before."""
+    def boom(*a, **k):
+        raise fanout.FanoutError("partition at p: group 'HOSTILE' carries a non-dotted prefix 'hostile.```'")
+    monkeypatch.setattr(showcase, "showcase", boom)
+    rc = cli.main(["showcase", str(tmp_path), "--no-provision"])
+    err = capsys.readouterr().err
+    assert rc == 2 and err.splitlines() == ["SHOWCASE REFUSED: partition at p: group 'HOSTILE' carries a non-dotted prefix 'hostile.```'"]
+
+    def boom2(*a, **k):
+        raise pillars.PillarsError("corpus 'x' has no module graph")
+    monkeypatch.setattr(showcase, "showcase", boom2)
+    rc = cli.main(["showcase", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert rc == 2 and err.splitlines() == ["SHOWCASE REFUSED: corpus 'x' has no module graph"]
+
+
+def test_GREEN_showcase_nondotted_proposal_round_trips_through_the_partition(tmp_path):
+    """The proposal writes the walk's unit names as prefixes; a unit named `hostile.```` (a
+    TypeScript module ```.ts) loads back and cuts by exact prefix, its arm named ARM (graphyos #46)."""
+    units = ["hostile", "hostile.```", "hostile.other"]
+    proposal = pillars.Proposal(corpus="hostile", depth=2, floor=5, owned=2 / 3, client=1 / 3, rest="EDGE",
+                                crowns={"HOSTILE": "hostile"}, floor_arm=None, arms={"HOSTILE": units},
+                                rulings=[], total=0)
+    partition = tmp_path / "partition.json"
+    pillars.write_partition(partition, pillars.to_partition(proposal))
+    cut = fanout.load_partition(partition)
+    assert cut.group_of("hostile.```") == "HOSTILE" and cut.group_of("hostile.```.f") == "HOSTILE"
+    assert cut.group_of("hostile.other.c") == "HOSTILE" and cut.group_of("zod") == "EDGE"

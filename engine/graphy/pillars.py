@@ -34,6 +34,7 @@ store's edges, one of its nodes — never a hop.
 from __future__ import annotations
 
 import collections
+import re
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,8 +158,13 @@ class Proposal:
         return self.rest
 
 
+_ARM_CHARS = re.compile(r"[^A-Za-z0-9_]+")
+
+
 def _arm_name(unit: str, taken: Iterable[str]) -> str:
-    base = unit.rsplit(".", 1)[-1].lstrip("_").upper() or "ARM"
+    # an arm name is a section file and an html id: the crown's last segment with everything
+    # outside [A-Za-z0-9_] folded to `_` — a unit named `pkg.```` names its arm ARM, never ``` (graphyos #46)
+    base = _ARM_CHARS.sub("_", unit.rsplit(".", 1)[-1]).strip("_").upper() or "ARM"
     name, n = base, 2
     while name in taken:
         name, n = f"{base}{n}", n + 1

@@ -4127,3 +4127,49 @@ python3 measure.py run && python3 measure.py diff recon.before44.json recon.json
 | the floor | 501 passed · 3 skipped (496 + 5); the graphy tenant `ARMS OK` (the tests shard grew: 2663 → 2671 nodes, 6658 → 6677 edges) |
 | the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK: … scrub OK` — no new dependency, host or program (`hmac` and `secrets` are stdlib); `WORKFLOWS OK`; `CHANGELOG OK` |
 | the receipt | `MEASURE OK: floor 501 passed · gate OK 15.0s · wheel 280,344 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 53.2s`; `diff recon.before44.json recon.json`: the wheel byte-identical (no engine line moved), `quickstart.express.seconds` 4.5 → 3.8, `quickstart.httpx.seconds` 6.0 → 5.3; the one wrong way `wheel.seconds` 2.8 → 3.4, the wheel build, which no line of this change runs in; the first receipt read four wrong ways — the gate 15.9 → 19.1 s under the naive HMAC and the express quickstart's npm install — and the second, after the priming, reads none of them |
+
+## 81 · A MODULE NAMED OUTSIDE THE DOTTED IDENTIFIER — a unit the walk found is a unit the partition carries, and the showcase ends on one line (2026-09-08 · graphyos issue 46)
+
+**The finding.** Found on §76's live run. A TypeScript repo with a module named ```` ```.ts ```` — any name
+that is not a dotted identifier: a backtick, a space — eats green (`EAT OK: hostile + 0 ring shard(s)`) and
+`graphy showcase . --no-provision` dies with a stack, exit 1, no `SHOWCASE REFUSED` line. `pillars.to_partition`
+writes the walk's unit names as the partition's prefixes, `fanout.load_partition` refused a prefix outside
+`[A-Za-z0-9_~-]` with `group 'HOSTILE' carries a non-dotted prefix 'hostile.```'`, and the showcase verb caught
+`ShowcaseError · TenantError · StoreError · OSError` — `FanoutError` was none of them. On the showcase-on-issue
+workflow the comment would post the stack's tail as "what it said".
+
+**The change.** A unit the walk found is a unit the partition can carry: the loader admits what a producer
+minted — dotted segments, each non-empty, none carrying a control character — and refuses only what is no
+dotted path at all (an empty segment `a..b` · `.a` · `a.`, a newline), naming the rule in the refusal. The
+cut matches by exact prefix at segment boundaries as before, so ```` hostile.``` ```` claims ```` hostile.```.f ````
+and nothing else. An arm's name is a section file and an html id, so `pillars._arm_name` folds everything
+outside `[A-Za-z0-9_]` in the crown's last segment to `_` — a crown named ```` pkg.``` ```` names its arm `ARM`,
+`pkg.my file` names `MY_FILE`. The showcase verb catches `FanoutError` and `PillarsError` as `draw` does:
+`SHOWCASE REFUSED: <reason>` on one line, exit 2, never a stack.
+
+**The floor.** `test_fanout`: a partition carrying ```` pkg.``` ````, `pkg.my file` and `pkg.a-b` loads and cuts by
+exact prefix; the refusals now name an empty segment, a leading dot and a newline (the old case `pkg/a` is a
+name a producer could mint and is admitted). `test_pillars`: the arm name from a non-dotted crown is `ARM`,
+`MY_FILE`, `A_B2` under a taken name, and always `[A-Za-z0-9_]+`. `test_showcase`: a `FanoutError` and a
+`PillarsError` under the showcase verb are one `SHOWCASE REFUSED:` line at exit 2; a proposal whose units
+carry ```` hostile.``` ```` round-trips through `write_partition` → `load_partition`. Three RED against the old
+engine (the loader refused, the arm was named ```` ``` ````, no round trip).
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_showcase.py tests/test_fanout.py -k "non_dotted or nondotted" && cd ..
+# the specimen from the issue: a module named ```.ts, eaten and showcased
+S=/tmp/graphy-nondotted; rm -rf $S && mkdir -p $S/src && cd $S && git init -q && printf '{"name":"hostile","version":"0.0.1","main":"src/index.ts"}\n' > package.json && printf 'export function f() { return 1; }\n' > 'src/```.ts' && printf 'import { f } from "./```";\nexport const b = f();\n' > src/index.ts && printf 'import { b } from "./index";\nexport const c = b + 1;\n' > src/other.ts && git add -A && git -c user.email=x@y -c user.name=x commit -qm init && ~/graphy/.venv/bin/graphy showcase . --no-provision 2>&1 | tail -3 | grep -E '^SHOWCASE (OK|REFUSED)'; cd ~/graphy   # the OK line is followed by the page and the text paths, the REFUSED line is last
+# RED against the old engine
+git stash push -q -- engine/graphy && (cd engine && ../.venv/bin/python -m pytest -q tests/test_showcase.py tests/test_fanout.py tests/test_pillars.py -k "non_dotted or nondotted"); git stash pop -q
+bash standalone_check.sh | tail -1
+python3 measure.py run && python3 measure.py diff recon.before46.json recon.json
+```
+
+| check | result |
+|---|---|
+| the done check | the four named tests pass; the specimen: `EAT OK: hostile + 0 ring shard(s)` then `SHOWCASE: one pillar — corpus 'hostile' has no orchestrator at depth 2 …` then `SHOWCASE OK: hostile · 1 arm(s) (HOSTILE) · 0 ring shard(s) · CHECK GREEN · 0.1s`, exit 0 — the old engine died at `fanout.py:188` with the stack, exit 1; `GRAPHY_STANDALONE_OK` |
+| the partition it wrote | `"HOSTILE": ["hostile", "hostile.```", "hostile.other"]`, `"rest": "EDGE"` — the same file the old loader refused, loaded and cut |
+| RED against the old engine | the loader test (`carries a non-dotted prefix 'pkg.```'`), the arm-name test (`'```' == 'ARM'`), the round-trip test — three of four fail on the stashed `engine/graphy` |
+| the floor | 505 passed · 3 skipped (501 + 4); the graphy tenant `ARMS OK` — the six regions re-stamped to store `e672f53fce0cc6d3` (the tests shard grew: 2671 → 2675 nodes, 6677 → 6692 edges), the inventories unchanged |
+| the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK` — no new dependency, host or program; `WORKFLOWS OK`; `CHANGELOG OK` |
+| the receipt | `MEASURE OK: floor 505 passed · gate OK 16.1s · wheel 280,722 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 57.9s`; `diff recon.before46.json recon.json`: the wheel +378 B (the comments and the two catches); three wall-clock wrong ways — `quickstart.httpx.seconds` 5.3 → 6.8 (the pip install), `tenants.fastapi.seconds` 2.6 → 3.2, `wheel.seconds` 3.4 → 5.2 (the wheel build) — none of the three runs the changed lines more than once per partition; the first receipt read the graphy tenant RED, and its rebuild run alone is `GRAPHY_TENANT_OK`, the second receipt `graphy=OK` |

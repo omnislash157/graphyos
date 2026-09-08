@@ -1102,7 +1102,9 @@ def test_fanout_partition_refusals(tmp_path, capsys):
         "rest-collides": {"groups": {"A": ["pkg.a"]}, "rest": "A"},
         "empty-group": {"groups": {"A": []}},
         "no-groups": {"rest": "X"},
-        "not-dotted": {"groups": {"A": ["pkg/a"]}},
+        "not-dotted-empty-segment": {"groups": {"A": ["pkg..a"]}},
+        "not-dotted-leading-dot": {"groups": {"A": [".pkg"]}},
+        "not-dotted-newline": {"groups": {"A": ["pkg.a\nb"]}},
     }
     for tag, doc in cases.items():
         p = tmp_path / f"{tag}.json"
@@ -1143,3 +1145,20 @@ def test_fanout_verify_pins_the_cut(tmp_path, capsys):
         verdict = fanout_mod.verify_fanout(
             out, receipt_bytes=json.dumps(mutate(real)).encode("utf-8"), read_set={"TOC.md": toc})
         assert verdict["status"] == "INCOMPLETE", f"{tag}: {verdict}"
+
+
+def test_fanout_partition_admits_a_non_dotted_segment_the_walk_minted(tmp_path):
+    """A unit the walk found is a unit the partition can carry (graphyos #46): a TypeScript module
+    named ```.ts mints `pkg.```, and a segment with a space or a hyphen is a name, not a bug. The
+    loader refuses only what is no dotted path — an empty segment or a control character."""
+    from graphy.fanout import load_partition
+    p = tmp_path / "partition.json"
+    p.write_text(json.dumps({"groups": {"HOSTILE": ["pkg", "pkg.```", "pkg.my file", "pkg.a-b"]}, "rest": "EDGE"}),
+                 encoding="utf-8")
+    cut = load_partition(p)
+    assert cut.group_of("pkg.```") == "HOSTILE"
+    assert cut.group_of("pkg.```.f") == "HOSTILE"
+    assert cut.group_of("pkg.my file.g") == "HOSTILE"
+    assert cut.group_of("pkg.a-b") == "HOSTILE"
+    assert cut.group_of("other.```") == "EDGE"
+    assert cut.prefixes_of("HOSTILE") == ["pkg", "pkg.```", "pkg.my file", "pkg.a-b"]

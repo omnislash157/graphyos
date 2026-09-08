@@ -220,3 +220,15 @@ def test_cli_pillars_refusals(tmp_path, capsys):
     assert "is not a corpus of this tenant" in capsys.readouterr().err
     assert cli.main(["pillars", "--tenant", str(desc), "--tenant-id", "pil", "--arms", "1"]) == 1
     assert "PILLARS UNANSWERABLE" in capsys.readouterr().err
+
+
+def test_an_arm_named_from_a_non_dotted_crown_is_a_section_file_name():
+    """The crown's last segment names the arm, and an arm name is a section file and an html id
+    (graphyos #46): everything outside [A-Za-z0-9_] folds to `_`, a segment of nothing else is ARM."""
+    assert pillars._arm_name("pkg.```", []) == "ARM"
+    assert pillars._arm_name("pkg.my file", []) == "MY_FILE"
+    assert pillars._arm_name("pkg.a-b", ["A_B"]) == "A_B2"
+    assert pillars._arm_name("pkg.hub", []) == "HUB"
+    import re
+    for u in ("pkg.```", "pkg.my file", "pkg.-", "pkg.x.y z"):
+        assert re.fullmatch(r"[A-Za-z0-9_]+", pillars._arm_name(u, []))

@@ -154,7 +154,10 @@ class Cut:
                 "groups": len(self.groups), "rest": self.rest}
 
 
-_PREFIX_RE = re.compile(r"^[A-Za-z0-9_~-]+(\.[A-Za-z0-9_~-]+)*$")
+# A prefix is what a producer minted: dotted segments, each non-empty, none carrying a control
+# character. A backtick, a space or a hyphen inside a segment is a name the walk found, not a
+# bug (graphyos #46); an empty segment (`a..b`, `.a`, `a.`) or a newline is no path at all.
+_PREFIX_RE = re.compile(r"^[^.\x00-\x1f\x7f]+(\.[^.\x00-\x1f\x7f]+)*$")
 
 
 def load_partition(path: str | Path) -> Cut:
@@ -185,7 +188,8 @@ def load_partition(path: str | Path) -> Cut:
         clean: list[str] = []
         for prefix in prefixes:
             if not isinstance(prefix, str) or not _PREFIX_RE.match(prefix):
-                raise FanoutError(f"partition at {p}: group {name!r} carries a non-dotted prefix {prefix!r}")
+                raise FanoutError(f"partition at {p}: group {name!r} carries a non-dotted prefix {prefix!r} "
+                                  f"(a prefix is dotted segments, each non-empty, no control characters)")
             if prefix in claimed:
                 raise FanoutError(f"partition at {p}: prefix {prefix!r} is claimed by both "
                                   f"{claimed[prefix]!r} and {name!r}")

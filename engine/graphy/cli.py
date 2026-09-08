@@ -492,14 +492,18 @@ def _cmd_draw(args: argparse.Namespace) -> int:
 
 
 def _cmd_showcase(args: argparse.Namespace) -> int:
+    from graphy import fanout
     from graphy import federated_store as fstore
+    from graphy import pillars as pillars_lane
     from graphy import showcase as showcase_lane
     if not args.target:
         print("SHOWCASE REFUSED: name a git url or a repo path (`.` for the one you stand in)", file=sys.stderr)
         return 2
     try:
         r = showcase_lane.showcase(args.target, out=args.out, work=args.work, log=print, no_provision=args.no_provision)
-    except (showcase_lane.ShowcaseError, TenantError, fstore.StoreError, OSError) as exc:
+    except (showcase_lane.ShowcaseError, TenantError, fstore.StoreError, fanout.FanoutError,
+            pillars_lane.PillarsError, OSError) as exc:
+        # one line, never a stack: the partition and the proposal refuse by name (graphyos #46)
         print(f"SHOWCASE REFUSED: {exc}", file=sys.stderr)
         return 2
     if r["check"]:
