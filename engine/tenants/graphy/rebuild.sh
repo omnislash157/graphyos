@@ -33,10 +33,17 @@ if [ -d "$KEEP" ]; then mkdir -p "$SUB" && mv "$KEEP" "$SUB/traversals"; fi
 # the package, so `explain` names the tests that reach a symbol and blast_pr prints them.
 "$PY" -m graphy smash --package tests --site-packages "$SP" --corpus "$ENGINE/tests" --out "$SUB/.tests" --no-ring
 mv "$SUB/.tests/tests_graph" "$SUB/tests_graph" && rm -rf "$SUB/.tests"
+# The repo's own record as a third sibling (graphyos #59): commits · sessions · RECON sections · issues ·
+# receipts; a commit's `touches` names the module ids of the files it changed, so the history is a
+# wormhole into the code. The sessions archive is this box's and gitignored: absent, the shard says so.
+SESSIONS="$ROOT/.claude/recovery/sessions"
+HIST_OPTS=(--code "$SUB/graphy_graph" --code "$SUB/tests_graph")
+[ -d "$SESSIONS" ] && HIST_OPTS+=(--sessions "$SESSIONS")
+"$PY" -m graphy history --repo "$ROOT" --out "$SUB/history_graph" "${HIST_OPTS[@]}"
 LANES="$("$PY" - "$SUB/ring.json" <<'PY'
 import json, sys
 ring = json.load(open(sys.argv[1], encoding="utf-8"))
-print(" ".join(f"--lane {m['slug']}_graph:static-dep" for m in ring["minted"].values()) + " --lane tests_graph:static-dep")
+print(" ".join(f"--lane {m['slug']}_graph:static-dep" for m in ring["minted"].values()) + " --lane tests_graph:static-dep --lane history_graph:static-dep")
 PY
 )"
 CURSOR="$("$PY" -c 'import sys; from pathlib import Path; from graphy.cartograph import repo_cursor; print(repo_cursor(Path(sys.argv[1]), exclude=(Path(sys.argv[2]),))[0])' "$ROOT" "$(dirname "$DESC")")"   # the working tree's dirt joins the cursor (graphyos #39)
@@ -50,9 +57,11 @@ from pathlib import Path
 sub = Path(sys.argv[1])
 from graphy.smash import _schemes
 receipt = json.loads((sub / "ring.json").read_text(encoding="utf-8"))
-own, dst = _schemes(json.loads((sub / "tests_graph" / "edges.json").read_text(encoding="utf-8")))
-rows = {**receipt["scheme_index"], "tests": {"own": sorted(own), "out": sorted(dst - own)}}
-index = {"_meta": {"description": "graphy tenant scheme index — derived from ring.json (+ the tests shard) by rebuild.sh",
+rows = dict(receipt["scheme_index"])
+for slug in ("tests", "history"):
+    own, dst = _schemes(json.loads((sub / f"{slug}_graph" / "edges.json").read_text(encoding="utf-8")))
+    rows[slug] = {"own": sorted(own), "out": sorted(dst - own)}
+index = {"_meta": {"description": "graphy tenant scheme index — derived from ring.json (+ the tests and history shards) by rebuild.sh",
                    "standard": receipt["standard"]}, **rows}
 (sub / ".federation_scheme_index.json").write_text(json.dumps(index, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 PY

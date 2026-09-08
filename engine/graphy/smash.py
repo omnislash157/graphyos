@@ -292,6 +292,8 @@ def unreadable_phrase(unreadable: dict[str, str], *, limit: int = 8) -> str:
 def producer_source(name: str) -> str:
     """sha256 (16 hex) of the adapter module's own source bytes — the producer's identity for the splice."""
     module = {"python_ast": python_ast, "typescript_ast": typescript_ast}.get(name)
+    if module is None and name == "history":
+        from graphy.adapters import history as module              # lazy: history reads this module's writers
     if module is None:
         return "unknown"
     return hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()[:16]

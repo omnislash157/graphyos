@@ -4657,3 +4657,75 @@ python3 measure.py diff recon.before58.json recon.json | tail -1
 | the tenant | graphy rebuilt, six arm regions re-rendered (the walk gained `repo_of` · `clone_dir` · `_parse` · `_same_repo` · `_shown`), `ARMS OK: 6 arm(s) match the walk` |
 | the constraints | `BURDEN OK` (wheel 285,468 → 286,542 B); `CENSUS OK`; `MEASURE DIFF OK: 41 number(s) moved, none the wrong way past tolerance` (a first diff read quickstart httpx +21 % while the gallery built beside it — alone, inside tolerance; the clone is the network's); the gate `GRAPHY_STANDALONE_OK` |
 | the review, `/code-review medium` | eight findings, every one fixed: the workflow's page path moved under the key while the job installs the PyPI release whose clone still lands at `<work>/<name>` — every issue showcase would have posted an empty refusal until a release shipped (fixed by `--out`: the workflow reads the page where it asked for it and carries no copy of the key); `.`, `..` and `.git` admitted as a segment, so `https://github.com/pallets/..` cloned into `--work` itself (refused by name); the origin fold narrower than the key, so a clone made over ssh was refused against its https spelling and a token url was echoed verbatim (one parse decides both, userinfo never shown); sr.ht's `~owner` refused (admitted); GitLab nested groups colliding on the last two segments (the owner is the whole group path); gallery's fallback catching only `ModuleNotFoundError`, so an installed engine older than the key died on a traceback (an `ImportError` with `graphy` already imported is `GALLERY REFUSED` naming the stale engine, proven by a stub module); the `--work` help text still saying `<name>`; git's exit on the origin read ignored, dubious ownership reported as `<no origin>` (git's reason, when its exit is neither 0 nor 1). A single-segment self-hosted remote (`https://git.example.com/click.git`) now refuses where it once cloned — accepted: a key needs an owner, and the refusal names the shape |
+
+## 94 · THE HISTORY SHARD — the repo's own record minted as a substrate: 115 commits · 40 sessions · 95 sections · 54 issues · 37 receipts, 339 `touches` onto the code's module ids; a walk from a session lands in `graphy.showcase` in three hops (2026-09-08 · graphyos issue 59)
+
+**The number.** The operator, verbatim: *"load these 2 words as bloodhound, co occurrence and follow the fan
+out to tell me how the product changed over time … here's the exact sessions where it happens with the
+timestamps, and the commits that ball smash into it. It's all part of the substrate graph … We need to turn
+every single receipt file into a substrate that's walkable."* What the record held before this section, as
+text in five places and as edges nowhere: 115 commits, 106 carrying a `Claude-Session` trailer, 130 naming a
+RECON section or an issue; 40 captured sessions with a `captured_at`; 94 `## N ·` sections; 37 receipts named
+for the issue they pin. The memory doors (`bloodhound`, `reseed_graph chain`) answered in 90 ms and stopped at
+the session.
+
+**The law, pointed at the repo itself.** A corpus with rules becomes AST. `adapters/history.py` is a producer
+with its own vocabulary — node types `commit · session · section · issue · receipt`, edge types `authored ·
+records · names · pins · touches · follows`, ids `history://<node_type>/<name>` — and `graphy history --repo
+--out [--sessions] [--code <shard>]…` mints one shard in the smash shape (nodes.json · edges.json ·
+PROVENANCE.json, the producer's source digest, every path portable). The graphy tenant's rebuild mints it as
+`history_graph` beside `graphy_graph` and `tests_graph`; `init` declares the lane, the scheme index gets
+`history`, and `converge · build · check · container · walk · explain · estate` read it with no new code and no
+knowledge of the word. Nothing private travels: a session node is an id, a capture time, an exchange count and
+a file name — never a body; the shard is a build product under `substrate/`; the receipt names no box.
+
+**The join that is real and the one that is not.** The `Claude-Session` trailer on 106 commits names a claude.ai
+session, and the whole record carries two distinct ones — it spans many local sessions and no session file
+names it, so it is an attribute on the commit, never the join. The join is the window: a commit is authored by
+the session whose capture window — after the previous capture, up to its own — holds the author time (one box,
+one pane, captures in sequence). 109 of 115 commits land in a window; 6 land in none and get no edge: the five
+made before the first capture (17:04 to 18:39 on 09-05, the archive begins 19:12) and the one made after the
+last. The first cut had let the first window reach back to the beginning of time and authored those five onto
+the first session — the review's first finding; a window has two ends. A session captured twice (a compact,
+then the end) is one node with two windows. A `RECON §N` naming a section the file no longer carries is
+dropped, not invented.
+
+**The wormhole, from the shards' own files.** A commit's changed files become the code shards' own module ids
+by the map the shards carry — every module node's `file`, matched on a `/` boundary — so `engine/graphy/cli.py`
+is `graphy://module/graphy.cli` because `graphy_graph` says `graphy/cli.py` is; the rebuild hands the two code
+shards in with `--code`, and a repo with none gets no touches and a receipt that says so (the first cut had
+this repo's layout hardcoded into a pip-installed producer: click minted 0 touches under `HISTORY OK`). 339
+`touches` edges; `converge` counts the seam: `history → graphy 212 edge(s) over 72 node(s)`, `history → tests
+127 over 44`. Prose touches nothing; a path git would quote (`café.py`) still maps (`core.quotePath=false`).
+
+**The door for inputs git never tracks.** The sessions archive and the receipts are gitignored, so the tenant's
+cursor cannot see them move and `check` stays green over a stale history shard. `graphy history --out <shard>
+--verify` recomputes the inputs digest (commit shas · session id@capture · section titles · receipts · the code
+map) against the receipt's and exits 1 as `HISTORY STALE … re-mint` — proven on a fresh capture in the floor.
+
+**Two doors read differently than the issue assumed, by design.** `blast` follows `calls · inherits · imports ·
+decorates`, so a commit that touched a module is not its dependent — the estate answers `touches` directly, and
+the issue's fourth done line was corrected mid-march to say so. The store resolves a bare symbol by its id's
+tail, so `explain section/93` answers; `explain 59` refuses and lists `issue/59` and `section/59`, as two
+matches must; a commit is named by its full sha until the timeline door (graphyos #60) prints the short form.
+
+```bash
+cd engine && ../.venv/bin/python -m graphy history --repo ~/graphy --sessions ~/graphy/.claude/recovery/sessions --code tenants/graphy/substrate/graphy_graph --code tenants/graphy/substrate/tests_graph --out /tmp/graphy-history/history_graph | tail -2
+cd engine && bash tenants/graphy/rebuild.sh | grep -E '^HISTORY|^CHECK OK|^ARMS OK'
+cd engine && ../.venv/bin/python -m graphy history --repo ~/graphy --out tenants/graphy/substrate/history_graph --verify
+cd engine && ../.venv/bin/python -m graphy walk --tenant tenants/graphy/tenant.json --tenant-id graphy --seed history://session/f5f3ae96-cf01-42a9-a27f-4f021de79c96 --target graphy://module/graphy.showcase | head -1
+cd engine && ../.venv/bin/python -m graphy estate --tenant tenants/graphy/tenant.json --tenant-id graphy --sql "select edge_type, count(*) from adj where src like 'history://%' group by 1 order by 1"
+cd engine && ../.venv/bin/python -m graphy converge --tenant tenants/graphy/tenant.json --tenant-id graphy | grep -E 'history ->'
+python3 measure.py diff recon.before59.json recon.json | tail -1
+```
+
+| check | result |
+|---|---|
+| the mint | `HISTORY OK: 115 commit(s) · 40 session(s) · 95 section(s) · 54 issue(s) · 37 receipt(s)`; `HISTORY: 109 commit(s) authored by a session's window, 6 in no window · 339 touches onto code module ids`; 0.09 s; the shard 339 nodes / 910 edges |
+| the tenant | `BUILD OK: compiled 3065 nodes / 7778 edges` (2713 / 6818 before), `CONTAINER OK: 7 shard(s)`, `CHECK OK … container fresh for 7/7 shard(s)`, `ARMS OK: 6 arm(s) match the walk` after the regions that gained the adapter and the verb were re-rendered; `GRAPHY_TENANT_OK`; `--verify` → `HISTORY OK: … fresh` |
+| the walk | `WALK PATH: seed=history://session/f5f3ae96-… target=graphy://module/graphy.showcase hops=3` — session → commit 7a6c8fa → `graphy://module/graphy` → `graphy.showcase`; `explain section/93` answers `section history.section.93 at RECON.md:4607` |
+| the estate | `select count(*) from adj where edge_type='touches' and dst='graphy://module/graphy.showcase'` → 7, the seven commits that changed showcase.py, each a `history.commit.<sha7>` |
+| blast radius, before the edit | `blast smash.mint --depth 2`: dependents 5 own (smash · cli · farm · refresh ×2), 20 tests; none touched — the producer is a sibling, the mint reuses smash's writers and `producer_source` learned one more name; `cli._cmd_smash`: 0 dependents |
+| the floor | 535 passed, 3 skipped (+7: the joins on a synthetic three-commit repo with two sessions, one captured twice — one commit in a window, two in none; the receipt without sessions or code says so; the refusals; `module_id_of` on the shards' own files at a `/` boundary; `verify` fresh, stale on a new capture, fresh again; two shards naming one file refuse; the verb over this repo onto the tenant's two code shards, every `touches` dst owned) |
+| the constraints | `BURDEN OK` (subprocess sites 25 → 26, git already on the program list; wheel 286,542 → 294,097 B); `CENSUS OK`; `MEASURE DIFF OK: 47 number(s) moved, none the wrong way past tolerance` (a first diff read the two quickstart clones +35 %/+100 % while the tenant rebuilt beside it — alone, inside tolerance); the gate `GRAPHY_STANDALONE_OK` |
+| the review, `/code-review medium` | eight findings, every one fixed, and the two it dropped at its cap: the first window unbounded below, five pre-archive commits authored by guess (a window has two ends; the test that codified the guess fixed); this repo's layout hardcoded into the producer (the map is the code shards' own `file` attrs, handed in by `--code`); `check` blind to gitignored inputs (`--verify`, the digest door); `history://recon/<n>` under `node_type: section` breaking the id law (`history://section/<n>`); git quoting non-ASCII paths so a touch was dropped (`core.quotePath=false`, proven on `café.py`); an unquoted expansion in `rebuild.sh` (a bash array); absolute box paths in the receipt (`portable()` for every path, the mint command rebuilt from them, the floor asserts the receipt names no box); a mid-work finding recorded as RECON prose and not on the board (posted as a comment on graphyos #61); `producer_source` reused for `history`; dangling `touches` onto a deleted module — impossible by construction now that the map is the live shard's |

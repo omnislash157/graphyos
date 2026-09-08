@@ -1004,6 +1004,33 @@ def _cmd_fanout(args: argparse.Namespace) -> int:
 
 
 
+def _cmd_history(args: argparse.Namespace) -> int:
+    """The repo's own record as a shard (graphyos #59): commits · sessions · RECON sections · issues ·
+    receipts, wormholed onto the code shard's module ids by the files each commit touched."""
+    from graphy.adapters import history as history_lane
+    from graphy.ir import IRError
+    for flag in ("repo", "out"):
+        if not getattr(args, flag):
+            print(f"HISTORY REFUSED: --{flag} is required — graphy never guesses the repository or where "
+                  "the shard lands", file=sys.stderr)
+            return 2
+    try:
+        if args.verify:
+            fresh, why = history_lane.verify(args.out, repo=args.repo, sessions=args.sessions)
+            print(f"HISTORY {'OK' if fresh else 'STALE'}: {Path(args.out).resolve()} {why}")
+            return 0 if fresh else 1
+        prov = history_lane.mint(args.repo, args.out, sessions=args.sessions, recon=args.recon, code=args.code)
+    except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
+        print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
+        return 2
+    h = prov["history"]
+    print(f"HISTORY: {h['authored']} commit(s) authored by a session's window, {h['unauthored']} in no window · "
+          f"{h['touches']} touches onto code module ids · {h['note']}")
+    print(f"HISTORY OK: {h['commits']} commit(s) · {h['sessions']} session(s) · {h['sections']} section(s) · "
+          f"{h['issues']} issue(s) · {h['receipts']} receipt(s) -> {Path(args.out).resolve()}")
+    return 0
+
+
 def _cmd_smash(args: argparse.Namespace) -> int:
     from graphy import smash as smash_lane
     from graphy.parity import ParityError
@@ -1608,6 +1635,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p_smash.add_argument("--producer", default="python_ast", choices=_PRODUCER_NAMES,
                          help="the ecosystem door: python_ast over site-packages (default) or typescript_ast over node_modules")
     p_smash.set_defaults(handler=_cmd_smash)
+
+    p_hist = sub.add_parser(
+        "history", help="mint the repo's own record — commits · sessions · RECON sections · issues · receipts — "
+                        "as a history_graph shard beside the code shard (graphyos #59)")
+    p_hist.add_argument("--repo", default=None, help="the git repository whose record is minted")
+    p_hist.add_argument("--out", default=None, help="the shard directory (nodes.json · edges.json · PROVENANCE.json)")
+    p_hist.add_argument("--sessions", default=None,
+                        help="the sessions archive (.claude/recovery/sessions); absent, the shard carries no session")
+    p_hist.add_argument("--recon", default="RECON.md", help="the measured record, relative to --repo (default RECON.md)")
+    p_hist.add_argument("--code", action="append", default=None,
+                        help="a code shard whose module ids a commit's changed files map onto (repeatable); "
+                             "absent, the shard carries no touches and says so")
+    p_hist.add_argument("--verify", action="store_true",
+                        help="mint nothing: is the shard at --out minted from these inputs as they stand — exit 1 when stale")
+    p_hist.set_defaults(handler=_cmd_history)
 
     p_converge = sub.add_parser(
         "converge", help="measure the seam between a tenant's shards; --resolve turns text labels into edges")
