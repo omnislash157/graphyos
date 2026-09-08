@@ -775,6 +775,13 @@ def _cmd_check(args: argparse.Namespace) -> int:
     findings: list[tuple[str, str, str]] = []
 
     data_home = Path(tenant.data_home)
+    from graphy.cartograph import cursor_drift, tenant_exclude
+    drift = cursor_drift(tenant.cursor, Path(tenant.root), exclude=tenant_exclude(Path(args.tenant), tenant))
+    if drift is not None:                                # graphyos #39: the cursor covers the working tree
+        findings.append((
+            "COULD-NOT-TELL" if drift.startswith("the repo's HEAD is unreadable") else "RED",
+            f"cursor lane: STALE — {drift}",
+            "re-eat the repo (`graphy eat .`) or run the tenant's rebuild so the store answers from the tree you stand in"))
     for scheme, pins in release_lane.collisions(release_lane.roster_releases(data_home, substrates)):
         findings.append((
             "RED",
@@ -1324,10 +1331,13 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         if d.is_dir() and d.name not in live:
             shutil.rmtree(d, ignore_errors=True)                 # a shard the ring no longer names
     lanes = [f"--lane={m['slug']}_graph:static-dep" for m in ring["minted"].values()]
-    from graphy.cartograph import repo_head_sha
-    head = repo_head_sha(repo)
-    cursor = f"git:{head}" if head else "sha256:" + hashlib.sha256(
-        (sub / f"{package}_graph" / "edges.json").read_bytes()).hexdigest()
+    from graphy.cartograph import repo_cursor
+    cursor, dirty = repo_cursor(repo, exclude=(home,))   # the working tree's dirt joins the cursor (graphyos #39)
+    if cursor is None:
+        cursor = "sha256:" + hashlib.sha256((sub / f"{package}_graph" / "edges.json").read_bytes()).hexdigest()
+    elif dirty:
+        print(f"EAT: the working tree is dirty ({dirty} file(s) past HEAD) — the cursor carries it; "
+              f"`graphy check` reads STALE the moment they move")
     rc = main(["init", "--tenant", str(desc), "--root", str(repo), "--data-home", str(sub),
                "--join-keys", str(sub / "registry.json"), "--journal", str(sub / "journal"),
                "--cursor", cursor, "--policy", "refuse", "--adapter", producer, *lanes])

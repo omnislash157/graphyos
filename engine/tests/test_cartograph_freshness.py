@@ -280,3 +280,65 @@ def test_publish_wire_poisoned_journal_never_breaks_publish(tmp_path, monkeypatc
     carto.code_graph_publish_inplace("widgets_graph", live, tenant=tenant)
     assert (live / "nodes.json").read_text(encoding="utf-8") == "NEW"
     assert "[journal-observer]" in capsys.readouterr().err
+
+
+def _git_repo(path: Path) -> str:
+    import subprocess
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "a.py").write_text("def a():\n    return 1\n")
+    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+    subprocess.run(["git", "add", "."], cwd=path, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"], cwd=path, check=True)
+    return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=path, capture_output=True, text=True).stdout.strip()
+
+
+def test_GREEN_working_tree_dirt_joins_the_cursor(tmp_path):
+    """graphyos #39: a clean tree's cursor is exactly `git:<head>` (unchanged); an uncommitted edit
+    grows a `+<digest>` that moves with the bytes, an untracked file counts, the tenant's own home
+    never does, and reverting the edit restores the clean cursor."""
+    repo = tmp_path / "r"
+    head = _git_repo(repo)
+    clean, n = carto.repo_cursor(repo)
+    assert (clean, n) == (f"git:{head}", 0)
+    assert carto.cursor_drift(clean, repo) is None
+    (repo / "a.py").write_text("def a():\n    return 1\n\ndef b():\n    return 2\n")
+    dirty1, n = carto.repo_cursor(repo)
+    assert dirty1.startswith(f"git:{head}+") and len(dirty1) == len(clean) + 17 and n == 1
+    assert carto.cursor_drift(clean, repo) == "the working tree moved past the store: 1 file(s) modified or untracked since the build"
+    assert carto.cursor_drift(dirty1, repo) is None
+    assert carto.cursor_drift("sha256:" + "0" * 64, repo) is None, "a content cursor never drifts"
+    # the same file edited again: status is identical, the bytes are not — the digest moves
+    (repo / "a.py").write_text("def a():\n    return 1\n\ndef b():\n    return 3\n")
+    dirty2, _ = carto.repo_cursor(repo)
+    assert dirty2 != dirty1 and dirty2.startswith(f"git:{head}+")
+    # an untracked file counts; the eat's home (its own product) never does
+    (repo / "new.py").write_text("x = 1\n")
+    home = repo / ".graphy"
+    (home / "substrate").mkdir(parents=True)
+    (home / "substrate" / "ring.json").write_text("{}")
+    dirty3, n = carto.repo_cursor(repo, exclude=(home,))
+    assert n == 2 and dirty3 not in (dirty1, dirty2)
+    assert carto.repo_cursor(repo)[1] == 3        # without the exclude the home's file is dirt
+    assert carto.cursor_drift(dirty3, repo, exclude=(home,)) is None
+    # a short head and a long head are the same head; a subdirectory reads the same tree
+    full = subprocess_head(repo)
+    assert carto.cursor_drift(dirty3.replace(head, full, 1), repo, exclude=(home,)) is None
+    (repo / "pkg").mkdir()
+    assert carto.repo_cursor(repo / "pkg", exclude=(home,)) == (dirty3, 2), "a subdirectory reads the same tree"
+    # revert: the clean cursor again, byte for byte
+    (repo / "new.py").unlink()
+    (repo / "a.py").write_text("def a():\n    return 1\n")
+    assert carto.repo_cursor(repo, exclude=(home,)) == (clean, 0)
+    assert carto.cursor_drift(dirty3, repo, exclude=(home,)) == (
+        "the working tree moved past the store: the edits it was built from are gone (the tree is clean)")
+    # a commit past the store names the HEAD
+    (repo / "a.py").write_text("def a():\n    return 5\n")
+    import subprocess
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "j"], cwd=repo, check=True)
+    assert carto.cursor_drift(clean, repo).startswith(f"HEAD moved past the store: built at {head}, HEAD is ")
+    assert carto.repo_cursor(tmp_path / "nowhere") == (None, 0)
+
+
+def subprocess_head(repo: Path) -> str:
+    import subprocess
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()

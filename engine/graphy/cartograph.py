@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import shlex
@@ -29,6 +30,102 @@ def repo_head_sha(repo_root: Path | None = None) -> str | None:
         return out.stdout.strip() if out.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def working_tree_dirt(repo_root: Path, exclude: Iterable[Path] = ()) -> tuple[list[str], bytes] | None:
+    """What the working tree holds past HEAD: the paths ``git status --porcelain -uall`` names (every
+    untracked file spelled out, nothing under an ``exclude`` root — the data home the eat writes),
+    and the bytes that identify them — the status line, then each named file's bytes, so a second
+    edit to an already-modified file moves the digest. ``None`` when the status cannot be read."""
+    try:
+        out = subprocess.run(["git", "-C", str(repo_root), "status", "--porcelain", "-uall", "-z"],
+                             capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    roots = [Path(e).resolve() for e in exclude]
+    try:                                        # porcelain paths are relative to the repository's top level
+        top = subprocess.run(["git", "-C", str(repo_root), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if top.returncode != 0 or not top.stdout.strip():
+        return None
+    root = Path(top.stdout.strip()).resolve()
+    paths: list[str] = []
+    fields = out.stdout.split(b"\0")
+    i = 0
+    while i < len(fields):
+        line = fields[i]
+        i += 1
+        if len(line) < 4:
+            continue
+        code, rel = line[:2], line[3:]
+        if code[:1] in b"RC":                   # a rename carries its origin as the next field
+            i += 1
+        rel_s = rel.decode("utf-8", "surrogateescape")
+        full = root / rel_s
+        if any(r == full or r in full.parents for r in roots):
+            continue
+        paths.append(rel_s)
+    h = hashlib.sha256()
+    for rel_s in paths:
+        h.update(rel_s.encode("utf-8", "surrogateescape") + b"\0")
+        full = root / rel_s
+        try:
+            if full.is_file() and not full.is_symlink():
+                h.update(full.read_bytes())
+        except OSError:
+            h.update(b"?")
+        h.update(b"\0")
+    return paths, h.digest()
+
+
+def repo_cursor(repo_root: Path | None, exclude: Iterable[Path] = ()) -> tuple[str | None, int]:
+    """The tenant cursor for a repo: ``git:<head>`` when the tree is clean, ``git:<head>+<digest>``
+    when it is dirty — the digest over the working tree's dirt (graphyos #39), so a store built from
+    uncommitted edits is named stale the moment they move, and a clean tree's cursor is unchanged.
+    Returns ``(cursor, dirty file count)``; ``(None, 0)`` when the repo has no readable HEAD."""
+    head = repo_head_sha(repo_root)
+    if head is None:
+        return None, 0
+    dirt = working_tree_dirt(Path(repo_root), exclude)
+    if not dirt or not dirt[0]:
+        return f"git:{head}", 0
+    paths, digest = dirt
+    return f"git:{head}+{digest.hex()[:16]}", len(paths)
+
+
+def tenant_exclude(descriptor: Path, tenant: Tenant) -> tuple[Path, ...]:
+    """What the cursor never counts as dirt: the tenant's own products — its data home, journal,
+    join keys, the descriptor, and the home the eat wrote when the data home sits inside it."""
+    home = Path(descriptor).resolve().parent
+    data_home = Path(tenant.data_home).resolve()
+    out = [data_home, Path(tenant.journal), Path(tenant.join_keys), Path(descriptor)]
+    if home == data_home.parent:
+        out.append(home)
+    return tuple(out)
+
+
+def cursor_drift(cursor: str, repo_root: Path, exclude: Iterable[Path] = ()) -> str | None:
+    """Has the repo moved past a ``git:`` cursor? ``None`` when it holds (or the cursor is not a git
+    one); otherwise the reason — the working tree's dirt or the HEAD itself. A HEAD spelled short by
+    one writer and long by another is the same HEAD."""
+    if not cursor.startswith("git:"):
+        return None
+    built_head, _, built_dirt = cursor[4:].partition("+")
+    live, count = repo_cursor(repo_root, exclude)
+    if live is None:
+        return "the repo's HEAD is unreadable (git unavailable or broken on this box?) — freshness is unmeasurable"
+    live_head, _, live_dirt = live[4:].partition("+")
+    if not (live_head.startswith(built_head) or built_head.startswith(live_head)):
+        return f"HEAD moved past the store: built at {built_head}, HEAD is {live_head}"
+    if live_dirt != built_dirt:
+        if count:
+            return f"the working tree moved past the store: {count} file(s) modified or untracked since the build"
+        return "the working tree moved past the store: the edits it was built from are gone (the tree is clean)"
+    return None
 
 
 def _behind_commits(repo_root: Path, built: str, head: str) -> int | None:

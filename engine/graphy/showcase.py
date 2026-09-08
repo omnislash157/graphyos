@@ -137,7 +137,8 @@ def _clone(url: str, work: Path, log) -> Path:
 
 def showcase(target: str, *, out: str | Path | None = None, work: str | Path | None = None, log=None,
              eat=None, open_store=None, graphy_cmd: list[str] | None = None, no_provision: bool = False) -> dict:
-    """Clone when a URL, eat when no fresh .graphy stands, propose, draw, compose, check.
+    """Clone when a URL, eat when no .graphy stands or the one standing is behind the working tree
+    (its cursor drifted, graphyos #39), propose, draw, compose, check.
     ``no_provision`` is handed to the eat: nothing of the repo's runs, the ring is empty (graphyos #35)."""
     from graphy import federated_store as fstore
     from graphy.cli import _load_tenant, _roster, _graphy_command, main as cli_main
@@ -153,7 +154,16 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
         raise ShowcaseError(f"not a directory: {repo}")
     home = repo / ".graphy"
     desc = home / "tenant.json"
-    if not desc.is_file():
+    stale = None
+    if desc.is_file():                                   # graphyos #39: a store behind the working tree is re-eaten
+        from graphy.cartograph import cursor_drift
+        try:
+            stale = cursor_drift(json.loads(desc.read_text(encoding="utf-8")).get("cursor", ""), repo, exclude=(home,))
+        except (OSError, ValueError, AttributeError) as exc:
+            stale = f"the descriptor at {desc} is unreadable ({exc})"
+        if stale:
+            log(f"SHOWCASE: {stale} — eating again")
+    if not desc.is_file() or stale:
         argv = ["eat", str(repo)] + (["--no-provision"] if no_provision else [])
         rc = (eat or (lambda r: cli_main(argv)))(repo)
         if rc != 0:

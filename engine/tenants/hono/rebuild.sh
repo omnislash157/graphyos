@@ -94,7 +94,7 @@ print(" ".join(f"--lane {m['slug']}_graph:static-dep" for m in ring["minted"].va
 PY
 )"
 fi
-CURSOR="$( [ -n "${GRAPHY_SHARD_INDEX:-}" ] && echo "sha256:$(sha256sum "$SUB/hono_graph/edges.json" | cut -c1-64)" || echo "git:$(git -C "$(dirname "$CORPUS")" rev-parse HEAD)" )"
+CURSOR="sha256:$(sha256sum "$SUB/hono_graph/edges.json" | cut -c1-64)"   # a pinned checkout is content, never a working tree: a git cursor is read against the tenant root (graphyos #39)
 eval "set -- $LANES"
 "$PY" -m graphy init --tenant "$DESC" --root "$HERE" --data-home "$SUB" \
     --join-keys "$SUB/registry.json" --journal "$SUB/journal" --cursor "$CURSOR" \

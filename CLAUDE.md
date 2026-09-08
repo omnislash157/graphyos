@@ -96,7 +96,7 @@ query.py                activate · rank — spreading activation, pure; the `gr
 journal.py              born/died per graph; append_page · observe_publish · steward
 augment_registry.py     a dirless augment self-registers; register · verify_registration
 mesh_federation_gate.py roster · census · classify — membership is scanner-derived
-cartograph.py           resolve_graph · freshness against the repo cursor · the build lane runner
+cartograph.py           resolve_graph · repo_cursor · cursor_drift — the cursor is the HEAD plus the working tree's dirt; check names the drift, showcase re-eats on it · the build lane runner
 fanout.py               compile_fanout · verify_fanout — TOC + sections + a sha receipt; the cut is a dotted depth or a partition file, and the receipt pins it
 pillars.py              module_graph · propose · diff — a corpus's arms deduced from its module graph: crowns by fan-out, the floor by fan-in, every ruling with its evidence; the proposal is a partition file
 arms.py                 render_all · generate · verify — the walk-derived half of an arm file as a marked generated region (inventory by module · inherits joins out · re-walk), stamped with the store generation; verify names drift

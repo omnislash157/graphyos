@@ -39,7 +39,7 @@ ring = json.load(open(sys.argv[1], encoding="utf-8"))
 print(" ".join(f"--lane {m['slug']}_graph:static-dep" for m in ring["minted"].values()) + " --lane tests_graph:static-dep")
 PY
 )"
-CURSOR="git:$(git -C "$ROOT" rev-parse HEAD)"
+CURSOR="$("$PY" -c 'import sys; from pathlib import Path; from graphy.cartograph import repo_cursor; print(repo_cursor(Path(sys.argv[1]), exclude=(Path(sys.argv[2]),))[0])' "$ROOT" "$(dirname "$DESC")")"   # the working tree's dirt joins the cursor (graphyos #39)
 eval "set -- $LANES"
 "$PY" -m graphy init --tenant "$DESC" --root "$HERE" --data-home "$SUB" \
     --join-keys "$SUB/registry.json" --journal "$SUB/journal" --cursor "$CURSOR" \

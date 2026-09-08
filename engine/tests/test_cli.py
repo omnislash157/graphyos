@@ -659,3 +659,37 @@ def test_GREEN_eat_no_provision_runs_nothing_of_the_repo_and_mints_an_empty_ring
     (repo / ".graphy").rename(repo / ".was")
     assert cli.main(["eat", str(repo), "--no-provision", "--site-packages", str(tmp_path)]) == 2
     assert "contradict" in capsys.readouterr().err and not (repo / ".graphy").exists()
+
+
+def test_RED_check_names_a_working_tree_that_moved_past_the_store(tmp_path, capsys):
+    """graphyos #39: after an eat, an uncommitted edit makes `graphy check` read STALE naming the
+    file count, exit 1; eating again over the dirty tree reads CHECK OK; a commit past it reads
+    STALE naming the HEAD."""
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "solo").mkdir(parents=True)
+    (repo / "solo" / "__init__.py").write_text("from . import b\n")
+    (repo / "solo" / "b.py").write_text("def f():\n    return 1\n")
+    (repo / "pyproject.toml").write_text('[project]\nname = "solo"\nversion = "0"\n')
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"], cwd=repo, check=True)
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+    desc = str(repo / ".graphy" / "tenant.json")
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    out = capsys.readouterr().out
+    assert "CHECK OK" in out and "working tree is dirty" not in out
+    assert json.loads(Path(desc).read_text())["cursor"] == f"git:{head}", "a clean tree's cursor is the HEAD alone"
+    (repo / "solo" / "b.py").write_text("def f():\n    return 1\n\ndef g():\n    return 2\n")
+    assert cli.main(["check", "--tenant", desc, "--tenant-id", "solo"]) == 1
+    err = capsys.readouterr().err
+    assert "CHECK RED: cursor lane: STALE — the working tree moved past the store: 1 file(s) modified or untracked since the build" in err
+    assert "graphy eat ." in err
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    out = capsys.readouterr().out
+    assert "EAT: the working tree is dirty (1 file(s) past HEAD) — the cursor carries it" in out and "CHECK OK" in out
+    assert json.loads(Path(desc).read_text())["cursor"].startswith(f"git:{head}+")
+    assert cli.main(["check", "--tenant", desc, "--tenant-id", "solo"]) == 0
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "j"], cwd=repo, check=True)
+    assert cli.main(["check", "--tenant", desc, "--tenant-id", "solo"]) == 1
+    assert f"STALE — HEAD moved past the store: built at {head}, HEAD is " in capsys.readouterr().err

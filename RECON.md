@@ -3804,3 +3804,59 @@ python3 measure.py run && python3 measure.py diff recon.before38.json recon.json
 | the floor | 500 passed · 3 skipped (498 + 2); both RED against the old engine; the graphy tenant's `PRODUCE` arm re-rendered (`read_source` · `walk_files_naming_skips` · `_escapes` · `unreadable_phrase` · `Receipt.unreadable` in the walk), `ARMS OK` |
 | the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK`: runtime deps 0 · extras 3 · wheel 278,572 B (cap 400,000) |
 | the receipt | `measure.py run` then `diff recon.before38.json recon.json`: every tenant OK, `quickstart.httpx.eat_again_seconds` 0.4 → 0.4 and `quickstart.express.eat_again_seconds` 1.2 → 1.2 with `eat_again_parsed` 0 on both — the splice unchanged; `quickstart.httpx.eat_seconds` 4.3 → 4.0, `tenants.sqlalchemy.seconds` 6.0 → 5.6, `floor.seconds` 10.7 → 7.5, the receipt 58.4 → 55.6 s. The wrong way: `index.verify_seconds` 0.5 → 0.6 (a lane no line of this change runs in), `pass.engine_hot_lanes` 0 → 1 — the floor's hottest function is `container._write_parquet` where it was `posix.fsync`, the same three functions in a different order. Closed on the engine lines by the standing ruling (§59) |
+
+## 75 · CHECK SAID FRESH AND SHOWCASE SAID 0.0 s AGAINST UNCOMMITTED EDITS — the working tree's dirt joins the cursor (2026-09-08 · graphyos issue 39)
+
+**The finding.** Red-team finding 6 (§71). `_eat_run` set the tenant cursor to `git:<HEAD>` and the
+showcase skipped the eat whenever `.graphy/tenant.json` stood; `check` never compared the cursor to
+anything. Reproduced on a fresh `pallets/click` clone: a function appended to `src/click/core.py`
+(uncommitted), then `graphy check` → `CHECK OK … store fresh`, `graphy showcase .` → `SHOWCASE OK … 0.0s`,
+`graphy blast planted_fn` → "names no node". A newcomer iterating on the working tree saw a stale page over
+a green audit; the `0.0s` was the only tell.
+
+**The change.** `cartograph.repo_cursor` is the one writer of a git cursor: `git:<head>` when the tree is
+clean — exactly yesterday's cursor — and `git:<head>+<16 hex>` when it is dirty, the digest over
+`git status --porcelain -uall -z` (every untracked file spelled out) and the bytes of every file it names,
+so a second edit to an already-modified file moves it; the tenant's own products (the data home, journal,
+join keys, descriptor, the eat's `.graphy/`) are never dirt. `cartograph.cursor_drift` reads it back: a short
+HEAD and a long one are the same HEAD; `sha256:` cursors never drift. `graphy eat` writes it and says
+`EAT: the working tree is dirty (N file(s) past HEAD) — the cursor carries it` when it is; `graphy check`
+grows a cursor lane — `CHECK RED: cursor lane: STALE — the working tree moved past the store: N file(s)
+modified or untracked since the build — re-eat the repo (`graphy eat .`) …`, or `STALE — HEAD moved past
+the store: built at <a>, HEAD is <b>`, COULD-NOT-TELL when git cannot read the HEAD; `showcase .` re-eats
+when the descriptor's cursor drifted (`SHOWCASE: … — eating again`; the splice parses only what moved, §53).
+The graphy tenant's `rebuild.sh` computes its cursor through the same function, so a store built from a
+dirty engine tree carries the dirt and its `check` holds until the tree moves. A git cursor is read against
+the tenant's declared root, so hono and express — whose corpora are pinned checkouts under `staging/corpora`,
+not the root — now write `sha256:` content cursors as fastapi and sqlalchemy always did (the first receipt
+read both RED: their cursor was the checkout's HEAD, the root's HEAD is this repo's). `ensure_fresh`
+(stats.json against HEAD) is untouched.
+
+**The floor.** `test_cartograph_freshness`: a clean tree's cursor byte-equal to `git:<head>`; one edit
+grows 17 characters and counts 1; the same file edited again moves the digest with the status unchanged; an
+untracked file counts, the excluded home does not; a subdirectory reads the same tree; short and long HEAD
+agree; the revert restores the clean cursor; a commit names the HEAD; no repo → `(None, 0)`.
+`test_showcase`: a current `.graphy` is reused, a dirty tree is eaten again and the log says why.
+`test_cli`: eat · edit · `check` exit 1 with the line · eat again over the dirty tree · `CHECK OK` · commit ·
+`STALE — HEAD moved`. All three RED against the old engine.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cartograph_freshness.py tests/test_showcase.py tests/test_cli.py -k "dirty or working_tree"
+git stash push -- engine/graphy && (cd engine && ../.venv/bin/python -m pytest -q tests/test_cartograph_freshness.py tests/test_showcase.py tests/test_cli.py -k "dirty or working_tree"); git stash pop    # RED on the old engine
+# the live run: the issue's reproduction on a fresh clone
+cd /tmp && rm -rf click && git clone -q --depth 1 https://github.com/pallets/click && cd click && G=~/graphy/.venv/bin/graphy \
+  && $G eat . --no-provision | grep "EAT OK" && $G check --tenant .graphy/tenant.json --tenant-id click | tail -1 \
+  && printf '\n\ndef planted_fn():\n    return 1\n' >> src/click/core.py \
+  && $G check --tenant .graphy/tenant.json --tenant-id click; $G showcase . | grep -E "SHOWCASE|EAT OK" \
+  && $G blast planted_fn --tenant .graphy/tenant.json --tenant-id click | head -1 && grep -o '"cursor": "[^"]*"' .graphy/tenant.json
+cd ~/graphy && python3 burden.py && bash standalone_check.sh | tail -1
+python3 measure.py run && python3 measure.py diff recon.before39.json recon.json
+```
+
+| check | result |
+|---|---|
+| the reproduction | `pallets/click` at `6aabf09`, eaten clean in 0.2 s, cursor `git:6aabf09`, `CHECK OK`; the function appended: `CHECK RED: cursor lane: STALE — the working tree moved past the store: 1 file(s) modified or untracked since the build — re-eat the repo (`graphy eat .`) …`; `graphy showcase .` → `SHOWCASE: the working tree moved past the store: 1 file(s) … — eating again` · `EAT: the working tree is dirty (1 file(s) past HEAD) — the cursor carries it` · `EAT OK … (1 of 17 files parsed, 3.0s)` · `SHOWCASE OK: click · 3 arm(s) … 3.0s`; `graphy blast planted_fn` → `BLAST seed=click://func/click.core.planted_fn … dependents=0`; `CHECK OK`; the cursor `git:6aabf09+77708a42cc70450d` |
+| the same answer | a clean tree's cursor is `git:<short head>`, the string the old eat wrote; the graphy tenant's cursor is `git:<full head>` on a clean tree, as `rebuild.sh` wrote before |
+| the floor | 503 passed · 3 skipped (500 + 3); all three RED against the old engine; the graphy tenant's six arm regions re-rendered for the new symbols (`repo_cursor` · `working_tree_dirt` · `cursor_drift` · `tenant_exclude`), `ARMS OK` |
+| the gate | `GRAPHY_STANDALONE_OK`; `BURDEN OK`: runtime deps 0 · extras 3 · wheel 280,503 B (cap 400,000) · subprocess sites 26 over 6 programs — git was on the list |
+| the receipt | the first run read hono · express RED — their git cursor was the checkout's HEAD read against the root (fixed above, the content cursor) — and graphy RED on `ARMS DRIFT` for the new symbols (re-rendered); the second: `MEASURE OK: floor 503 passed · gate OK 16.4s · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 56.2s`; `diff recon.before39.json recon.json`: `quickstart.httpx.eat_again_seconds` 0.4 → 0.4 and `quickstart.express.eat_again_seconds` 1.2 → 1.2 — the one `git status` the eat adds costs nothing the receipt can see; `quickstart.express.eat_seconds` 6.3 → 3.3. The wrong way: `floor.seconds` 7.5 → 9.1 with the three new tests at 0.2 s together (0.15 + 0.05 + 0.01 under `--durations`), and `quickstart.httpx.eat_seconds` 4.0 → 5.0 (the clone-and-install lane) — the load noise §49 names, both; `pass.engine_hot_lanes` 1 → 1 as §74 left it |

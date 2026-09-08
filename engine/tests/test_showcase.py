@@ -62,3 +62,37 @@ def test_GREEN_showcase_hands_no_provision_to_the_eat(tmp_path, monkeypatch):
     except showcase.ShowcaseError:
         pass
     assert seen == [["eat", str(repo)]]
+
+
+def test_GREEN_showcase_re_eats_a_dirty_working_tree(tmp_path, monkeypatch):
+    """graphyos #39: a `.graphy` whose cursor still matches the tree is reused; one behind an
+    uncommitted edit is eaten again — never a stale page in 0.0 s over a green audit."""
+    import json
+    import subprocess
+    from graphy import cartograph as carto
+    seen = []
+    monkeypatch.setattr(cli, "main", lambda argv: (seen.append(argv), 2)[1])
+    repo = tmp_path / "r"
+    repo.mkdir()
+    (repo / "a.py").write_text("def a():\n    return 1\n")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"], cwd=repo, check=True)
+    home = repo / ".graphy"
+    home.mkdir()
+    (home / ".gitignore").write_text("*\n")
+    cursor, _ = carto.repo_cursor(repo, exclude=(home,))
+    (home / "tenant.json").write_text(json.dumps({"cursor": cursor}))
+    try:
+        showcase.showcase(str(repo))
+    except (showcase.ShowcaseError, OSError):
+        pass
+    assert seen == [], "a current .graphy was eaten again"
+    (repo / "a.py").write_text("def a():\n    return 1\n\ndef b():\n    return 2\n")
+    logged = []
+    try:
+        showcase.showcase(str(repo), log=logged.append)
+    except showcase.ShowcaseError as exc:
+        assert "eat exited 2" in str(exc)
+    assert seen == [["eat", str(repo)]]
+    assert any("the working tree moved past the store: 1 file(s)" in line and "eating again" in line for line in logged)
