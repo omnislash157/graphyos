@@ -6,6 +6,10 @@
                                                             quickstarts, the index — each with its seconds
     python3 measure.py diff OLD NEW [--time-tolerance 0.15] every number that moved, its direction; exit 1 on a
                                                             regression past tolerance (times) or any (counts)
+    python3 measure.py adoption [--out adoption.json]      whether anyone uses it: stars · forks · PyPI downloads ·
+                                                            showcases asked for by strangers · plugin installs — each
+                                                            with its source url and fetch time; a source that does not
+                                                            answer is named, never a zero. Its own receipt, never in run
 
 Every timed lane also carries `hot` (the three top self-time functions of every graphy verb the lane
 ran, from a second run under GRAPHY_PROFILE_DIR — the timed run is never the profiled one),
@@ -30,6 +34,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -37,6 +44,10 @@ ENGINE = HERE / "engine"
 VENV_PY = HERE / ".venv" / "bin" / "python"
 QUICKSTARTS = ("https://github.com/encode/httpx.git", "https://github.com/expressjs/express.git")
 TENANTS = ("fastapi", "sqlalchemy", "hono", "express", "graphy")
+PUBLIC_REPO = "omnislash157/graphyos"      # the public cut (CLAUDE.md: Nothing private travels); adoption is measured there
+DIST = "graphyos"
+# a showcase issue names one https git url in its body (showcase-on-issue.yml); the owner's own do not count as strangers
+_REPO_URL = re.compile(r"https://(?:github\.com|gitlab\.com)/[\w.-]+/[\w.-]+")
 
 # direction: which way is better for a number; a number not listed is informational
 BETTER = {"floor.seconds": "down", "floor.failed": "down", "gate.seconds": "down", "wheel.bytes": "down", "sdist.bytes": "down",
@@ -248,6 +259,101 @@ def run(out: Path, quick: bool, profile: bool = True) -> dict:
     return r
 
 
+# ---------------------------------------------------------------- adoption: does anyone use it (off-box; never in run)
+
+def _fetch_json(url: str, timeout: float = 20.0):
+    """(payload, error). Reads one JSON document over https; a GitHub token in the environment is
+    sent when present (GH_TOKEN · GITHUB_TOKEN) so the rate limit is the account's, never the box's."""
+    headers = {"Accept": "application/json", "User-Agent": "graphy-measure"}
+    tok = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if tok and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = f"Bearer {tok}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8")), None
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP {e.code}"
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def _reading(value, source: str, note: str | None = None) -> dict:
+    r = {"value": value, "source": source, "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    if note:
+        r["note"] = note
+    return r
+
+
+def stranger_showcases(issues: list, owner: str) -> list[dict]:
+    """The issues that ask for a showcase — one repo url in the body — opened by anyone but the owner.
+    Pure over the issue list so the floor can hold it without a network."""
+    out = []
+    for it in issues:
+        if "pull_request" in it:
+            continue
+        author = ((it.get("user") or {}).get("login") or "").lower()
+        urls = sorted(set(_REPO_URL.findall(it.get("body") or "")))
+        if author and author != owner.lower() and len(urls) == 1:
+            out.append({"number": it["number"], "author": author, "url": urls[0], "state": it.get("state")})
+    return out
+
+
+def measure_adoption(repo: str = PUBLIC_REPO, dist: str = DIST) -> dict:
+    """Every adoption number with its source and fetch time. A source that does not answer is
+    recorded as value None with the error named — never as a zero."""
+    a: dict = {"repo": repo, "dist": dist, "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    gh = f"https://api.github.com/repos/{repo}"
+    j, err = _fetch_json(gh)
+    owner = repo.split("/")[0]
+    if j is not None:
+        a["stars"] = _reading(j.get("stargazers_count"), gh)
+        a["forks"] = _reading(j.get("forks_count"), gh)
+        a["watchers"] = _reading(j.get("subscribers_count"), gh)
+        owner = (j.get("owner") or {}).get("login") or owner
+    else:
+        a["stars"] = a["forks"] = a["watchers"] = _reading(None, gh, f"did not answer: {err}")
+
+    ps = f"https://pypistats.org/api/packages/{dist}/recent"
+    j, err = _fetch_json(ps)
+    if j is not None and isinstance(j.get("data"), dict):
+        d = j["data"]
+        a["pypi"] = _reading({"day": d.get("last_day"), "week": d.get("last_week"), "month": d.get("last_month")}, ps,
+                             "pypistats counts every download, mirrors and CI included; the first days are the mirror baseline")
+    else:
+        a["pypi"] = _reading(None, ps, f"did not answer: {err or 'no data'}")
+
+    issues_url = f"https://api.github.com/repos/{repo}/issues?state=all&per_page=100"
+    items, page, err = [], 1, None
+    while True:
+        j, err = _fetch_json(issues_url + f"&page={page}")
+        if j is None or not isinstance(j, list):
+            break
+        items.extend(j)
+        if len(j) < 100 or page >= 10:
+            break
+        page += 1
+    if err is None:
+        found = stranger_showcases(items, owner)
+        a["showcases"] = _reading(len(found), issues_url, "issues naming one repo url, opened by anyone but the owner")
+        a["showcases"]["issues"] = found
+    else:
+        a["showcases"] = _reading(None, issues_url, f"did not answer: {err}")
+
+    a["plugin_installs"] = _reading(None, "absent", "no source exists: neither the Claude Code marketplace nor the MCP registry "
+                                    "publishes install counts (graphyos #49); named absent until one does")
+    return a
+
+
+def adoption_line(a: dict, out: Path) -> str:
+    def n(key):
+        v = a[key]["value"]
+        return "absent" if v is None else str(v)
+    p = a["pypi"]["value"]
+    pypi = "absent" if p is None else f"day {p['day']} · week {p['week']} · month {p['month']}"
+    return (f"ADOPTION: stars {n('stars')} · forks {n('forks')} · pypi {pypi} · stranger showcases {n('showcases')} · "
+            f"plugin installs {n('plugin_installs')} · {a['repo']} · -> {out}")
+
+
 def flatten(d: dict, prefix: str = "") -> dict:
     out = {}
     for k, v in d.items():
@@ -305,7 +411,17 @@ def main(argv=None) -> int:
     d = sub.add_parser("diff")
     d.add_argument("old"), d.add_argument("new")
     d.add_argument("--time-tolerance", type=float, default=0.15)
+    ad = sub.add_parser("adoption", help="stars · forks · PyPI downloads · stranger showcases · plugin installs, each with its source; off-box, never part of run")
+    ad.add_argument("--out", default=str(HERE / "adoption.json"))
+    ad.add_argument("--repo", default=PUBLIC_REPO)
+    ad.add_argument("--dist", default=DIST)
     args = ap.parse_args(argv)
+    if args.verb == "adoption":
+        a = measure_adoption(args.repo, args.dist)
+        out = Path(args.out)
+        out.write_text(json.dumps(a, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        print(adoption_line(a, out))
+        return 0 if all(a[k]["value"] is not None for k in ("stars", "forks", "pypi", "showcases")) else 1
     if args.verb == "run":
         rec = run(Path(args.out), args.quick, profile=not args.no_profile)
         f = rec["floor"]

@@ -36,6 +36,8 @@ staging/farm/
 .private_key
 recon.json
 recon.*.json
+# the adoption receipt (measure.py adoption) — off-box numbers with their sources, rebuilt on demand
+adoption.json
 
 # the gallery — a build product (gallery.sh)
 gallery/

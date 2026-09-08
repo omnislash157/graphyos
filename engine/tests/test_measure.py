@@ -98,3 +98,39 @@ def test_GREEN_the_pass_number_counts_engine_hot_lanes_and_rss_regresses_like_a_
     old2 = {"t": {"stdlib_hot": True}}; new2 = {"t": {"stdlib_hot": False}}
     _, bad = measure.diff(old2, new2)
     assert any("stdlib_hot flipped to false" in b for b in bad)
+
+
+# ---------------------------------------------------------------- adoption (graphyos #51): off-box, never in run
+
+def test_GREEN_stranger_showcases_counts_one_url_by_anyone_but_the_owner():
+    issues = [{"number": 45, "user": {"login": "omnislash157"}, "body": "showcase please: https://github.com/pallets/click"},
+              {"number": 60, "user": {"login": "someone"}, "body": "https://github.com/x/y please"},
+              {"number": 61, "user": {"login": "someone"}, "body": "https://github.com/x/y and https://github.com/x/z"},
+              {"number": 62, "user": {"login": "bot"}, "pull_request": {}, "body": "https://github.com/x/y"},
+              {"number": 63, "user": {"login": "OmniSlash157"}, "body": "https://github.com/x/y"}]
+    found = measure.stranger_showcases(issues, "omnislash157")
+    assert [f["number"] for f in found] == [60] and found[0]["url"] == "https://github.com/x/y"
+
+
+def test_GREEN_adoption_names_a_source_that_does_not_answer_never_a_zero(tmp_path, monkeypatch, capsys):
+    answers = {"https://api.github.com/repos/o/r": {"stargazers_count": 3, "forks_count": 2, "subscribers_count": 1, "owner": {"login": "o"}},
+               "https://pypistats.org/api/packages/d/recent": {"data": {"last_day": 5, "last_week": 6, "last_month": 7}},
+               "https://api.github.com/repos/o/r/issues?state=all&per_page=100&page=1":
+                   [{"number": 1, "user": {"login": "s"}, "body": "https://github.com/a/b"}]}
+    monkeypatch.setattr(measure, "_fetch_json", lambda url, timeout=20.0: (answers[url], None) if url in answers else (None, "HTTP 404"))
+    out = tmp_path / "adoption.json"
+    assert measure.main(["adoption", "--repo", "o/r", "--dist", "d", "--out", str(out)]) == 0
+    line = capsys.readouterr().out.strip()
+    assert line.startswith("ADOPTION: stars 3 · forks 2 · pypi day 5 · week 6 · month 7 · stranger showcases 1 · plugin installs absent")
+    a = json.loads(out.read_text())
+    assert all("source" in v and "fetched_at" in v for v in a.values() if isinstance(v, dict))
+    assert a["showcases"]["issues"][0]["author"] == "s" and a["plugin_installs"]["value"] is None
+    assert a["plugin_installs"]["source"] == "absent"
+    # a source that does not answer: value None with the error named, exit 1 — never a zero
+    monkeypatch.setattr(measure, "_fetch_json", lambda url, timeout=20.0: (None, "URLError: down"))
+    assert measure.main(["adoption", "--repo", "o/r", "--dist", "d", "--out", str(out)]) == 1
+    assert capsys.readouterr().out.startswith("ADOPTION: stars absent · forks absent · pypi absent · stranger showcases absent")
+    a = json.loads(out.read_text())
+    assert a["stars"]["value"] is None and "down" in a["stars"]["note"] and a["pypi"]["value"] is None
+    # the run receipt never carries the key, so diff over two runs never sees it
+    assert "adoption" not in measure.flatten({"floor": {"passed": 1}}) and "adoption" not in measure.BETTER
