@@ -1008,8 +1008,6 @@ def _cmd_timeline(args: argparse.Namespace) -> int:
     """`graphy history <A> [--with <B>]`: the two words as bloodhound co-occurrence over the sessions
     archive, the fan-out walked through the history shard into the story (graphyos #60)."""
     from graphy import federated_store as fstore
-    from graphy import timeline as timeline_lane
-    from graphy.lightning.archive import sessions_dir
     if len(args.terms) > 1:
         print("HISTORY REFUSED: one term, and the second through --with", file=sys.stderr)
         return 2
@@ -1027,6 +1025,8 @@ def _cmd_timeline(args: argparse.Namespace) -> int:
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
         print(_flatten(f"HISTORY REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
         return 2
+    from graphy import timeline as timeline_lane          # after every refusal: lightning says so on stderr when rg is absent
+    from graphy.lightning.archive import sessions_dir
     corpus = Path(args.sessions).expanduser() if args.sessions else sessions_dir()
     try:
         t = timeline_lane.timeline(store, args.terms[0], args.partner, corpus, window=args.window)
