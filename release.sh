@@ -45,6 +45,18 @@ drift = {k: v for k, v in found.items() if v != version}
 if drift:
     sys.exit(f"VERSION DRIFT: pyproject.toml says {version}; " + "; ".join(f"{k} says {v}" for k, v in drift.items()))
 print(f"versions           OK  ({version} in pyproject.toml, .claude-plugin/plugin.json, server.json)")
+# The registry's two doors (graphyos #54): the ownership proof lives in the README the wheel ships —
+# the one pyproject names, never the repo's — as `mcp-name: <server name>` followed by a boundary;
+# and the registry caps the description at 100 characters, server-side only, so it is measured here.
+import re
+pyproject = (root / "engine" / "pyproject.toml").read_text(encoding="utf-8")
+readme_name = re.search(r'^readme = "(.+)"$', pyproject, re.M).group(1)
+readme = (root / "engine" / readme_name).read_text(encoding="utf-8")
+if not re.search(r"mcp-name: " + re.escape(server["name"]) + r"(?=\s|-->|<)", readme):
+    sys.exit(f"MCP-NAME MISSING: engine/{readme_name} (the README the wheel ships) lacks `mcp-name: {server['name']}` — the registry's ownership proof")
+if len(server["description"]) > 100:
+    sys.exit(f"DESCRIPTION OVER CAP: server.json description is {len(server['description'])} characters; the registry refuses over 100")
+print(f"registry           OK  (mcp-name in engine/{readme_name}, description {len(server['description'])} chars)")
 PYV
 }
 

@@ -4430,3 +4430,43 @@ rm -rf /tmp/graphyos-0.2.2 && python3 -m venv /tmp/graphyos-0.2.2 && /tmp/graphy
 | the tag's run | `v0.2.2` on graphyos 2e64299 (private 7a6c8fa): release run 34255072298 — build success · publish success (trusted publishing, digital attestations); CI run 34255070530 on the same sha |
 | PyPI | answers `0.2.2` within a minute of the publish (17:07 UTC); the done block: `release.sh --check` versions OK · PyPI 0.2.2 · a fresh venv's `pip install --no-cache-dir graphyos==0.2.2` then `graphyos mcp --repo /tmp` → `MCP REFUSED: no tenant at /tmp/.graphy/tenant.json` (grep -c → 1) — the script and the flag both resolve from the index |
 | the hold | the registry submission (`mcp-publisher publish`) and the marketplace listing stay outside accounts — the argv now resolves; the operator's step |
+
+## 89 · 0.2.3 — THE REGISTRY'S TWO REFUSALS — the mcp-name proof into the README the wheel ships, the description under the 100-character cap, both rules in `release.sh --check` (2026-09-08 · graphyos issue 54)
+
+**The finding.** With 0.2.2 on PyPI (§88) the registry submission was walked to its door and refused twice.
+The registry proves a PyPI package's ownership by finding `mcp-name: <server name>` in the package's README —
+the one PyPI shows as the description. `engine/pyproject.toml` says `readme = "README.md"`, which is
+`engine/README.md`; §85's marker sat only in the repo's root `README.md`, which no wheel carries:
+`curl -s https://pypi.org/pypi/graphyos/0.2.2/json | python3 -c "import json,sys; print('mcp-name' in
+json.load(sys.stdin)['info']['description'])"` → `False`. The floor's `test_cli.py` asserted the marker
+against the root README — the file the registry never reads — so it passed while the wheel shipped without it.
+And `mcp-publisher validate` in the public checkout answered `422 … expected length <= 100, location
+body.description`: `server.json`'s description was 184 characters, a cap enforced server-side only. Railway's
+piece of §87 closed the same hour: the service had been reading `omnislash157/graphyos-os`, a July repo.
+
+**The change.** `engine/README.md` carries `<!-- mcp-name: io.github.omnislash157/graphyos -->` on its own
+line; `server.json`'s description is 91 characters; the test reads the README pyproject names (a regex over
+`readme = "…"`, never a guessed path) and asserts the marker with the boundary the registry requires, and the
+cap. The door: `release.sh --check` gains two rules beside VERSION DRIFT — `MCP-NAME MISSING` when the README
+pyproject names lacks the marker, `DESCRIPTION OVER CAP` when the description exceeds 100 — printed as
+`registry OK (mcp-name in engine/README.md, description 91 chars)` and refused in the gate. The release: 0.2.3
+(a PyPI description is immutable per version), the same mechanics as §88.
+
+```bash
+bash release.sh --check | tail -3                           # changelog OK · versions OK (0.2.3 …) · registry OK
+sed -i '/mcp-name/d' engine/README.md && bash release.sh --check | tail -1; git checkout engine/README.md   # MCP-NAME MISSING
+unzip -p dist/graphyos-0.2.3-py3-none-any.whl 'graphyos-0.2.3.dist-info/METADATA' | grep -n mcp-name
+~/.local/bin/mcp-publisher validate                          # ✅ server.json is valid (v1.8.1, the registry's own schema and cap)
+python3 -c "import urllib.request, json; d=json.load(urllib.request.urlopen('https://pypi.org/pypi/graphyos/json'))['info']; print(d['version'], 'mcp-name: io.github.omnislash157/graphyos' in d['description'])"
+```
+
+| check | result |
+|---|---|
+| the two rules, red | marker deleted from `engine/README.md` → `MCP-NAME MISSING: engine/README.md (the README the wheel ships) lacks …`, and the test fails `AssertionError: README.md`; description set to 101 chars → `DESCRIPTION OVER CAP: server.json description is 101 characters` |
+| the two rules, green | `registry OK (mcp-name in engine/README.md, description 91 chars)`; the gate `graphy resolves OK (0.2.3)`, `BURDEN OK` (wheel 283,572 B), `GRAPHY_STANDALONE_OK` in 16.7 s |
+| the wheel | `graphyos-0.2.3-py3-none-any.whl` METADATA line 291 is the marker; twine check PASSED both |
+| the registry's validator | `mcp-publisher validate` (v1.8.1, installed at `~/.local/bin` from the release tarball, linux amd64) → `✅ server.json is valid`; before the cut, 422 on the description |
+| the floor | 523 passed, 3 skipped in 9.2 s under `.venv` (unchanged: the manifest test gained two assertions, no new test); the system `python3` without the extras reads 508 passed, 14 skipped — every skip names duckdb, tree-sitter or the corpus venv by name |
+| the tag's run | TAG_RUN_ROW |
+| PyPI | PYPI_ROW |
+| the hold | `mcp-publisher login github` (a browser OAuth on the operator's GitHub) then `mcp-publisher publish` from the public checkout — the operator's step; every mechanical door before it is green |

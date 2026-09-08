@@ -67,3 +67,5 @@ mutually refuse: `validate_graph(nodes, edges, Vocabulary(...))` returns a count
 
 Apache 2.0 — see `LICENSE`. Attribution propagates through `NOTICE` (Apache §4(d)).
 "Graphy" and "GraphyOS" are trademarks; the license grants no trademark rights (§6).
+
+<!-- mcp-name: io.github.omnislash157/graphyos -->

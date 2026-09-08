@@ -791,5 +791,11 @@ def test_plugin_manifest_and_registry_entry_run_the_repo_door_at_the_package_ver
     assert pkg["registryType"] == "pypi" and pkg["identifier"] == "graphyos" and pkg["version"] == graphy.__version__
     assert pkg["transport"] == {"type": "stdio"}
     assert [a.get("value") or a.get("name") for a in pkg["packageArguments"]] == ["mcp", "--repo"]
-    readme = (root / "README.md").read_text(encoding="utf-8")
-    assert f"mcp-name: {server['name']}" in readme   # the registry's ownership proof for a PyPI package
+    # the registry's ownership proof for a PyPI package lives in the README the wheel ships — the one
+    # pyproject names, never the repo's own — as `mcp-name: <server name>` followed by a boundary
+    import re
+    pyproject = (root / "engine" / "pyproject.toml").read_text(encoding="utf-8")
+    readme_name = re.search(r'^readme = "(.+)"$', pyproject, re.M).group(1)
+    readme = (root / "engine" / readme_name).read_text(encoding="utf-8")
+    assert re.search(r"mcp-name: " + re.escape(server["name"]) + r"(?=\s|-->|<)", readme), readme_name
+    assert len(server["description"]) <= 100   # the registry's cap, enforced server-side only
