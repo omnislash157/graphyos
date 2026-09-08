@@ -43,6 +43,7 @@ from typing import Callable
 
 from graphy import journal
 from graphy import smash as smash_lane
+from graphy.provision import venv_layout
 from graphy.tenant import Tenant
 
 __all__ = ["RefreshError", "CheckFailed", "Plan", "current_provenance", "latest_release",
@@ -190,15 +191,16 @@ def provision(venv: Path, distribution: str, release: str, *, python: str, log) 
         shutil.rmtree(venv)
     log(f"VENV: {python} -m venv {venv}")
     _run([python, "-m", "venv", str(venv)], log=log, what="venv")
-    pip = venv / "bin" / "pip"
+    layout = venv_layout(venv)
+    pip = layout.scripts / "pip"
     if not pip.exists():
-        raise RefreshError(f"the venv at {venv} has no pip — ensurepip is missing from {python}")
+        raise RefreshError(f"the venv at {venv} has no pip at {pip} — ensurepip is missing from {python}")
     log(f"PIP: {distribution}=={release}")
     _run([str(pip), "install", "--quiet", "--disable-pip-version-check", f"{distribution}=={release}"],
          log=log, what=f"pip install {distribution}=={release}")
-    sp = next(iter(sorted(venv.glob("lib/python*/site-packages"))), None)
-    if sp is None:
-        raise RefreshError(f"the venv at {venv} has no site-packages")
+    sp = layout.site
+    if not sp.is_dir():
+        raise RefreshError(f"the venv at {venv} has no site-packages at {sp} ({layout.scheme} layout)")
     return sp
 
 

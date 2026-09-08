@@ -3954,3 +3954,47 @@ python3 measure.py run && python3 measure.py diff recon.before41.json recon.json
 | the floor | 491 passed · 3 skipped (505 − 15 + 1); the removal audit and the shell test both RED against the old engine; the graphy tenant's six arm regions re-rendered — SEAM's cartograph line loses the five names — `ARMS OK` |
 | the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK`; `CHANGELOG OK` |
 | the receipt | `MEASURE OK: floor 491 passed · gate OK 16.5s · wheel 278,954 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 56.6s`; `diff recon.before41.json recon.json`: `floor.passed` 505 → 491 and `tenants.graphy.nodes` 2674 → 2653 · `edges` 6700 → 6626 read as regressions — the deleted lane and its tests counted down, by design; `floor.seconds` 10.8 → 8.1, `wheel.wheel_bytes` 280,886 → 278,954, `tenants.fastapi.seconds` 3.1 → 2.7. The wrong way: `quickstart.express.eat_seconds` 3.7 → 6.0 (the clone-and-`npm install` lane, no line of this change runs in it) — the load noise §49 names; `pass.engine_hot_lanes` 1 → 1 as §74 left it |
+
+## 78 · WINDOWS WAS CLAIMED BY SHIMS BUT EAT COULD NOT PROVISION THERE — the README says Linux and macOS, and the venv's layout is resolved by sysconfig (2026-09-08 · graphyos issue 42)
+
+**The finding.** Red-team finding 9 (§71). `provision.py` looked for the venv's interpreter at `bin/python`
+and its site-packages by a glob over `lib/python*/site-packages`; a Windows venv is `Scripts\python.exe` and
+`Lib\site-packages`, so a native `eat` died with `RuntimeError: the venv … has no site-packages`. `farm.py`
+and `refresh.py` carried the same guess. `_portable_flock.py` makes every lock a silent no-op where `fcntl`
+is absent; `.mcp.json`, the hooks and `shell install` are bash. The README said "Python 3.10+" with no OS line.
+
+**The change.** The README says what is true: Linux and macOS, Windows through WSL — the hooks, `shell install`
+and the MCP pointer are bash, and the store lock is a named no-op without `fcntl` (the flock shim's docstring
+says the same). The easy gap is closed: `provision.venv_layout` is the one reader of a venv's layout — the
+interpreter, the scripts dir and the site-packages resolved by `sysconfig.get_paths` under the platform's
+scheme (`posix_prefix` · `nt`) with the venv as the base, never a glob. The version in the path is the venv's
+own, from the `pyvenv.cfg` its creation wrote; when it is the running interpreter's, the live `py_version_short`
+is used so an ABI-suffixed layout (`python3.13t`) resolves too. `provision` · `farm.provision_alone` ·
+`refresh.provision` all read it; a missing site-packages is named with the path looked for and the scheme.
+A native Windows `eat` now provisions; the lock there is still the named no-op.
+
+**The floor.** `test_provision`: both layouts resolved (`bin/python` · `lib/python3.11/site-packages` under
+`posix`, `Scripts\python.exe` · `Lib\site-packages` under `nt`), a venv with no cfg resolved to the running
+interpreter's version, the box's own venv resolved to exactly where the live interpreter reads from
+(`sysconfig.get_paths()['purelib']`), an eat on an nt-shaped venv provisioned and pip run through
+`Scripts\python.exe`, a venv missing its site-packages refused with the path and the scheme named — RED
+against the old provision.py, which raised `has no site-packages` on the nt venv.
+
+```bash
+grep -n 'Linux and macOS' README.md
+cd engine && ../.venv/bin/python -m pytest -q tests/test_provision.py && cd ..
+bash standalone_check.sh | tail -1
+# the old code against an nt-shaped venv
+git show HEAD~1:engine/graphy/provision.py > /tmp/old_provision.py   # then provision() over a Scripts/ · Lib/ venv → RuntimeError
+S=/tmp/click && git clone -q --depth 1 https://github.com/pallets/click $S && cd $S && graphy eat . | grep -n 'PROVISION\|EAT OK'
+python3 measure.py run && python3 measure.py diff recon.before42.json recon.json
+```
+
+| check | result |
+|---|---|
+| the done check | `README.md:55: Linux and macOS; on Windows, through WSL — …`; `tests/test_provision.py` 4 passed; `GRAPHY_STANDALONE_OK` |
+| the old code on an nt venv | `OLD: the venv at …/.graphy/venv has no site-packages` · `NEW: …/.graphy/venv/Lib/site-packages` — the same fake runner, the same venv |
+| the live eat | pallets/click: `PROVISION: …/.venv/bin/python3 -m venv …/click/.graphy/venv` · `PROVISION: …/click/.graphy/venv/bin/python -m pip install …` · `PROVISION OK: pip install click into …/.graphy/venv` · `EAT OK: click + 0 ring shard(s) … (17 of 17 files parsed, 2.8s)` — the posix layout through `sysconfig`, byte-identical to the glob's answer |
+| the floor | 492 passed · 3 skipped (491 + 1); the graphy tenant's six arm regions re-rendered (the store stamp moved), `ARMS OK` |
+| the gate | `GRAPHY_STANDALONE_OK`; `WORKFLOWS OK`; `CHANGELOG OK` |
+| the receipt | `MEASURE OK: floor 492 passed · gate OK 26.4s · wheel 279,913 B · tenants fastapi=OK sqlalchemy=OK hono=OK express=OK graphy=OK · quickstart httpx=OK express=OK · engine-hot lanes 1 · 68.2s`; `diff recon.before42.json recon.json`: `wheel.wheel_bytes` 278,954 → 279,913 (+959 B, `venv_layout` and its docstring), `tenants.sqlalchemy.seconds` 5.3 → 5.0. The wrong way: `floor.seconds` 8.1 → 10.6, `gate.seconds` 16.5 → 26.4, `quickstart.httpx.eat_again_seconds` 0.4 → 0.7, `seconds` 56.6 → 68.2 — the full floor was running beside this receipt on the same box, the load noise §49 names; no line of this change runs in the gate or the eat-again lane; `pass.engine_hot_lanes` 1 → 1 as §74 left it |

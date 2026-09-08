@@ -6,7 +6,7 @@
 A producer maps a parse tree onto the nine words (`adapters.python_ast`, `adapters.typescript_ast`); `ir` validates; `smash` mints a package into a shard and follows its imports into the ring; `index` pushes and pulls content-addressed shards; `refresh` follows upstream into a sibling; `farm` mints many; `provision` installs a repo's own dependencies for `eat`; `release` enforces one release per scheme.
 
 <!-- graphy:arm PRODUCE generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=65db816d15896941 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:897739e024a904d433b94f0b72cdb283e534178c7e569d3a505e905eddd15cb0 -->
+     store=3001e35fc2fc6f37 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:3fe486aceb4f77c0bcee89db8f2e3422b5b5f3f12f333f56cdbb3dc1c557d214 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -20,7 +20,7 @@ Every symbol the partition places in this arm, by module; a class carries its me
 **`graphy.ir`** — classes: `Edge` (1) · `Evidence` (1) · `IRError` · `Node` (1) · `Provenance` (1) · `Vocabulary` (1); functions: `_is_int` · `_parse_endpoint` · `_parse_optional` · `_type_name` · `validate_graph`
 **`graphy.native_json_graph_ir`** — classes: `OverrideIR` · `OverrideRecord` (1) · `ResolvedShard`; functions: `_canonical_payload` · `_classify_path` · `_detect_alias_cycle` · `_detect_duplicate_json_keys` · `_escape_json_pointer_segment` · `_file_sha256` · `_fold` · `_json_pointer` · `_remember` · `_resolve_shard` · `_scalar_leaves` · `load_graph_ir` · `load_override_ir` · `raw_shard` · `ring_source_digest` · `shard_input_digest` · `validate_shard`
 **`graphy.parity`** — classes: `Golden` (2) · `Harness` (5) · `ParityError` · `_NotJson` (1); functions: `_as_json` · `_eq` · `_witness` · `json_equal` · `load_golden`
-**`graphy.provision`** — classes: `Provisioned`; functions: `_declaration` · `_run` · `provision`
+**`graphy.provision`** — classes: `Provisioned` · `VenvLayout`; functions: `_declaration` · `_run` · `_venv_version` · `provision` · `venv_layout`
 **`graphy.refresh`** — classes: `CheckFailed` · `Plan` · `RefreshError`; functions: `_declare` · `_descriptor` · `_fetch_pypi` · `_ids` · `_prove` · `_remint_fixture` · `_run` · `_shards` · `_sibling_tenant` · `_version_in` · `current_provenance` · `diff_shards` · `is_final` · `is_newer` · `latest_release` · `parse_version` · `plan_for` · `provision` · `refresh` · `render_pages`
 **`graphy.release`** — classes: `Release` (1) · `ReleaseError`; functions: `_owned_schemes` · `collisions` · `release_of` · `require_one_release` · `roster_releases`
 **`graphy.smash`** — classes: `Producer` (1) · `SmashError`; functions: `_counts` · `_file_receipt` · `_graphy_version` · `_import_schemes` · `_license_of` · `_reuse_from` · `_schemes` · `_write_json` · `_write_records` · `corpus_digest` · `distributions` · `distributions_node` · `divergence` · `git_head` · `golden_from_shard` · `locate` · `locate_node` · `mint` · `mint_command_for` · `node_dir_for` · `node_dirs_of` · `parity` · `portable` · `shard_payload` · `slug_for` · `slug_for_specifier` · `smash` · `stdlib_names` · `unreadable_phrase`

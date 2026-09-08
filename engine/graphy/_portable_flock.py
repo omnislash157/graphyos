@@ -1,3 +1,6 @@
+"""fcntl where POSIX has it. Where it does not (native Windows), `fcntl.flock` is a named no-op:
+`HAVE_FCNTL` is False and no lock is taken — the supported hosts are Linux and macOS (README).
+"""
 from __future__ import annotations
 
 try:

@@ -51,7 +51,10 @@ cd /path/to/your/repo && graphy eat .        # a repo with several packages: gra
 graphy showcase .                            # the page: .graphy/showcase/index.html — open it in a browser
 ```
 
-The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+.
+The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+ on
+Linux and macOS; on Windows, through WSL — `eat` resolves a venv on either layout by `sysconfig`,
+but the hooks, `shell install` and the MCP pointer are bash, and the store lock is a named no-op
+without `fcntl`.
 `[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build
 says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the TypeScript
 and JavaScript producer.

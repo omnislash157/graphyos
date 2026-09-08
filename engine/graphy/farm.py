@@ -27,6 +27,7 @@ from pathlib import Path
 from graphy import index as shard_index
 from graphy import smash as smash_lane
 from graphy.ir import IRError
+from graphy.provision import venv_layout
 from graphy.refresh import RefreshError, _fetch_pypi, latest_release, parse_version
 
 __all__ = ["FarmError", "Spec", "Verdict", "top_packages", "select_release", "import_names_for",
@@ -185,7 +186,7 @@ def import_names_for(distribution: str, site_packages: Path, producer: smash_lan
 
 
 def _pip(venv: Path, args: list[str], *, timeout: int) -> None:
-    pip = venv / "bin" / "pip"
+    pip = venv_layout(venv).scripts / "pip"
     proc = subprocess.run([str(pip), *args], capture_output=True, text=True, timeout=timeout)
     if proc.returncode != 0:
         tail = "\n".join((proc.stderr or proc.stdout or "").strip().splitlines()[-4:])
@@ -199,9 +200,10 @@ def provision_alone(venv: Path, distribution: str, release: str, *, python: str,
         shutil.rmtree(venv)
     subprocess.run([python, "-m", "venv", "--without-pip", str(venv)], check=True, capture_output=True)
     # pip from the farm's own interpreter, run against the fresh venv's site-packages
-    sp = next(iter(sorted(venv.glob("lib/python*/site-packages"))), None)
-    if sp is None:
-        raise RefreshError(f"the venv at {venv} has no site-packages")
+    layout = venv_layout(venv)
+    sp = layout.site
+    if not sp.is_dir():
+        raise RefreshError(f"the venv at {venv} has no site-packages at {sp} ({layout.scheme} layout)")
     proc = subprocess.run([python, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--no-deps",
                            "--no-cache-dir", "--prefer-binary", "--target", str(sp), f"{distribution}=={release}"],
                           capture_output=True, text=True, timeout=timeout)
