@@ -28,9 +28,11 @@ Two commands. After that:
 - **The code is a graph, not a pile of files.** Does A reach B. What breaks if this changes. Who
   calls this class across every package in the ring. Answered from structure in milliseconds,
   served over MCP to Claude Code, Cursor or anything else that speaks it.
-- **The memory is welded to the code.** Ask `blast` what depends on a function and it lists the
-  conversations that discussed it beside the callers. Ask `graphy history --symbol <name>` and it
-  walks from the symbol into every session that mentioned it, oldest first, with the commits.
+- **The memory is welded to the code.** With the repo's history minted as a shard beside the code
+  (`graphy history --repo … --out …/history_graph`, one command; `eat` doing it for you is
+  [#66](https://github.com/omnislash157/graphyos/issues/66)), `blast` lists the conversations that
+  discussed a function beside its callers, and `graphy history --symbol <name>` walks from the
+  symbol into every session that mentioned it, oldest first, with the commits.
 
 No summarizer. No embeddings. No model ever decides an edge or picks what mattered. The core is
 the Python standard library, ripgrep and three shell hooks, with zero runtime dependencies.
