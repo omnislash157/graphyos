@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from graphy.tenant import Tenant
+from graphy.tenant import Tenant, TenantError, cli_tenant
 
 
 def collect_substrates(data_root: Path) -> list[dict]:
@@ -161,19 +161,7 @@ def render_markdown(substrates: list[dict], head_time: float | None = None, inde
     return "\n".join(lines)
 
 
-def _cli_tenant(data_home: str, join_keys: str) -> Tenant:
-    dh = Path(data_home).resolve()
-    jk = Path(join_keys).resolve()
-    return Tenant(
-        root=dh.parent,
-        data_home=dh,
-        adapters=(),
-        build_lanes={},
-        join_keys=jk,
-        cursor="declared-cli",
-        policy="refuse",
-        journal=dh / ".journal",
-    )
+_cli_tenant = cli_tenant
 
 
 def main(argv=None, *, tenant: Tenant | None = None) -> int:
@@ -187,7 +175,11 @@ def main(argv=None, *, tenant: Tenant | None = None) -> int:
         ap.add_argument("--join-keys", required=True,
                         help="path to the tenant's substrate_override_registry.json.")
         a = ap.parse_args(argv)
-        tenant = _cli_tenant(a.data_home, a.join_keys)
+        try:
+            tenant = _cli_tenant(a.data_home, a.join_keys, a.tenant_id)
+        except TenantError as exc:
+            print(f"INVENTORY REFUSED: {exc}", file=sys.stderr)
+            return 2
 
     data_root = Path(tenant.data_home)
     out_path = data_root / ".SUBSTRATES.report.md"

@@ -1,8 +1,8 @@
 name: gate on pr
 
-# Every pull request: the floor, the departure gate, the burden invariants, and the receipt's
-# diff against the base measured on the same runner — posted as one comment. A red burden or a
-# regression past tolerance fails the check. The tool's own output; no model in the lane.
+# Every pull request: the floor, the departure gate, the burden invariants, the receipt's diff
+# against the base measured on the same runner, and the review battery with severance against the
+# base — posted as one comment. A red burden, a regression past tolerance or a review finding fails the check. The tool's own output; no model in the lane.
 on:
   pull_request:
 
@@ -43,6 +43,11 @@ jobs:
         run: |
           set +e
           python3 measure.py diff "$RUNNER_TEMP/base.json" "$RUNNER_TEMP/head.json" > diff.txt 2>&1; echo "rc=$?" >> "$GITHUB_OUTPUT"; cat diff.txt
+      - name: the review battery, severance against the base
+        id: review
+        run: |
+          set +e
+          python3 review.py --diff ${{ github.event.pull_request.base.sha }} > review.txt 2>&1; echo "rc=$?" >> "$GITHUB_OUTPUT"; cat review.txt
       - name: post it
         env:
           GH_TOKEN: ${{ github.token }}
@@ -52,10 +57,12 @@ jobs:
             echo
             echo "**Burden** — $( [ "${{ steps.burden.outputs.rc }}" = "0" ] && echo OK || echo RED )"; echo '```text'; cat burden.txt; echo '```'
             echo "**Receipt, base → head on this runner** — $( [ "${{ steps.diff.outputs.rc }}" = "0" ] && echo OK || echo REGRESSION )"; echo '```text'; cat diff.txt; echo '```'
+            echo "**Review battery, severance against the base** — $( [ "${{ steps.review.outputs.rc }}" = "0" ] && echo OK || echo FINDINGS )"; echo '```text'; cat review.txt; echo '```'
           } > comment.md
           gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md
       - name: the verdict
         run: |
           [ "${{ steps.burden.outputs.rc }}" = "0" ] || { echo "burden RED"; exit 1; }
           [ "${{ steps.diff.outputs.rc }}" = "0" ] || { echo "receipt regression"; exit 1; }
+          [ "${{ steps.review.outputs.rc }}" = "0" ] || { echo "review findings"; exit 1; }
           echo "gate on pr: green"

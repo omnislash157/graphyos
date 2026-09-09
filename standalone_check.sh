@@ -66,5 +66,11 @@ python3 "$HERE/burden.py" || { echo "burden            FAILED — a responsibili
 # The workflow files parse here, on the box, before CI is asked: a file GitHub cannot parse runs
 # zero jobs and nobody sees CI stop (RECON.md §58). stdlib only; every refusal names file:line.
 python3 "$HERE/workflows.py" || { echo "workflows          FAILED — a file under .github/workflows/ would run zero jobs"; exit 3; }
+# The review battery in front of the reviewer (review.py): every command the docs advertise parses
+# against the engine's own argparse, every cited symbol is defined, every argparse dest is read,
+# every path the router names is on disk, no template token is left unfilled, every sha the
+# record's newest section names is an ancestor of HEAD, every emitted page holds its contract —
+# and every check is proven red on its own fixture in the same run. stdlib only; findings name file:line.
+python3 "$HERE/review.py" || { echo "review             FAILED — a set difference over the tree the reviewer should never have had to find"; exit 3; }
 
 echo "GRAPHY_STANDALONE_OK"

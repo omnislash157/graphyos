@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import graphy.journal as gj
-from graphy.tenant import Tenant, TenantError
+from graphy.tenant import Tenant
 
 
 
@@ -397,11 +397,21 @@ def _identity(tenant: Tenant) -> list[str]:
 
 def test_cli_identity_round_trip_executes(tmp_path, capsys):
     tenant = _tenant(tmp_path)
-    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys))
+    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys), "test")
     gj.append_page("widgets", set(), {"a"}, cursor="cafe1234", bootstrap=True, tenant=cli_tenant)
     rc = gj.main(_identity(tenant) + ["log", "widgets"])
     assert rc == 0
     assert "seq=1" in capsys.readouterr().out
+
+
+def test_RED_a_blank_tenant_id_refuses_by_name(tmp_path, capsys):
+    """`--tenant-id " "` passes argparse's required= and used to be dropped on the floor — five module
+    mains declared the flag and never read it (review.py: argparse-dest-never-read). The declared
+    receipt name is read, and a blank one refuses the way open_for refuses it."""
+    tenant = _tenant(tmp_path)
+    rc = gj.main(["--tenant-id", " ", "--data-home", str(tenant.data_home), "--join-keys", str(tenant.join_keys), "log", "widgets"])
+    assert rc == 2 and "JOURNAL REFUSED: --tenant-id must not be empty" in capsys.readouterr().err
+    assert gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys), "test").cursor == "cli:test"
 
 
 def test_cli_absent_identity_refuses_naming_flag(capsys):
@@ -413,7 +423,7 @@ def test_cli_absent_identity_refuses_naming_flag(capsys):
 
 def test_cli_steward_lane_constructs_through_real_tenant(tmp_path, capsys):
     tenant = _tenant(tmp_path)
-    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys))
+    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys), "test")
     gj.append_page("widgets", set(), {"a"}, bootstrap=True, tenant=cli_tenant)
     rc = gj.main(_identity(tenant) + ["steward", "--adopt",
                                       "--lane", "widgets_graph:on-demand"])
@@ -424,17 +434,18 @@ def test_cli_steward_lane_constructs_through_real_tenant(tmp_path, capsys):
     assert rc2 == 0
 
 
-def test_cli_bogus_lane_kind_refuses_via_real_constructor(tmp_path):
+def test_cli_bogus_lane_kind_refuses_via_real_constructor(tmp_path, capsys):
     tenant = _tenant(tmp_path)
-    with pytest.raises(TenantError, match="bogus"):
-        gj.main(_identity(tenant) + ["steward", "--lane", "widgets_graph:bogus"])
+    rc = gj.main(_identity(tenant) + ["steward", "--lane", "widgets_graph:bogus"])
+    err = capsys.readouterr().err
+    assert rc == 2 and "JOURNAL REFUSED" in err and "bogus" in err
     with pytest.raises(ValueError, match="KEY:KIND"):
         gj.main(_identity(tenant) + ["steward", "--lane", "keyonly"])
 
 
 def test_cli_diff_append_named_vs_empty_old(tmp_path, capsys):
     tenant = _tenant(tmp_path)
-    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys))
+    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys), "test")
     new = _graph_dir(cli_tenant, "widgets_graph", {"a": {}}, sha="beef5678")
     empty_old = tmp_path / "empty_old"
     empty_old.mkdir()
@@ -450,7 +461,7 @@ def test_cli_diff_append_named_vs_empty_old(tmp_path, capsys):
 
 def test_cli_torn_refusal_and_allow_torn(tmp_path, capsys):
     tenant = _tenant(tmp_path)
-    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys))
+    cli_tenant = gj._cli_tenant(str(tenant.data_home), str(tenant.join_keys), "test")
     gj.append_page("widgets", {"z"}, {"z", "a"}, prev_cursor=None, tenant=cli_tenant)
     jpath = Path(cli_tenant.journal) / "widgets_graph.journal.jsonl"
     with open(jpath, "a", encoding="utf-8") as fh:

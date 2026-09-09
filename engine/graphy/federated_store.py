@@ -12,7 +12,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from graphy import cross_substrate as _cross_substrate
 from graphy.cross_substrate import (
     AGAINST,
     BOTH,
@@ -734,7 +733,12 @@ def main(argv=None) -> int:
                     help="override the derived store path (default: store_path_for()).")
     a = ap.parse_args(argv)
 
-    tenant = _cross_substrate._cli_tenant(a.data_home, a.join_keys)
+    from graphy.tenant import TenantError, cli_tenant
+    try:
+        tenant = cli_tenant(a.data_home, a.join_keys, a.tenant_id)
+    except TenantError as exc:
+        print(f"STORE REFUSED: {exc}", file=sys.stderr)
+        return 2
 
     if (a.mesh_set is None) == (a.seed is None):
         print("pass exactly one of --mesh-set or --seed", file=sys.stderr)

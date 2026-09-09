@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
-from graphy.tenant import Tenant
+from graphy.tenant import Tenant, TenantError, cli_tenant
 
 def repo_head_sha(repo_root: Path | None = None) -> str | None:
     if repo_root is None:
@@ -198,19 +198,7 @@ def write_graph(graph: dict[str, Any], out_dir: Path, *, repo_root: Path | None 
     (out_dir / "stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
 
 
-def _cli_tenant(data_home: str, join_keys: str) -> Tenant:
-    dh = Path(data_home).resolve()
-    jk = Path(join_keys).resolve()
-    return Tenant(
-        root=dh.parent,
-        data_home=dh,
-        adapters=(),
-        build_lanes={},
-        join_keys=jk,
-        cursor="declared-cli",
-        policy="refuse",
-        journal=dh / ".journal",
-    )
+_cli_tenant = cli_tenant
 
 
 def main(argv=None) -> int:
@@ -223,7 +211,11 @@ def main(argv=None) -> int:
     ap.add_argument("--join-keys", required=True, help="path to the tenant's substrate_override_registry.json.")
     args = ap.parse_args(argv)
 
-    tenant = _cli_tenant(args.data_home, args.join_keys)
+    try:
+        tenant = _cli_tenant(args.data_home, args.join_keys, args.tenant_id)
+    except TenantError as exc:
+        print(f"CARTOGRAPH REFUSED: {exc}", file=sys.stderr)
+        return 2
 
     records: list[dict] = []
     with open(args.input, "r", encoding="utf-8") as fh:

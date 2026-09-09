@@ -62,6 +62,7 @@ scrub.py              the prose scrub that never names what it scrubs: tokens HM
 census.sh             where the private language sits, per tracked directory → CENSUS OK is the public cut's tripwire
 burden.py             the burden invariants (burden.json): zero runtime dependencies, the extras by name, the wheel under its cap, every host and every subprocess program on the list, every tracked engine doc declared or an arm region, the scrub — the gate refuses growth by name
 workflows.py          every file under .github/workflows/ parsed (a stdlib subset parser, strict where GitHub is) and shaped — name · on · jobs, every step uses or runs; a file that would run zero jobs is refused in the gate with its line, before a push finds out
+review.py             the review battery in front of the reviewer, in the gate: set differences over a parse of the live tree — every advertised `graphy …` command parses against the engine's own argparse, every cited dotted symbol is defined, every argparse dest is read, every path THE FOLDER and THE ENGINE MAP name is on disk or gitignored, no template token is left unfilled, every sha RECON's newest section names is an ancestor of HEAD, every emitted page holds its contract; `--diff <ref>` adds severance (a deleted symbol a reader outside the diff still names — the reverse-callers class); `--selftest` proves every check red on its own fixture, and the flat run re-proves it as `gate-selftest`; a check that cannot run REFUSES, never a clean zero
 measure.py            the receipt: every RECON number re-derived into recon.json by `run` (--quick for CI); every lane's hottest functions and peak RSS from a second run under GRAPHY_PROFILE_DIR, and `pass.engine_hot_lanes` — the optimization pass ends when it reads 0; `diff OLD NEW` names every number that moved and exits 1 on a regression — the improvement gate's before and after; `adoption` is the one off-box verb — stars · forks · PyPI downloads · stranger showcases · plugin installs, each with its source url and fetch time into adoption.json (gitignored), a source that does not answer named, never a zero; never part of `run`, never in the gate
 release.sh            the release made mechanical: wheel + sdist into dist/, twine check, CHANGELOG.md derived from RECON's section titles (--check in the gate); a `v<version>` tag on the public repo publishes to PyPI by trusted publishing (release.yml), no token
 CHANGELOG.md          derived from RECON.md by release.sh — a build product the gate verifies, the one generated doc in git besides the arm regions
@@ -216,7 +217,10 @@ One issue is armed; the Stop hook holds the session on it until it closes on Git
 the next, acks `/clear` into the session's own tmux pane, and kicks the fresh context every two
 minutes until it acks. The skill: `.claude/skills/self-clear/SKILL.md`. The code: `.claude/hooks/march.py`.
 The board law — the fork, the add gate, the close, and the optimization pass that runs when the board
-drains: `.claude/skills/rung-discipline/SKILL.md`.
+drains: `.claude/skills/rung-discipline/SKILL.md`. The review at the clean checkpoint is told the card
+`.claude/skills/adversarial-reviewer/SKILL.md` — the done block is what is reviewed, `review.py` and the walk's
+callers go in front of the reviewer, every blocker is routed to one door — and a page in the diff gets
+`.claude/skills/frontend-review/SKILL.md`.
 
 | move | the tap (repo root) |
 |---|---|

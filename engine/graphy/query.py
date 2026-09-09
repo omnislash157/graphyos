@@ -375,8 +375,12 @@ def main(argv: Optional[list] = None) -> int:
         if missing:
             parser.error("--mesh-set requires declared identity: missing "
                          + ", ".join(missing))
-        from graphy.cross_substrate import _cli_tenant
-        tenant = _cli_tenant(args.data_home, args.join_keys)
+        from graphy.tenant import TenantError, cli_tenant
+        try:
+            tenant = cli_tenant(args.data_home, args.join_keys, args.tenant_id)
+        except TenantError as exc:
+            print(f"cochange query: {exc}", file=sys.stderr)
+            return EXIT_USAGE
 
         if not args.materialize:
             from graphy import federated_store as fstore

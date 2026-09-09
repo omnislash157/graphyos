@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from graphy._portable_flock import fcntl as _flock
-from graphy.tenant import Tenant
+from graphy.tenant import Tenant, TenantError, cli_tenant
 
 _GRAPH_DIR_NAME = re.compile(r"^[a-z0-9_]+_graph$")
 
@@ -546,26 +546,7 @@ def steward(tenant: Tenant | None = None, adopt: bool = False) -> dict:
     return report
 
 
-def _cli_tenant(data_home: str, join_keys: str, lanes: tuple = ()) -> Tenant:
-    dh = Path(data_home).resolve()
-    jk = Path(join_keys).resolve()
-    build_lanes: dict = {}
-    for pair in lanes:
-        key, sep, kind = str(pair).partition(":")
-        if not sep or not key or not kind:
-            raise ValueError(
-                f"--lane {pair!r} does not match KEY:KIND — the lane declares both halves")
-        build_lanes[key] = (None, kind)
-    return Tenant(
-        root=dh.parent,
-        data_home=dh,
-        adapters=(),
-        build_lanes=build_lanes,
-        join_keys=jk,
-        cursor="declared-cli",
-        policy="refuse",
-        journal=dh / ".journal",
-    )
+_cli_tenant = cli_tenant
 
 
 def _cmd_diff_append(args: argparse.Namespace, tenant: Tenant) -> int:
@@ -722,7 +703,11 @@ def main(argv: list[str] | None = None) -> int:
 
     args = ap.parse_args(argv)
     lanes = tuple(args.lane) if getattr(args, "lane", None) else ()
-    tenant = _cli_tenant(args.data_home, args.join_keys, lanes)
+    try:
+        tenant = _cli_tenant(args.data_home, args.join_keys, args.tenant_id, lanes)
+    except TenantError as exc:
+        print(f"JOURNAL REFUSED: {exc}", file=sys.stderr)
+        return 2
 
     if args.cmd == "diff-append":
         return _cmd_diff_append(args, tenant)

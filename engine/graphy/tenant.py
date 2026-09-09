@@ -119,3 +119,23 @@ class Tenant:
                 "resolves paths only under its own root and data_home"
             )
         return real
+
+
+def cli_tenant(data_home: str, join_keys: str, tenant_id: str, lanes: tuple = ()) -> "Tenant":
+    """The descriptor a module's own main constructs from its declared flags — one constructor for the
+    six mains that used to carry a copy each. The receipt name is read and kept: a blank one refuses
+    here, at the door, the way `open_for` refuses it; the declaration is stamped as the cursor
+    `cli:<name>`, so anything the Tenant signs carries who declared it. A lane is `KEY:KIND`."""
+    if not tenant_id or not tenant_id.strip():
+        raise TenantError("--tenant-id must not be empty — graphy resolves identity only through a declared "
+                          "Tenant, and the receipt name is part of that declaration")
+    dh = Path(data_home).resolve()
+    jk = Path(join_keys).resolve()
+    build_lanes: dict = {}
+    for pair in lanes:
+        key, sep, kind = str(pair).partition(":")
+        if not sep or not key or not kind:
+            raise ValueError(f"--lane {pair!r} does not match KEY:KIND — the lane declares both halves")
+        build_lanes[key] = (None, kind)
+    return Tenant(root=dh.parent, data_home=dh, adapters=(), build_lanes=build_lanes, join_keys=jk,
+                  cursor=f"cli:{tenant_id.strip()}", policy="refuse", journal=dh / ".journal")

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from graphy._portable_flock import fcntl
 from graphy.cartograph import resolve_graph
-from graphy.tenant import Tenant
+from graphy.tenant import Tenant, TenantError, cli_tenant
 
 CORE_NAMES: frozenset = frozenset()
 
@@ -522,19 +522,7 @@ def cmd_census(index: dict, tenant: Tenant) -> int:
     return 0
 
 
-def _cli_tenant(data_home: str, join_keys: str) -> Tenant:
-    dh = Path(data_home).resolve()
-    jk = Path(join_keys).resolve()
-    return Tenant(
-        root=dh.parent,
-        data_home=dh,
-        adapters=(),
-        build_lanes={},
-        join_keys=jk,
-        cursor="declared-cli",
-        policy="refuse",
-        journal=dh / ".journal",
-    )
+_cli_tenant = cli_tenant
 
 
 def main(argv=None) -> int:
@@ -558,7 +546,11 @@ def main(argv=None) -> int:
                     help="self-audit census: fail loud on an UNREGISTERED-WALKABLE overlay axis")
     a = ap.parse_args(argv)
 
-    tenant = _cli_tenant(a.data_home, a.join_keys)
+    try:
+        tenant = _cli_tenant(a.data_home, a.join_keys, a.tenant_id)
+    except TenantError as exc:
+        print(f"GATE REFUSED: {exc}", file=sys.stderr)
+        return 2
 
     if a.observe:
         print(json.dumps(observe(a.observe, tenant), indent=1))

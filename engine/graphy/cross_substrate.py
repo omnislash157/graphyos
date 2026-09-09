@@ -18,7 +18,7 @@ from graphy._shared import (
     _ast_edge_salience,
     _shim_adj_for_activate,
 )
-from graphy.tenant import Tenant
+from graphy.tenant import Tenant, TenantError, cli_tenant
 
 WIRE_BUCKET = "wire"
 RESERVED_SCHEMES = {"fetch", "artifact", "impl", "doctrine", "scrape"}
@@ -603,19 +603,7 @@ def _print_buckets(result: dict) -> None:
             print(f"     hops={n['hops']} energy={n['energy']:.6g} sal={sal:<8} {nid}")
 
 
-def _cli_tenant(data_home: str, join_keys: str) -> Tenant:
-    dh = Path(data_home).resolve()
-    jk = Path(join_keys).resolve()
-    return Tenant(
-        root=dh.parent,
-        data_home=dh,
-        adapters=(),
-        build_lanes={},
-        join_keys=jk,
-        cursor="declared-cli",
-        policy="refuse",
-        journal=dh / ".journal",
-    )
+_cli_tenant = cli_tenant
 
 
 def main(argv=None) -> int:
@@ -665,7 +653,11 @@ def main(argv=None) -> int:
                          "WHOLE mesh to answer a bounded question. Opt-in on purpose: this "
                          "is never a silent fallback.")
     args = ap.parse_args(argv)
-    tenant = _cli_tenant(args.data_home, args.join_keys)
+    try:
+        tenant = _cli_tenant(args.data_home, args.join_keys, args.tenant_id)
+    except TenantError as exc:
+        print(f"CROSS REFUSED: {exc}", file=sys.stderr)
+        return 2
 
     if args.mesh_set is not None:
         substrates = [x.strip() for x in args.mesh_set.split(",") if x.strip()]

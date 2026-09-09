@@ -4887,3 +4887,90 @@ python3 measure.py diff recon.before62.json recon.json | tail -1
 | blast radius, before the edit | `blast federated_store._sync_then_replace --depth 2`: `compile_store` · `cli._cmd_build` · `federated_store.main`, 9 tests — none touched: the edit is one conftest and one marker |
 | the constraints | `BURDEN OK` (`burden.json` unchanged, the wheel 299,851 B unchanged); `CENSUS OK`; `MEASURE DIFF OK: 38 number(s) moved, none the wrong way past tolerance` (`floor.seconds 10.3 → 9.4 better`; a first run read the express tenant +0.9 s once — alone, `better`); the gate `GRAPHY_STANDALONE_OK`; `federated_store.py`'s bytes unchanged |
 | the review, `/code-review medium` | four findings, every one fixed: the re-derive command named a plugin that lived in a scratch directory (`engine/tests/fsync_log.py` is tracked, the command runs from the checkout); the `durable` mark was not load-bearing — the ordering spy passed under the no-op (the test asserts the real function; red without the mark); an unfilled template token in this table (this row); the process-wide no-op makes a future unmarked fsync test vacuous (accepted by name: the convention is in conftest's docstring, the no-op counts its calls, and the log plugin shows what reached the kernel — a per-module patch needs an alias the engine does not carry) |
+
+## 98 · THE REVIEW APPARATUS, PORTED — the adversarial-reviewer card (the done block is what is reviewed; callers and reverse callers from the walk; every blocker routed to one door), `review.py` the CLI battery in the gate (eight checks, each a set difference over a parse of the live tree, each proven red on its own fixture in the same run), and the visual battery over every page this engine emits; the battery's first live run found one class the floor, the gate and the receipt had passed five times (2026-09-09 · graphyos issue 63)
+
+**The number, from the board.** Five issues (#58–#62) drew 33 review findings after the floor, the gate
+and the receipt were green — a done line the record contradicted (#59, #60), a join by guess (#59), a
+rule that judged on nothing (#61), an unfilled template token on main twice (§92, caught at §97), a
+layout hardcoded into a producer, a test whose mark was not load-bearing. Each was fixed by hand after
+a cold reviewer named it; none had a door. The review skill ran after the fact with no battery in front
+of it and no walk behind it: the callers of a changed symbol were never put in front of the reviewer,
+and the reviewer never ran the done block.
+
+**The source.** The Enterprise deck's review apparatus on this box, read in full, nothing copied by
+path: the adversarial-reviewer card (REFUTE never confirm; STEP ZERO the done token is the thing
+reviewed; the mechanical and the judgment classes; the DISPOSITION — every blocker routed to exactly
+one door or eliminated), the frontend-review battery (CLI first, a screenshot never certifies a done
+token, every interaction driven), the build_checklist battery (set differences over a parse of the
+live tree, fails loud when it cannot run), the visual lint lenses. What travelled is the doctrine and
+the mechanical shape; what stayed is theirs by name — `CENSUS OK` after the port, the keyed scrub over
+every new file (`SCRUB OK: 4 file(s)`).
+
+**The change, three pieces.**
+
+1. `.claude/skills/adversarial-reviewer/SKILL.md` — the card in graphy's terms. STEP ZERO runs the
+   issue's done block line by line before a diff is read; the verdict opens `DONE BLOCK: GREEN|RED|JUDGED`
+   then `VERDICT: SHIP|REVISE`. Twelve mechanical classes re-cut on this board's own specimens, each
+   naming its door; seven judgment classes; the callers-and-reverse-callers class made concrete —
+   `blast` · `descend` · `explain` of every changed symbol pasted into the review, a caller outside the
+   diff a finding by name. The DISPOSITION has graphy's five homes: `burden.py`/`workflows.py` for a
+   property of the tree · a `measure.py` direction for a number · `arms --verify`/`release.sh --check`
+   for a build product · a `review.py` check for a set difference · the card for judgment; none of the
+   five eliminates. `/code-review` stays the seat; the card is what it is told. The rung-discipline
+   skill's step 6 and its door table carry it now; CLAUDE.md THE MARCH points at it.
+2. `review.py` at the root — the battery, stdlib, in the gate. Every check a set difference, every
+   check RAISES on a zero denominator and prints its denominator on the clean line, every check with a
+   seeded fixture that trips it and a fixed one that does not (`--selftest`), and the flat run re-proves
+   that as its own check (`gate-selftest`): `advertised-argv-parses` (every `graphy <verb> …` a document
+   advertises — shell fences less comments, a text fence's opening command, every inline span — names a
+   verb `cli._build_parser()` has and only flags that verb accepts; a placeholder is the reader's value);
+   `cites-nonexistent` (every backticked dotted symbol whose head is a module of this tree is defined in
+   the live tree by AST — the store's own input, so the check runs where the store is not);
+   `argparse-dest-never-read`; `path-literal-names-nothing` (CLAUDE.md THE FOLDER and THE ENGINE MAP,
+   burden.json's doc globs, the hook commands — on disk or gitignored by name); `template-token`;
+   `sha-liveness` (RECON's newest section; git says which hex is a commit); `severance` under
+   `--diff <ref>` (a function, class or method deleted since the ref that a Python file outside the diff
+   imports and uses, by AST, plus every caller the graphy tenant's store holds an edge from, confirmed
+   against the live file — the reverse-callers class, mechanical); `visual`. RECON is the record and its
+   history advertises flags that have honestly died, so only its newest section is a surface. The gate
+   runs the flat battery; the PR gate runs `--diff <base sha>` and posts it beside the burden and the
+   receipt's diff.
+3. `.claude/skills/frontend-review/SKILL.md` and the `visual` leg: every page this engine emitted on the
+   box (the atlases, a showcase's index) holds `sugiyama.check_artifact`'s contract, keeps every colour
+   literal inside a `--token:` declaration (a literal in a rule paints one theme and lies in the other),
+   and binds every element its script hooks singly — a parse of the HTML, no browser, no new dependency.
+   The card keeps the doctrine for the human pass: driven, not looked at.
+
+**The battery's first live run.** `argparse-dest-never-read` found five module mains
+(`augment_registry` · `cartograph` · `inventory` · `journal` · `mesh_federation_gate`) that declared
+`--tenant-id` as required "for a complete declaration" and never read it — `--tenant-id " "` passed
+argparse and was dropped on the floor. Each `_cli_tenant` now takes the declared receipt name and
+refuses a blank one with the refusal `open_for` makes; `test_journal.py` carries the RED proof. The
+other seven checks were clean on the tree at HEAD. Before the head rule was tightened the battery also
+named four prose lines as commands ("graphy tenant's", "graphy onto", "graphy alone," inside text
+fences — a code span is a command surface, which is why this sentence quotes them plainly; a `--replay` inside a comment) — a text fence's line is a command only when the command opens
+it, and a comment is not a command; the fixture carries both.
+
+```bash
+python3 review.py --selftest | tail -1                       # REVIEW SELFTEST OK: 8 check(s), each red on its fixture
+python3 review.py | tail -1                                  # REVIEW OK: 8 check(s) · 0 finding(s)
+python3 review.py --diff HEAD~1 | tail -1                    # REVIEW OK: 9 check(s) · 0 finding(s)
+python3 review.py | grep -E '^ ok ' | sed 's/^ ok  //'        # every denominator
+for i in 1 2 3; do /usr/bin/time -f 'review %e s' python3 review.py 2>&1 >/dev/null | tail -1; done
+git stash -q && python3 review.py | grep -c 'argparse-dest-never-read engine'; git stash pop -q     # the five, on the tree before this commit
+cd engine && ../.venv/bin/python -m pytest -q tests/test_review.py tests/test_journal.py -p no:cacheprovider | tail -1
+bash census.sh | tail -1 && python3 scrub.py review.py .claude/skills/adversarial-reviewer/SKILL.md .claude/skills/frontend-review/SKILL.md engine/tests/test_review.py
+python3 measure.py diff recon.before63.json recon.json | tail -1
+```
+
+| check | result |
+|---|---|
+| the battery, live | 8 check(s) · 0 finding(s) in 0.80 · 0.80 · 0.80 s — 277 command(s) against 27 verb(s) · 79 symbol(s) against 2336 defined · 16 module(s) declaring arguments · 73 path(s) the router names · 38 tracked document(s) · 0 hex token(s) in §97 · 33 page(s) · 8 check(s) seeded red and green; `--diff HEAD~1` 9 checks in 0.91 s; `--diff HEAD~40` (5 deleted symbols) 1.92 s |
+| the selftest | 8 checks, red 1 · 3 · 1 · 1 · 1 · 2 · 2 · 3 and green 0 on every fixed fixture, 0.18 s |
+| the tree before this commit | `argparse-dest-never-read` 5 (the five mains); the other checks 0 |
+| the battery on this commit's own diff | `severance` named `federated_store.py` and `query.py` still calling `cross_substrate._cli_tenant` with two arguments after the six copies became one — the two red floor tests, found by the check before the floor was run; the reverse-callers class caught its first specimen in the commit that built it |
+| the floor | 553 passed, 3 skipped (546 before: `test_review.py`'s six, the journal's RED proof); 9.9 s in the receipt (10.1 before) |
+| blast radius, before the edit | `blast cli._build_parser --depth 1`: `cli._main`; `blast sugiyama.check_artifact --depth 1`: `cli._cmd_draw` · `showcase.showcase` + 3 tests — both read-only from the battery; the five `_cli_tenant` edits' callers are the mains in the same files |
+| the constraints | `BURDEN OK` (`burden.json` unchanged; the wheel 299,851 B unchanged); `CENSUS OK`; `SCRUB OK: 4 file(s)`; `claude plugin validate .` passed; `WORKFLOWS OK: 5 file(s)`; `MEASURE DIFF OK: 46 number(s) moved, none the wrong way past tolerance` (`gate.seconds 17.0 → 18.7`: the battery's second inside the gate; `wheel_bytes 299,851 → 299,965`: `tenant.cli_tenant`); the gate `GRAPHY_STANDALONE_OK`; the graphy tenant `GRAPHY_TENANT_OK` — the six arm regions re-rendered (six `_cli_tenant` functions left six module inventories), `docs/pillars.svg` re-drawn |
+| the review, `/code-review medium` under the card | eight findings, every one folded in, each with its DISPOSITION: severance blind to a rename (`R100 old new` read as an addition) → `--no-renames`, a move is a delete and an add, the floor moves a module · NEW · review.py; a bare attribute match flagged `con.close()` as `K.close` → a reader names a symbol only through its own import binding (`a.K().m`, `K.m` after `from graphy.a import K`), the fixture's sqlite3 control · NEW · review.py; the five `_cli_tenant` copies validated the id and dropped it → one `tenant.cli_tenant` for the six mains (cross_substrate's copy too), the declared name stamped as the cursor `cli:<name>` · NOT NEW · argparse-dest-never-read was satisfied by a read that landed nowhere, accepted by name: an attribute read is a read, the door does not judge what a value reaches; `cites-nonexistent` misjudging `tenant.data_home` as a citation → a bare stem is judged when called, when its first tail segment is a module-level name, else not at all · NEW · review.py; the sha fixture's git under this box's HOME → `_fixture_env`, a failing fixture git is `REVIEW REFUSED` never a traceback · NEW · review.py; a blank `--tenant-id` died with a traceback and exit 1 → one line and exit 2 in every main, the floor asserts it · NEW · this card BLOCK TWO ②; severance parsed 647 files per deleted symbol (1.15 s each) → the bare name as a floor, one parse per reader across symbols, `--diff HEAD~40` 1.92 s for five · NEW · review.py; the severance green fixture never exercised an importer that does not use the name → the fixture's third reader · NOT NEW · gate-selftest was blind to it. Three dropped by the reviewer and taken anyway: the store's `contains` edge counted as a caller (`rel != 'contains'`), the router's "every path this file names" overclaim (the two fences named), the argparse proxy (above) |

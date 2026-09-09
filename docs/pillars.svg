@@ -87,10 +87,10 @@
       <path d="M 677,159 L 841.5,159 L 841.5,61 L 866,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
       <path d="M 635,117 L 645.5,117" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
       <path d="M 645.5,75 L 645.5,229" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 645.5,75 L 747,75" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="EDGE"/>
+      <path d="M 645.5,75 L 747,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
       <path d="M 645.5,229 L 670,229" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="MEMORY"/>
       <path d="M 645.5,117 L 670,117" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="EDGE"/>
-      <path d="M 677,75 L 848.5,75 L 848.5,61 L 866,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="EDGE"/>
+      <path d="M 677,75 L 848.5,75 L 848.5,61 L 866,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
       <path d="M 824,117 L 855.5,117 L 855.5,61 L 866,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
       <g class="node" data-id="CLI">
         <rect x="40" y="40" width="126" height="42" class="card" rx="3" stroke-width="1"/>
@@ -102,11 +102,11 @@
       </g>
       <g class="node" data-id="DOORS">
         <rect x="180" y="124" width="140" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="250" y="149.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (38→ ·→31)</text>
+        <text x="250" y="149.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (39→ ·→31)</text>
       </g>
       <g class="node" data-id="EDGE">
         <rect x="502" y="96" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="568.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (11→ ·→19)</text>
+        <text x="568.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (11→ ·→18)</text>
       </g>
       <g class="node" data-id="MEMORY">
         <rect x="670" y="208" width="133" height="42" class="card" rx="3" stroke-width="1"/>
@@ -118,6 +118,6 @@
       </g>
       <g class="node" data-id="SEAM">
         <rect x="866" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="932.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (25→ ·→85)</text>
+        <text x="932.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (24→ ·→86)</text>
       </g>
 </svg>
