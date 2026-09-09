@@ -1,17 +1,69 @@
 # graphy
 
+**Give your coding agent a memory it can grep. Give it a codebase it can walk.**
+
 [![ci](https://github.com/omnislash157/graphyos/actions/workflows/ci.yml/badge.svg)](https://github.com/omnislash157/graphyos/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/graphyos)](https://pypi.org/project/graphyos/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/graphyos/)
+[![MCP registry](https://img.shields.io/badge/MCP-io.github.omnislash157%2Fgraphyos-black)](https://registry.modelcontextprotocol.io/v0/servers?search=graphyos)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
+Every `/clear` wipes your agent's mind. Every compaction throws away the three hours it just spent
+learning your code with you. graphy fixes that with a text file and a grep, then goes one step
+further: it compiles the whole codebase, dependencies included, into a graph the agent walks
+instead of reads.
 
-**Bolt it onto a repo and it eats the whole thing.** One command mints your package and every
-package it imports into a walkable substrate, resolves who calls what through the code's own
-scope, compiles it into a store, lays parquet beside every shard, and audits the result. Then you
-ask it things: does A reach B, what crosses from my code into that dependency, who calls this
-class across the whole ring. No model decides an edge. Every answer is a walk over structure,
-and every walk is a query, never a load — the build reads the shard JSON once into the store,
-and no walk reads a file again.
+```bash
+pip install graphyos
+cd /path/to/your/repo && graphy eat . && graphy shell install --repo "$PWD"
+```
+
+Two commands. After that:
+
+- **Sessions carry over.** The next session opens by reading the end of the last one, verbatim.
+  Not a summary. The actual exchanges, tool noise stripped, a sha on every tail.
+- **Every conversation is searchable at grep speed.** The archive is plain markdown under
+  `.claude/recovery/sessions/`. Two words give you every session where they were discussed
+  together, as a heat map with the passages, in a tenth of a second.
+- **The code is a graph, not a pile of files.** Does A reach B. What breaks if this changes. Who
+  calls this class across every package in the ring. Answered from structure in milliseconds,
+  served over MCP to Claude Code, Cursor or anything else that speaks it.
+- **The memory is welded to the code.** Ask `blast` what depends on a function and it lists the
+  conversations that discussed it beside the callers. Ask `graphy history --symbol <name>` and it
+  walks from the symbol into every session that mentioned it, oldest first, with the commits.
+
+No summarizer. No embeddings. No model ever decides an edge or picks what mattered. The core is
+the Python standard library, ripgrep and three shell hooks, with zero runtime dependencies.
 
 Created by Matt Hartigan, 2026. Apache 2.0.
+
+## How the memory works
+
+Three Claude Code hooks. `PreCompact` and `SessionEnd` write the session as 1:1 user/assistant
+exchanges to `.claude/recovery/reseed_tail.md` and archive every distinct tail in sequence.
+`SessionStart` on startup, clear or compact prints the newest tail as context and names the file
+holding the whole record. A tail the parser cannot trust is refused loud, never injected hollow; a
+hook that cannot help never wedges the session.
+
+```bash
+python3 -m graphy.lightning.bloodhound "gallery" --with "showcase"
+#   co-occurrence: 5 file(s) hold BOTH terms within ±10 tokens
+#   HEAT — which files this term DOMINATES … the daisy-chained spans, hottest file first
+```
+
+`lightning` is the search half: ripgrep discovers the files, lightning walks each hit out to the
+function, class or exchange that holds it. `bloodhound` maps two terms across the archive over
+time. Every exchange is also a node in the code graph, bound to the symbols it names, so the walk
+verbs answer "what did we say about this" with no archive read. The lane in full:
+[`engine/graphy/shell/README.md`](engine/graphy/shell/README.md).
+
+## How the graph works
+
+One command mints your package and every package it imports into a walkable substrate, resolves who
+calls what through the code's own scope, compiles it into a store, and audits the result. Every edge
+is structural, a wormhole between shards on a shared literal, or a label bound through real scope.
+A name match is never an edge. Every answer is a walk over structure, and every walk is a query,
+never a load.
 
 ## The thirty-second demo
 
