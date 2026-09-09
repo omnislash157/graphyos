@@ -34,6 +34,8 @@ def test_GREEN_memory_taps_in_the_rendered_router_name_the_doors_with_the_instal
     assert router.count(f"--path {sessions}") >= 5
     assert "{{" not in router, "an unfilled placeholder reached the router"
     assert info["memory_taps"] == 7 == shell_install.memory_taps(router)
+    assert info["history"].startswith("none ("), "a tenant with no history shard is named, never minted by install"
+    assert "-m graphy history --symbol" in router and "needs the tenant's history shard" not in router
     assert "reseed_tail.md" in router and "sessions/" in router
 
 

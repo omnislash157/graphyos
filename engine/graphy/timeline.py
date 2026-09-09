@@ -177,9 +177,13 @@ def story(store, hits: list[tuple[str, tuple | None, str, float]]) -> tuple[list
     shard refuses by name — the door has nothing to walk."""
     by_file = _sessions_by_file(store)
     if not by_file:
-        raise TimelineError("this store carries no history shard — mint it beside the code "
-                            "(`graphy history --repo <abs> --out <data_home>/history_graph --sessions <archive> "
-                            "--code <code shard>…`, then `graphy build`); the graphy tenant's rebuild does")
+        if any(True for _ in store.owned(HISTORY_OWNER)):
+            raise TimelineError("the history shard carries no session — the archive at .claude/recovery/sessions is empty "
+                                "or its files lack the capture header (`session:` · `captured_at:`); `graphy shell install` "
+                                "bolts on the hooks that fill it, and `graphy eat .` re-mints the shard over what they captured")
+        raise TimelineError("this store carries no history shard — `graphy eat .` mints it beside the code when the repo "
+                            "is a git checkout (by hand: `graphy history --repo <abs> --out <data_home>/history_graph "
+                            "--sessions <archive> --code <code shard>…`, then `graphy build`)")
     receipts_by_time: list[tuple[str, str, dict]] = []
     for nid, cols in store.owned(HISTORY_OWNER):
         if cols and cols.get("node_type") == "receipt":

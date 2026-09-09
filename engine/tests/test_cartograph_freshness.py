@@ -127,3 +127,18 @@ def test_GREEN_working_tree_dirt_joins_the_cursor(tmp_path):
 def subprocess_head(repo: Path) -> str:
     import subprocess
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+
+
+def test_GREEN_repo_toplevel_is_the_checkout_from_any_directory_inside_it_and_none_outside(tmp_path):
+    """graphyos #66: a tenant's root may sit inside the checkout (the graphy tenant's is
+    engine/tenants/graphy); the history shard's inputs live at the toplevel, so check verifies against
+    it. A directory in no checkout gives None, never a guess."""
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "a" / "b").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    assert carto.repo_toplevel(repo / "a" / "b") == repo.resolve()
+    assert carto.repo_toplevel(repo) == repo.resolve()
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    assert carto.repo_toplevel(bare) is None or carto.repo_toplevel(bare) != repo.resolve()

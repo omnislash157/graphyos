@@ -27,6 +27,20 @@ def repo_head_sha(repo_root: Path | None = None) -> str | None:
         return None
 
 
+def repo_toplevel(root: Path) -> Path | None:
+    """The git checkout ``root`` stands in — its toplevel — or None when git or the checkout is absent.
+    A tenant's root may be a directory inside the checkout (the graphy tenant's is ``engine/tenants/graphy``);
+    the inputs the history shard reads (the archive, RECON, the receipts) sit at the toplevel (graphyos #66)."""
+    try:
+        proc = subprocess.run(["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    return Path(proc.stdout.strip()).resolve()
+
+
 def working_tree_dirt(repo_root: Path, exclude: Iterable[Path] = ()) -> tuple[list[str], bytes] | None:
     """What the working tree holds past HEAD: the paths ``git status --porcelain -uall`` names (every
     untracked file spelled out, nothing under an ``exclude`` root — the data home the eat writes),

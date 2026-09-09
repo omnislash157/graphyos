@@ -167,7 +167,7 @@ def test_RED_a_store_with_no_history_shard_refuses_by_name(tmp_path):
     class Bare(FakeStore):
         def owned(self, owner):
             return iter(())
-    with pytest.raises(timeline.TimelineError, match="no history shard — mint it"):
+    with pytest.raises(timeline.TimelineError, match="no history shard — `graphy eat .` mints it"):
         timeline.timeline(Bare(), "bloodhound", None, _archive(tmp_path))
 
 

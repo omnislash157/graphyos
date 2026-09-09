@@ -923,6 +923,26 @@ def _cmd_check(args: argparse.Namespace) -> int:
                         f"journal lane {graph_class!r}: journal {jfile} {detail}",
                         "restore a readable journal and re-run graphy check"))
 
+    if f"{HISTORY_SLUG}_graph" in tenant.build_lanes:
+        # The history shard's inputs the cursor cannot see — the sessions archive the hooks grow,
+        # the receipts, the registry — against the digest the producer wrote (graphyos #66).
+        from graphy.adapters import history as history_lane
+        from graphy.cartograph import repo_toplevel
+        hist_dir = Path(tenant.data_home) / f"{HISTORY_SLUG}_graph"
+        try:
+            fresh, why = history_lane.verify(hist_dir, repo=repo_toplevel(Path(tenant.root)) or Path(tenant.root))
+        except (history_lane.HistoryError, OSError, ValueError) as exc:
+            findings.append((
+                "COULD-NOT-TELL",
+                f"history lane: {exc}",
+                "restore the shard's inputs and re-run graphy check, or re-eat"))
+        else:
+            if not fresh:
+                findings.append((
+                    "RED",
+                    f"history lane: STALE — {why.removeprefix('stale: ').removesuffix('; re-mint')}",
+                    "re-mint it: `graphy eat .` (or `graphy shell install --repo <abs>`, which re-mints the history shard alone)"))
+
     states = {}
     for graph_class in sorted(tenant.build_lanes):
         _base, slug = journal._names(graph_class)
@@ -1078,13 +1098,54 @@ def _cmd_history(args: argparse.Namespace) -> int:
     except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
         print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
         return 2
-    h = prov["history"]
-    print(f"HISTORY: {h['authored']} commit(s) authored by a session's window, {h['unauthored']} in no window · "
-          f"{h['touches']} touches onto code module ids · {h['note']}")
-    print(f"HISTORY OK: {h['commits']} commit(s) · {h['sessions']} session(s) · {h['sections']} section(s) · "
-          f"{h['issues']} issue(s) · {h['receipts']} receipt(s) · {h['exchanges']} exchange(s) · {h['mentions']} mention(s) "
-          f"-> {Path(args.out).resolve()}")
+    for line in _history_report(prov, Path(args.out)):
+        print(line)
     return 0
+
+
+def _history_report(prov: dict, out: Path) -> list[str]:
+    """The two lines a history mint prints, from its PROVENANCE — the same words from `graphy history`
+    and from `graphy eat` (graphyos #66)."""
+    h = prov["history"]
+    return [f"HISTORY: {h['authored']} commit(s) authored by a session's window, {h['unauthored']} in no window · "
+            f"{h['touches']} touches onto code module ids · {h['note']}",
+            f"HISTORY OK: {h['commits']} commit(s) · {h['sessions']} session(s) · {h['sections']} section(s) · "
+            f"{h['issues']} issue(s) · {h['receipts']} receipt(s) · {h['exchanges']} exchange(s) · {h['mentions']} mention(s) "
+            f"-> {Path(out).resolve()}"]
+
+
+HISTORY_SLUG = "history"
+SESSIONS_REL = Path(".claude") / "recovery" / "sessions"
+ALIASES_NAME = "aliases.json"
+
+
+def eat_history(repo: Path, sub: Path, home: Path, package: str, *, log=print) -> bool:
+    """The repo's own record minted beside the code shard by `eat` and re-minted by `shell install`
+    (graphyos #66): commits from the checkout, the sessions archive the hooks fill when it exists, the
+    package's shard as the code the literals bind to, ``<home>/aliases.json`` the hand weld when present.
+    Nothing of the repo's runs — the producer reads git and files. A directory that is not a git
+    checkout is skipped by name; a mint that refuses is named and the eat stands on the code alone.
+    Returns whether the shard landed."""
+    from graphy.adapters import history as history_lane
+    from graphy.ir import IRError
+    out = sub / f"{HISTORY_SLUG}_graph"
+    if not (repo / ".git").exists():
+        shutil.rmtree(out, ignore_errors=True)
+        log(f"HISTORY SKIPPED: {repo} is not a git checkout — no commits to mint; the sessions archive is still "
+            "read by the memory doors (lightning · bloodhound · reseed_graph)")
+        return False
+    sessions = repo / SESSIONS_REL
+    aliases = home / ALIASES_NAME
+    try:
+        prov = history_lane.mint(repo, out, sessions=sessions if sessions.is_dir() else None,
+                                 code=[sub / f"{package}_graph"], aliases=aliases if aliases.is_file() else None)
+    except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
+        shutil.rmtree(out, ignore_errors=True)
+        log(f"HISTORY SKIPPED: {exc} — the code shard stands alone")
+        return False
+    for line in _history_report(prov, out):
+        log(line)
+    return True
 
 
 def _cmd_smash(args: argparse.Namespace) -> int:
@@ -1309,10 +1370,16 @@ def _package_candidates(repo: Path) -> list[Path]:
     return out
 
 
-def _scheme_index_from_ring(sub: Path, description: str) -> None:
+def _scheme_index_from_ring(sub: Path, description: str, extra: tuple[str, ...] = ()) -> None:
+    """The scheme index the store reads, derived from ring.json; ``extra`` names shards the ring did
+    not mint (the history shard) whose schemes are read from their own edges (graphyos #66)."""
     from graphy import smash as smash_lane
     ring = json.loads((sub / smash_lane.RING_NAME).read_text(encoding="utf-8"))
-    index = {"_meta": {"description": description, "standard": ring.get("standard", [])}, **ring["scheme_index"]}
+    rows = dict(ring["scheme_index"])
+    for slug in extra:
+        own, dst = smash_lane._schemes(json.loads((sub / f"{slug}_graph" / "edges.json").read_text(encoding="utf-8")))
+        rows[slug] = {"own": sorted(own), "out": sorted(dst - own)}
+    index = {"_meta": {"description": description, "standard": ring.get("standard", [])}, **rows}
     (sub / ".federation_scheme_index.json").write_text(json.dumps(index, indent=1, sort_keys=True) + "\n",
                                                        encoding="utf-8")
 
@@ -1466,10 +1533,17 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         return rc
     ring = json.loads((sub / smash_lane.RING_NAME).read_text(encoding="utf-8"))
     live = {f"{m['slug']}_graph" for m in ring["minted"].values()}
+    live.add(f"{HISTORY_SLUG}_graph")                            # re-minted below, or removed there by name
     for d in sub.glob("*_graph"):
         if d.is_dir() and d.name not in live:
             shutil.rmtree(d, ignore_errors=True)                 # a shard the ring no longer names
     lanes = [f"--lane={m['slug']}_graph:static-dep" for m in ring["minted"].values()]
+    # The repo's own record beside the code (graphyos #66): commits, the sessions archive the hooks
+    # fill, every exchange welded to the symbols it names — so blast · explain · history --symbol
+    # answer over this repo the way they do over the graphy tenant.
+    with_history = eat_history(repo, sub, home, package)
+    if with_history:
+        lanes.append(f"--lane={HISTORY_SLUG}_graph:static-dep")
     from graphy.cartograph import repo_cursor
     cursor, dirty = repo_cursor(repo, exclude=(home,))   # the working tree's dirt joins the cursor (graphyos #39)
     if cursor is None:
@@ -1483,7 +1557,8 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     if rc != 0:
         print("EAT FAILED at init", file=sys.stderr)
         return rc
-    _scheme_index_from_ring(sub, f"{package} scheme index — derived from ring.json by graphy eat")
+    _scheme_index_from_ring(sub, f"{package} scheme index — derived from ring.json by graphy eat",
+                            extra=(HISTORY_SLUG,) if with_history else ())
     for step in (["converge", "--tenant", str(desc), "--tenant-id", package, "--resolve"],
                  ["build", "--tenant", str(desc), "--tenant-id", package, "--container", "none"],
                  ["check", "--tenant", str(desc), "--tenant-id", package]):
@@ -1629,7 +1704,7 @@ def _cmd_shell(args: argparse.Namespace) -> int:
     for w in info["written"]:
         print(f"  wrote {w}")
     print(f"SHELL OK: hooks for tenant {info['tenant_id']} under {info['repo']} run on {info['python']}"
-          f" · {info['memory_taps']} memory tap(s) in GRAPHY.md")
+          f" · {info['memory_taps']} memory tap(s) in GRAPHY.md · history shard {info['history']}")
     print(f"  route the agent:  echo 'Read GRAPHY.md first.' >> {info['repo']}/CLAUDE.md")
     return 0
 

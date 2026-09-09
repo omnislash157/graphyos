@@ -93,7 +93,7 @@
       <path d="M 831,117 L 862.5,117 L 862.5,61 L 873,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
       <g class="node" data-id="CLI">
         <rect x="40" y="40" width="126" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="103" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (124→ ·→9)</text>
+        <text x="103" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (129→ ·→9)</text>
       </g>
       <g class="node" data-id="CUT">
         <rect x="180" y="124" width="126" height="42" class="card" rx="3" stroke-width="1"/>
@@ -105,7 +105,7 @@
       </g>
       <g class="node" data-id="EDGE">
         <rect x="502" y="96" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="568.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (14→ ·→20)</text>
+        <text x="568.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (14→ ·→21)</text>
       </g>
       <g class="node" data-id="MEMORY">
         <rect x="677" y="152" width="133" height="42" class="card" rx="3" stroke-width="1"/>
@@ -113,10 +113,10 @@
       </g>
       <g class="node" data-id="PRODUCE">
         <rect x="677" y="96" width="154" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="754" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (16→ ·→52)</text>
+        <text x="754" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (16→ ·→55)</text>
       </g>
       <g class="node" data-id="SEAM">
         <rect x="873" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="939.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (24→ ·→86)</text>
+        <text x="939.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (24→ ·→87)</text>
       </g>
 </svg>

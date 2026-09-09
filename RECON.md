@@ -5053,3 +5053,48 @@ python3 review.py --diff HEAD~1 | tail -1 && python3 measure.py diff recon.befor
 | the floor | 560 passed, 3 skipped (553 before: the producer's six — the weld, the registry's refusals, the literal rule, the token-boundary alias, the edited body as drift, the refusal before the lightning import; the timeline's symbol mode; the doors' fixture grew a history shard with a neighbour-naming exchange inside its two tests); 10.1 · 10.8 across two receipts s in the receipt (9.9 before) |
 | the constraints | `BURDEN OK` (`burden.json` unchanged, the wheel 299,965 → 306,126 B); `CENSUS OK`; `REVIEW OK: 9 check(s) · 0 finding(s)` under `--diff`; `MEASURE DIFF OK: 43 number(s) moved, none the wrong way past tolerance` (`floor.seconds 9.9 → 10.8`, `gate.seconds` 19.7, `engine_hot_lanes` 0; one receipt in between read `wheel.seconds 2.8 → 3.5` — pip's own build clock, 3.0 on the rerun, the number the row carries); the gate `GRAPHY_STANDALONE_OK` in 19.3 s |
 | the review, `/code-review medium` under the adversarial-reviewer card | eleven findings, every one fixed or dispositioned: the top-level `_EX_RE` import re-introduced §95's stderr-before-refusal regression (fixed, RED test with no PATH — NOT NEW, the class §95 named; the door is the test); the digest blind to an edited body (fixed, RED test); `mentions` transitive in blast (fixed: `SEED_RELATIONS`, the fixture's neighbour-naming exchange) and in explain (fixed: `DOC_EXPLAINS_SEED_ONLY`); `_DOTTED`'s trailing lookahead refusing a sentence's dot (fixed, the review's four specimens pinned); an alias counted inside a name the roster binds (fixed: token boundaries); `bound` tallied per node not per literal (fixed: `bind` returns every literal that bound — 162 → 209 on the live archive, the number this row carries); the binding called a wormhole (the wording fixed everywhere; the mechanism is the issue's spec and `doors.resolve`'s rule — the law's question of whether `aliases.json` belongs under `join_keys` is put to the operator in the hold, not decided here); `--sessions`/`--window` unread beside `--symbol` (fixed: `--sessions` names the archive's captures the shard lacks, `--window` refuses); `_`-keys dropped from the registry (fixed: `_meta` alone); `aliases.json` untracked (added). Every disposition a test or a door; none eliminated |
+
+## 100 · EAT MINTS THE HISTORY SHARD — a stranger's `blast` · `explain` · `history --symbol` reach the conversations the way the graphy tenant's do: `eat` lays `history_graph` beside the code shard of any git checkout (the graphy tenant's own mint: 125 commits · 45 sessions · 420 exchanges · 391 `mentions`), `shell install` re-mints it and recompiles the store, `check` grows a history lane that names the archive the cursor cannot see; the tenant root that is not the toplevel found and fixed on the way (2026-09-09 · graphyos issue 66)
+
+**The number, from the board.** The operator: *"what about the reseed files as a graph that was an internal
+thing that we built am i right in that? is that walkable to be searched on top of lightning ripping it via
+bloodhound"* — and the answer was: walkable here, not there. §94 and §99 minted the history shard through one
+script, `engine/tenants/graphy/rebuild.sh`, with its lane added by hand; `graphy eat` minted the package and its
+ring and nothing of the repo's own record, so an eaten repo's store held zero `history://` nodes and the README's
+fourth bullet was true of this repo and one command short of true for a stranger's (the softened bullet: `0be368d`).
+
+**The change.** `cli.eat_history(repo, sub, home, package)` — the producer (`adapters.history.mint`) called in
+process, never a subprocess: the checkout's commits, the sessions archive at `<repo>/.claude/recovery/sessions`
+when it exists, the package's shard as the code the literals bind to, `<repo>/.graphy/aliases.json` the hand weld
+when present. `_eat_run` calls it after the ring lands, adds `--lane history_graph:static-dep`, and
+`_scheme_index_from_ring(…, extra=("history",))` reads the shard's own edges for its schemes (what the rebuild
+did by hand). A directory that is not a git checkout: `HISTORY SKIPPED: … not a git checkout` and no lane; a mint
+that refuses is named and the eat stands on the code alone. `shell/install.remint_history` re-mints the shard
+`eat` laid (a tenant with none is named, never minted there) and runs `converge --resolve` and `build --container
+none` behind it; the SHELL OK line carries the state. `_cmd_check` grows the history lane: `history.verify`
+against the toplevel of the tenant's root — `cartograph.repo_toplevel`, because the graphy tenant's root is
+`engine/tenants/graphy` and its RECON, receipts and archive sit two directories up: the first rebuild under the new
+lane read `CHECK RED: history lane: STALE` with the shard fresh (0 sections and 0 receipts from the wrong
+directory), which is the fix's own proof. `timeline.story` tells a shard with no session apart from no shard.
+The installed `GRAPHY.md` drops its "needs the tenant's history shard" caveat and gains the `--symbol` row;
+`shell/README.md`, `CLAUDE.md`'s eat row and the README's fourth bullet say what a stranger gets.
+
+```bash
+cd engine && python3 -m graphy eat <git checkout> --no-provision | grep -E '^HISTORY (OK|SKIPPED)'      # the shard, or the reason
+cd engine && python3 -m graphy check --tenant <repo>/.graphy/tenant.json --tenant-id <pkg>                # after a session lands: history lane: STALE
+cd engine && python3 -m graphy shell install --repo <repo> | grep -E '^HISTORY OK|history shard'         # re-minted, store recompiled
+cd engine && python3 -m graphy check --tenant tenants/graphy/tenant.json --tenant-id graphy               # the graphy tenant: no history finding
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py tests/test_shell.py tests/test_cartograph_freshness.py tests/test_timeline.py
+```
+
+| check | result |
+|---|---|
+| a scratch checkout with one session (`fix solo.b.f please`) | `HISTORY OK: 1 commit(s) · 1 session(s) · 0 section(s) · 0 issue(s) · 0 receipt(s) · 2 exchange(s) · 2 mention(s)`, `CHECK OK`, `EAT OK … 0.1s`; `explain solo.b.f` → `hop1 mentions history://exchange/…/1/user`; `history --symbol solo.b.f` → `TIMELINE: 1 session(s)` |
+| a second session captured, nothing else moved | `graphy check` → `CHECK RED: history lane: STALE — the inputs digest … is not the shard's …` and no cursor finding (the archive ignores itself); `shell install` → `HISTORY OK: … 2 session(s) … 4 exchange(s) · 4 mention(s)` · `history shard re-minted, store recompiled`; `history --symbol` → `TIMELINE: 2 session(s)` |
+| a directory that is not a checkout | `HISTORY SKIPPED: … is not a git checkout — no commits to mint; the sessions archive is still read by the memory doors`, `EAT OK`, `build_lanes == ["solo_graph"]`, no `history_graph/` |
+| the production proof | `bash quickstart.sh https://github.com/honojs/hono.git` → `HISTORY OK: 1 commit(s) · 0 session(s) … 310 touches onto code module ids` (a shallow clone: one commit, no archive) · `GRAPHY_QUICKSTART_OK: hono eaten in 19.6s`; `estate --sql "select count(*) from nodes where id like 'history://commit/%'"` → 1; `shell install --repo …/hono` → `HISTORY OK` |
+| the graphy tenant, `rebuild.sh` | `HISTORY OK: 125 commit(s) · 45 session(s) · 100 section(s) · 61 issue(s) · 42 receipt(s) · 420 exchange(s) · 391 mention(s)` (§99 read 392 · 304 over 43 sessions); the first rebuild under the new lane `CHECK RED: history lane: STALE` — the tenant root, not the toplevel — then green with `repo_toplevel`; `ARMS OK: 6 arm(s) match the walk (store 21db0d05845b1e38)`; `DRAW OK … -> docs/pillars.svg` |
+| blast radius, before the edit | `blast cli._eat_run` 2 · `blast cli._scheme_index_from_ring` 3 · `blast cli._cmd_check` 0 · `blast cli.eat_history` 9 (graphy 6 · tests 3) · `blast shell.install.install` 4 (tests 3) · `blast timeline.story` 11 (graphy 5 · tests 5 · history 1) |
+| the floor | 564 passed, 3 skipped in 10.9–11.6 s (560 before: the eat mint and the walk into the exchange, the grown archive as STALE and the re-mint, the bare directory skipped, `repo_toplevel`; the timeline's refusal test re-worded) |
+| the constraints | `BURDEN OK` (the wheel 306,126 → 308,310 B); `CENSUS OK`; `SCRUB OK`; `REVIEW OK` under `--diff`; `MEASURE DIFF OK: 9 number(s) moved, none the wrong way past tolerance` (floor 11.6 s · gate 20.8 s · engine-hot lanes 0); the gate `GRAPHY_STANDALONE_OK` |
+| the hold | none: the README's fourth bullet is now true of a stranger's repo; the arm regions re-rendered (`remint_history`, `eat_history`, `repo_toplevel` in their inventories) |

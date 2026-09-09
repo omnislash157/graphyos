@@ -6,7 +6,7 @@
 `fanout` cuts a shard by a partition with a receipt; `pillars` deduces the arms from the module graph; `arms` renders the generated region into each arm file and verifies it; `sugiyama` lays out and renders; `draw` draws from the store; `showcase` writes the page.
 
 <!-- graphy:arm CUT generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=573234397f5c4108 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:089e46e05e2f6ddf240ced0523609f61404db818f719e1011a426d4972c8b44e -->
+     store=21db0d05845b1e38 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:089e46e05e2f6ddf240ced0523609f61404db818f719e1011a426d4972c8b44e -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.

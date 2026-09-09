@@ -6,7 +6,7 @@
 `doors` answers over one store; `traversal` keeps the walks; `query` spreads activation; `bridge` walks between two tenants on a declared literal; `mcp` serves the tools on stdio. A history shard in the roster makes the archive's exchanges readers of the code: `blast` lists the ones that mention a symbol under their own owner, `explain` lists them with the docs, and `timeline` walks from a symbol into the sessions that discussed it.
 
 <!-- graphy:arm DOORS generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=573234397f5c4108 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:873552fe676bfdb8a037c996e57a942d10c495c20abd09097b8f165c6cbb58ef -->
+     store=21db0d05845b1e38 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:873552fe676bfdb8a037c996e57a942d10c495c20abd09097b8f165c6cbb58ef -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.

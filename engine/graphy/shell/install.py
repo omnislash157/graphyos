@@ -37,7 +37,7 @@ def _merge_hooks(existing: dict, ours: dict) -> dict:
     return existing
 
 
-def install(repo: str | Path, python: str | None = None) -> dict:
+def install(repo: str | Path, python: str | None = None, *, log=print) -> dict:
     repo = Path(repo).expanduser().resolve()
     desc = repo / ".graphy" / "tenant.json"
     ring = repo / ".graphy" / "substrate" / "ring.json"
@@ -69,7 +69,28 @@ def install(repo: str | Path, python: str | None = None) -> dict:
     router.write_text(_fill((HERE / "claude" / "GRAPHY.md").read_text(encoding="utf-8"), values), encoding="utf-8")
     written.append(router)
     return {"repo": repo, "tenant_id": tid, "python": py, "written": written,
-            "memory_taps": memory_taps(router.read_text(encoding="utf-8"))}
+            "memory_taps": memory_taps(router.read_text(encoding="utf-8")),
+            "history": remint_history(repo, tid, log=log)}
+
+
+def remint_history(repo: Path, tid: str, *, log=print) -> str:
+    """The history shard `eat` minted, minted again over the archive as it stands and the store
+    recompiled behind it (graphyos #66) — the install is the moment the hooks start growing the
+    archive, so the weld is current from the first session. A tenant with no history shard is named,
+    never minted here: `eat` decides whether the repo is a git checkout. Returns the one-word state."""
+    from graphy import cli
+    from graphy import smash as smash_lane
+    home = repo / ".graphy"
+    sub = home / "substrate"
+    if not (sub / f"{cli.HISTORY_SLUG}_graph" / smash_lane.PROVENANCE_NAME).is_file():
+        return "none (`graphy eat .` mints it beside the code shard when the repo is a git checkout)"
+    if not cli.eat_history(repo, sub, home, tid, log=log):
+        return "skipped"
+    for step in (["converge", "--tenant", str(home / "tenant.json"), "--tenant-id", tid, "--resolve"],
+                 ["build", "--tenant", str(home / "tenant.json"), "--tenant-id", tid, "--container", "none"]):
+        if cli.main(step) != 0:
+            return f"re-minted, but the store did not recompile at {step[0]}"
+    return "re-minted, store recompiled"
 
 
 def memory_taps(router_text: str) -> int:

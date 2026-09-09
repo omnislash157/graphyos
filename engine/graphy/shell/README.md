@@ -42,7 +42,9 @@ its function or class · who reads X · does A live inside B · the pipe), `grap
 (when did we say A and B together, with the spans), `graphy.lightning.reseed_graph` (the archive's
 topics · search · heat · one term chained across time) and `graphy.reseed render` (any transcript by
 hand) — each with the installing interpreter and the repo's archive path filled in. `install`
-prints the count. ripgrep makes the doors fast; without it they fall back to Python, correct and slower.
+prints the count, and re-mints the history shard `eat` laid beside the code shard (the repo's commits and every
+exchange of the archive bound to the symbols it names) so the store the walk reads holds the archive as it stands;
+`graphy check` names that shard stale when a later session grows the archive, and either verb re-mints it. ripgrep makes the doors fast; without it they fall back to Python, correct and slower.
 
 ## Prove it by hand, any harness
 

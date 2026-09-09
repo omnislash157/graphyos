@@ -805,3 +805,88 @@ def test_plugin_manifest_and_registry_entry_run_the_repo_door_at_the_package_ver
     assert market["name"] == "graphyos" and market["owner"]["name"]
     assert entry["name"] == "graphy" and entry["source"] == {"source": "github", "repo": "omnislash157/graphyos"}
     assert entry["version"] == market["metadata"]["version"] == graphy.__version__
+
+
+# graphyos #66 — eat mints the repo's own record beside the code shard; shell install re-mints it;
+# check names the archive the cursor cannot see.
+
+_SESSION_HEAD = ("# CONVERSATION FULL SESSION — 1 exchanges, verbatim and in order\n\nsession: {sid}\n"
+                 "exchanges 1–1 of 1 · ~40 tokens\nsemantic_sha256: {sha}\ncaptured_at: {at}\nresolved_by: SessionEnd:clear\n\n")
+
+
+def _session_file(sessions: Path, n: int, body: str) -> Path:
+    sessions.mkdir(parents=True, exist_ok=True)
+    (sessions.parent / ".gitignore").write_text("*\n")     # what `shell install` writes: the archive never reaches the repo
+    sid = f"abcdef{n:02d}-0000-0000-0000-{n:012d}"
+    p = sessions / f"{n:05d}__20260909T10{n:02d}00Z__{sid[:8]}.md"
+    p.write_text(_SESSION_HEAD.format(sid=sid, sha="0" * 64, at=f"2026-09-09T10:{n:02d}:00+00:00") + body, encoding="utf-8")
+    return p
+
+
+def _solo_git_repo(tmp_path: Path) -> Path:
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "solo").mkdir(parents=True)
+    (repo / "solo" / "__init__.py").write_text("from . import b\n")
+    (repo / "solo" / "b.py").write_text("def f():\n    return 1\n")
+    (repo / "pyproject.toml").write_text('[project]\nname = "solo"\nversion = "0"\n')
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"], cwd=repo, check=True)
+    return repo
+
+
+def test_GREEN_eat_mints_the_history_shard_beside_the_code_and_the_walk_reaches_the_exchange(tmp_path, capsys):
+    """`graphy eat` over a git checkout with a sessions archive: HISTORY OK, the lane declared, every
+    exchange a node welded to the symbol it names, so `explain` lists the exchange and `history --symbol`
+    walks into its session — no by-hand mint (graphyos #66)."""
+    repo = _solo_git_repo(tmp_path)
+    _session_file(repo / ".claude" / "recovery" / "sessions", 1, "--- [1] USER\n\nfix solo.b.f please\n\n--- [1] ASSISTANT\n\nchanged f in solo/b.py\n")
+    desc = str(repo / ".graphy" / "tenant.json")
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    out = capsys.readouterr().out
+    assert "HISTORY OK: 1 commit(s) · 1 session(s)" in out and "2 exchange(s) · 2 mention(s)" in out and "CHECK OK" in out
+    assert "history_graph" in json.loads(Path(desc).read_text())["build_lanes"]
+    nodes = json.loads((repo / ".graphy" / "substrate" / "history_graph" / "nodes.json").read_text())
+    assert "history://exchange/abcdef01-0000-0000-0000-000000000001/1/user" in nodes
+    index = json.loads((repo / ".graphy" / "substrate" / ".federation_scheme_index.json").read_text())
+    assert "history" in index and "solo" in index["history"]["out"], "the scheme index never learned the history shard"
+    assert cli.main(["explain", "solo.b.f", "--tenant", desc, "--tenant-id", "solo"]) == 0
+    assert "mentions       history://exchange/" in capsys.readouterr().out
+    assert cli.main(["history", "--symbol", "solo.b.f", "--tenant", desc, "--tenant-id", "solo"]) == 0
+    assert "TIMELINE: 1 session(s)" in capsys.readouterr().out
+
+
+def test_RED_check_names_a_grown_archive_the_cursor_cannot_see_and_install_re_mints(tmp_path, capsys):
+    """A session captured after the eat leaves HEAD and the working tree alone (the archive ignores
+    itself), so only the history lane can see it: CHECK RED naming it, exit 1; `shell install` re-mints
+    the shard and recompiles the store, and the timeline reaches the new session (graphyos #66)."""
+    from graphy.shell import install as shell_install
+    repo = _solo_git_repo(tmp_path)
+    sessions = repo / ".claude" / "recovery" / "sessions"
+    _session_file(sessions, 1, "--- [1] USER\n\nfix solo.b.f please\n\n--- [1] ASSISTANT\n\nok\n")
+    desc = str(repo / ".graphy" / "tenant.json")
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    capsys.readouterr()
+    _session_file(sessions, 2, "--- [1] USER\n\nagain solo.b.f\n\n--- [1] ASSISTANT\n\nok\n")
+    assert cli.main(["check", "--tenant", desc, "--tenant-id", "solo"]) == 1
+    err = capsys.readouterr().err
+    assert "CHECK RED: history lane: STALE — the inputs digest" in err and "cursor lane" not in err
+    info = shell_install.install(repo, python=sys.executable, log=lambda *_: None)
+    assert info["history"] == "re-minted, store recompiled"
+    capsys.readouterr()
+    assert cli.main(["history", "--symbol", "solo.b.f", "--tenant", desc, "--tenant-id", "solo"]) == 0
+    assert "TIMELINE: 2 session(s)" in capsys.readouterr().out
+
+
+def test_GREEN_eat_skips_the_history_shard_by_name_on_a_directory_that_is_not_a_checkout(tmp_path, capsys):
+    repo = tmp_path / "repo"
+    (repo / "solo").mkdir(parents=True)
+    (repo / "solo" / "__init__.py").write_text("def f():\n    return 1\n")
+    (repo / "pyproject.toml").write_text('[project]\nname = "solo"\nversion = "0"\n')
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    out = capsys.readouterr().out
+    assert "HISTORY SKIPPED: " in out and "not a git checkout" in out and "EAT OK" in out
+    lanes = json.loads((repo / ".graphy" / "tenant.json").read_text())["build_lanes"]
+    assert list(lanes) == ["solo_graph"]
+    assert not (repo / ".graphy" / "substrate" / "history_graph").exists()
