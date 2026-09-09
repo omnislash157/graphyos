@@ -6,13 +6,13 @@
 A producer maps a parse tree onto the nine words (`adapters.python_ast`, `adapters.typescript_ast`); `ir` validates; `smash` mints a package into a shard and follows its imports into the ring; `index` pushes and pulls content-addressed shards; `refresh` follows upstream into a sibling; `farm` mints many; `provision` installs a repo's own dependencies for `eat`; `release` enforces one release per scheme.
 
 <!-- graphy:arm PRODUCE generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=080697d397f568a7 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:fb93c1fceee02a06e75ac58fd1ab1286b6c15ab85fd8ae95de6027040c68b11c -->
+     store=573234397f5c4108 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:130ec86e0fd4250568bb695303c318a107942c4a9a137e0ab8c552741089108f -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
 
 **`graphy.adapters._receipt`** — classes: `Receipt` (4); functions: `splice`
-**`graphy.adapters.history`** — classes: `HistoryError`; functions: `_digest` · `_git` · `_inputs` · `_iso` · `_numbers` · `build_ir` · `code_index` · `mint` · `module_id_of` · `read_commits` · `read_receipts` · `read_sections` · `read_sessions` · `verify`
+**`graphy.adapters.history`** — classes: `HistoryError`; functions: `_alias_rx` · `_code_nodes` · `_digest` · `_git` · `_inputs` · `_iso` · `_numbers` · `bind` · `build_ir` · `code_index` · `literals_of` · `mint` · `module_id_of` · `read_aliases` · `read_commits` · `read_exchanges` · `read_receipts` · `read_sections` · `read_sessions` · `symbol_index` · `verify`
 **`graphy.adapters.outline`** — classes: `_NodeRecords` (1); functions: `_slugify` · `build_ir` · `parse_outline`
 **`graphy.adapters.python_ast`** — classes: `_NodeRecords` (1); functions: `_bindable_annotations` · `_class_info` · `_defs_in` · `_dotted_for` · `_emit_import_edges` · `_emit_raw_records_for_file` · `_emit_records_for_file` · `_escapes` · `_expr_repr` · `_is_excluded` · `_local_package_names` · `_name_chain` · `_node_id` · `_param_names` · `_rebound_names` · `_resolve_module_dst` · `_scan` · `_scheme_of` · `_walk_stmt` · `build_ir` · `is_package_dir` · `mint_records` · `read_source` · `walk_files` · `walk_files_naming_skips`
 **`graphy.adapters.typescript_ast`** — classes: `ProducerUnavailable` · `_Wrap` (1); functions: `_assigned_functions` · `_calls_in` · `_decorators` · `_dotted_for` · `_expr_repr` · `_func_of_lexical` · `_heritage` · `_module_for_specifier` · `_node_id` · `_parsers` · `_require_spec` · `_requires_in` · `_text` · `_unwrap_export` · `_walk_class` · `_walk_module` · `build_ir` · `excludes_for` · `is_package_dir` · `mint_records` · `slug_of_specifier` · `walk_files`

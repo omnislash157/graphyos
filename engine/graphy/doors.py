@@ -6,9 +6,13 @@ refuse and name both, because a name match is never a fact.
     descend  the callees, transitively, down through the ring to the primitives; the package
              crossings the descent makes, each with the chain that made it
     blast    the dependents, transitively, against the edges — who calls, inherits, imports or
-             decorates this, in the tenant's own shard and across the ring
+             decorates this, in the tenant's own shard and across the ring; and who mentions it —
+             the history shard's exchanges that name the symbol itself (graphyos #64), a BY OWNER
+             row of their own at hop 1 and never a step further: a conversation that named a
+             symbol is a reader of it, not of its callers
     explain  the node's own record (where it lives, its docstring), the docs that explain it
-             (the DOC_EXPLAINS family), the tests that reach it, and the journal page that
+             (the DOC_EXPLAINS family — a doc substrate's binding, or an exchange of the history
+             shard that mentions it), the tests that reach it, and the journal page that
              birthed its shard
 """
 from __future__ import annotations
@@ -19,6 +23,7 @@ from graphy.cross_substrate import AGAINST, BOTH, WITH, WIRE_BUCKET, explanation
 
 DESCEND_RELATIONS = frozenset({"calls"})
 BLAST_RELATIONS = frozenset({"calls", "inherits", "imports", "decorates"})
+SEED_RELATIONS = frozenset({"mentions"})   # admitted from the seed only: a conversation that named X is X's reader, never its callers' (graphyos #64)
 TEST_ROLE = "test"     # the producer says what a test is; a door never reads a filename
 
 
@@ -50,16 +55,20 @@ class Reach:
     owner: str
 
 
-def _bfs(store, seed: str, max_depth: int, relations: frozenset, direction: str) -> dict[str, Reach]:
+def _bfs(store, seed: str, max_depth: int, relations: frozenset, direction: str,
+         seed_relations: frozenset = frozenset()) -> dict[str, Reach]:
     """One frontier per level; an edge counts when its relation is admitted and it points the
-    way the door walks (``with`` = out of the frontier node, ``against`` = into it)."""
+    way the door walks (``with`` = out of the frontier node, ``against`` = into it). A relation in
+    ``seed_relations`` is admitted only out of the seed itself — it names the seed's own readers and
+    never carries the walk further."""
     reached = {seed: Reach(seed, 0, None, None, store.membership(seed) or WIRE_BUCKET)}
     frontier = [seed]
     for hop in range(1, max_depth + 1):
         nxt: list[str] = []
+        admitted = relations | seed_relations if hop == 1 else relations
         for node in frontier:
             for nb in store.neighbours(node):
-                if nb.relation not in relations or nb.direction not in (direction, BOTH):
+                if nb.relation not in admitted or nb.direction not in (direction, BOTH):
                     continue
                 if nb.node in reached:
                     continue
@@ -145,7 +154,7 @@ class Blast:
 
 
 def blast(store, seed: str, max_depth: int = 4) -> Blast:
-    reached = _bfs(store, seed, max_depth, BLAST_RELATIONS, AGAINST)
+    reached = _bfs(store, seed, max_depth, BLAST_RELATIONS, AGAINST, SEED_RELATIONS)
     owner = reached[seed].owner
     by_owner: dict[str, int] = {}
     by_hop: dict[int, int] = {}
@@ -177,7 +186,7 @@ def explain(store, seed: str, max_depth: int = 3, tenant=None) -> Explanation:
     owner = store.membership(seed) or WIRE_BUCKET
     record = store.record(seed)
     docs = explanations_from_store(store, seed, max_depth)
-    dependents = _bfs(store, seed, max_depth, BLAST_RELATIONS, AGAINST)
+    dependents = _bfs(store, seed, max_depth, BLAST_RELATIONS, AGAINST, SEED_RELATIONS)
     tests: list[Reach] = []
     for r in dependents.values():
         if r.hop == 0:

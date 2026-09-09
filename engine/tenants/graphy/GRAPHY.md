@@ -33,6 +33,8 @@ reader lands in. `graphy pillars --against partition.json` prints every unit wit
 |---|---|
 | rebuild the tenant | `bash $T/rebuild.sh` → `GRAPHY_TENANT_OK` (PYTHON=<abs> for another interpreter's ring) |
 | the blast radius of a diff | `python3 $T/blast_pr.py <base> <head>` — the symbols the changed lines land in, each blasted, the tests that reach them, the arms; the PR workflow posts it |
-| the doors over the engine | `python3 -m graphy blast open_for --tenant $T/tenant.json --tenant-id graphy` · `descend _cmd_eat …` · `explain compile_store …` |
+| the doors over the engine | `python3 -m graphy blast open_for --tenant $T/tenant.json --tenant-id graphy` · `descend _cmd_eat …` · `explain compile_store …` — `blast` and `explain` name the archive's exchanges that mentioned the symbol, from the history shard |
+| what did we say about this symbol | `python3 -m graphy history --symbol showcase._clone --tenant $T/tenant.json --tenant-id graphy` — the exchanges that mention it, their sessions oldest first, the symbols each discussed, their commits |
+| weld a literal the shards' own names cannot bind | `$T/aliases.json` — an exact literal on token boundaries → one code node id, read by the rebuild into `history_graph` as `mentions` tagged `via: alias`; a target that is not a node refuses at mint, a literal the shards' own names already bind refuses as redundant |
 | draw it | `python3 -m graphy draw --tenant $T/tenant.json --tenant-id graphy --corpus graphy --pillars --partition $T/partition.json --lr` — the atlas lands at `$T/substrate/atlas/` |
 | the arms the walk proposes | `python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus graphy --against $T/partition.json` |

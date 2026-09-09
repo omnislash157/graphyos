@@ -3,10 +3,10 @@
 > Hand-cut from the engine map (CLAUDE.md); the walk crowns `cli` over everything and this cut names the lanes instead. The generated region at the bottom is the walk's own inventory and the re-walk.
 
 ## ⚖ The law of this arm
-`doors` answers over one store; `traversal` keeps the walks; `query` spreads activation; `bridge` walks between two tenants on a declared literal; `mcp` serves the tools on stdio.
+`doors` answers over one store; `traversal` keeps the walks; `query` spreads activation; `bridge` walks between two tenants on a declared literal; `mcp` serves the tools on stdio. A history shard in the roster makes the archive's exchanges readers of the code: `blast` lists the ones that mention a symbol under their own owner, `explain` lists them with the docs, and `timeline` walks from a symbol into the sessions that discussed it.
 
 <!-- graphy:arm DOORS generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=080697d397f568a7 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:732a68e3313c0273af21c6f964347b1d0824c9e54952eb0b8d8cd587d1a432a2 -->
+     store=573234397f5c4108 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:873552fe676bfdb8a037c996e57a942d10c495c20abd09097b8f165c6cbb58ef -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -25,7 +25,7 @@ Every symbol the partition places in this arm, by module; a class carries its me
 
 ```bash
 T=tenants/graphy
-python3 -m graphy blast graphy://func/graphy.traversal.home_for --tenant $T/tenant.json --tenant-id graphy
+python3 -m graphy blast graphy://func/graphy.doors.resolve --tenant $T/tenant.json --tenant-id graphy
 python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus graphy --against $T/partition.json
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```

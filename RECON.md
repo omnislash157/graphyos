@@ -4974,3 +4974,82 @@ python3 measure.py diff recon.before63.json recon.json | tail -1
 | blast radius, before the edit | `blast cli._build_parser --depth 1`: `cli._main`; `blast sugiyama.check_artifact --depth 1`: `cli._cmd_draw` · `showcase.showcase` + 3 tests — both read-only from the battery; the five `_cli_tenant` edits' callers are the mains in the same files |
 | the constraints | `BURDEN OK` (`burden.json` unchanged; the wheel 299,851 B unchanged); `CENSUS OK`; `SCRUB OK: 4 file(s)`; `claude plugin validate .` passed; `WORKFLOWS OK: 5 file(s)`; `MEASURE DIFF OK: 46 number(s) moved, none the wrong way past tolerance` (`gate.seconds 17.0 → 18.7`: the battery's second inside the gate; `wheel_bytes 299,851 → 299,965`: `tenant.cli_tenant`); the gate `GRAPHY_STANDALONE_OK`; the graphy tenant `GRAPHY_TENANT_OK` — the six arm regions re-rendered (six `_cli_tenant` functions left six module inventories), `docs/pillars.svg` re-drawn |
 | the review, `/code-review medium` under the card | eight findings, every one folded in, each with its DISPOSITION: severance blind to a rename (`R100 old new` read as an addition) → `--no-renames`, a move is a delete and an add, the floor moves a module · NEW · review.py; a bare attribute match flagged `con.close()` as `K.close` → a reader names a symbol only through its own import binding (`a.K().m`, `K.m` after `from graphy.a import K`), the fixture's sqlite3 control · NEW · review.py; the five `_cli_tenant` copies validated the id and dropped it → one `tenant.cli_tenant` for the six mains (cross_substrate's copy too), the declared name stamped as the cursor `cli:<name>` · NOT NEW · argparse-dest-never-read was satisfied by a read that landed nowhere, accepted by name: an attribute read is a read, the door does not judge what a value reaches; `cites-nonexistent` misjudging `tenant.data_home` as a citation → a bare stem is judged when called, when its first tail segment is a module-level name, else not at all · NEW · review.py; the sha fixture's git under this box's HOME → `_fixture_env`, a failing fixture git is `REVIEW REFUSED` never a traceback · NEW · review.py; a blank `--tenant-id` died with a traceback and exit 1 → one line and exit 2 in every main, the floor asserts it · NEW · this card BLOCK TWO ②; severance parsed 647 files per deleted symbol (1.15 s each) → the bare name as a floor, one parse per reader across symbols, `--diff HEAD~40` 1.92 s for five · NEW · review.py; the severance green fixture never exercised an importer that does not use the name → the fixture's third reader · NOT NEW · gate-selftest was blind to it. Three dropped by the reviewer and taken anyway: the store's `contains` edge counted as a caller (`rel != 'contains'`), the router's "every path this file names" overclaim (the two fences named), the argparse proxy (above) |
+
+## 99 · THE RESEED GRAPH AS SUBSTRATE — every exchange of the archive a node under its session, bound to the code on the literals it names: 392 exchanges · 304 `mentions` onto 127 code nodes through the shards' own dotted names and files (256, the resolver's rule minted as an edge) and a five-line alias registry (the hand weld, 48); `blast`, `explain` and `graphy history --symbol` answer "what did we say about this symbol" from the store in 0.09 s cold; the review's eleven findings folded in (2026-09-09 · graphyos issue 64)
+
+**The number, from the board.** The operator, verbatim: *"having a walkable substrate joined to the literals
+is nasty enough in itself, and we can even use an alias override registry if we have to manually weld this
+on."* §94 put the sessions on the graph and §95 walked them; neither carried the exchanges or the literals
+they name. `reseed_graph` indexed 234 exchange containers and 5,068 terms as a text index, not a shard: a
+session that discussed `showcase._clone` was no edge onto `graphy://func/graphy.showcase._clone`, so
+`explain` of that symbol showed `DOCS: none` and the estate held 0 exchange nodes (the issue's two
+re-derive lines, both 0 on the tree before this commit).
+
+**The change.** The history producer (§94) grows one node type and two edge types. `history://exchange/<session id>/<n>/<speaker>` is one `--- [n] USER|ASSISTANT` marker of the
+archive — reseed_graph's own `_EX_RE`, imported, never a second regex — carrying session · n · speaker ·
+captured_at · the count of literals in its span and no body (`role` stays the vocabulary's word: the node
+type). `session -contains-> exchange`. `exchange -mentions-> <code node id>`: a literal the span carries — a
+dotted identifier or a slashed path, never a bare word — that names exactly one node of the code shards
+handed in, bound through the shards' own names (`adapters.history.symbol_index`: every node's `dotted` and
+each of its two-or-more-segment tails, every module's `file` and each of its slash-suffixes) — the rule
+`doors.resolve` applies to a query, minted as an edge that says how it bound (`via` · `literal`), which the
+review named precisely: this is the resolver's binding, not the wormhole (a wormhole is a literal that IS a
+node id, as `touches` is), and the section, the router and the docstring say so now. `via: dotted`
+(`showcase._clone`) · `via: file` (`showcase.py`, `graphy/adapters/__init__.py`) · a literal naming two
+nodes binds nothing and is counted (`__init__.py` alone names four). `--aliases <json>` is the hand weld: an
+exact literal → one node id, hand-written (`tenants/graphy/aliases.json`: `bloodhound` → the module, `the
+timeline door`, `the reseed graph`, `sugiyama`, `the showcase`), matched on token boundaries (`sugiyama`
+inside `graphy.sugiyama` is the name the roster binds, never a second hit), tagged `via: alias` so a weld is
+never mistaken for a binding; a target that is not a node refuses at mint, a literal the names already bind
+refuses as redundant, and when both land on one node the name outranks the weld; `_meta` is the one key that
+is not a literal, so `_clone` — exactly the bare word only the registry can bind — is one. The registry, the
+code shards' node ids and every session file's sha256 join the inputs digest, so `--verify` names a moved
+registry or an edited body as stale. A session captured twice is one node per exchange, the later
+capture speaking. Nothing private travels: an exchange node is a session, a number, a speaker and a count;
+the shard stays a build product under `substrate/`; `CENSUS OK`.
+
+**The readers.** `doors.SEED_RELATIONS` admits `mentions` out of the seed only: an exchange that named a
+symbol is a reader of it, a `BY OWNER: history=N` row under RING, and never a reader of its callers (the
+review's specimen: `blast open_for` read `history=32` when two exchanges named it — thirty had named its
+callers; it reads `history=2` now, and `blast_pr.py` prints them as `N conversation(s) named it`, apart from
+the ring). `cross_substrate.DOC_EXPLAINS` admits `mentions` and `DOC_SCHEMES` admits `history`, with
+`DOC_EXPLAINS_SEED_ONLY` holding it to the seed, so `explain` lists the exchanges that named the symbol
+itself (`explain compile_store` had listed 25 that named its neighbours; it lists 0 now, and
+`showcase._clone` its 3). `timeline.hunt_symbol`
+is the new hunt: `graphy history --symbol <id or tail>` resolves through the doors' own `resolve` (two
+matches refuse), walks the `mentions` edges against the node to their exchanges and sessions, and hands
+`story` the same hits shape — no archive read; `--sessions` in this mode names the archive's captures the
+shard does not carry (they cannot answer), `--window` and a term refuse by name; the MCP tool `history`
+takes `symbol` instead of `term`, the same rules. reseed_graph's marker is imported inside the read, never
+at the top of the producer — a `graphy.lightning` import runs the ripgrep probe, which speaks on stderr
+ahead of every refusal on a box without rg (§95's own regression, re-introduced by the first cut and caught
+by the review; the RED test runs the refusal with no PATH). Either mode's session block now carries `discussed:` — the code nodes its
+exchanges bound, most mentioned first, from the store. The graphy tenant's rebuild passes the registry;
+the six arm regions re-rendered (`PRODUCE` and `DOORS` moved: the producer's new functions, the
+timeline's).
+
+```bash
+cd engine && bash tenants/graphy/rebuild.sh | grep -E '^HISTORY OK'                        # … 392 exchange(s) · 304 mention(s)
+cd engine && ../.venv/bin/python -m graphy estate --tenant tenants/graphy/tenant.json --tenant-id graphy --sql "select json_extract_string(attrs,'\$.via') as via, count(*) from adj where edge_type='mentions' group by via order by via"
+cd engine && ../.venv/bin/python -m graphy estate --tenant tenants/graphy/tenant.json --tenant-id graphy --sql "select count(distinct dst) from adj where edge_type='mentions'"
+cd engine && ../.venv/bin/python -m graphy explain graphy.showcase._clone --tenant tenants/graphy/tenant.json --tenant-id graphy | grep -E 'DOCS|hop1 mentions'
+cd engine && ../.venv/bin/python -m graphy blast graphy.showcase._clone --tenant tenants/graphy/tenant.json --tenant-id graphy --depth 1 | grep 'BY OWNER'
+cd engine && ../.venv/bin/python -m graphy blast open_for --tenant tenants/graphy/tenant.json --tenant-id graphy | grep 'BY OWNER'      # history=2, the two that named it
+cd engine && ../.venv/bin/python -m graphy explain compile_store --tenant tenants/graphy/tenant.json --tenant-id graphy | grep DOCS       # none: no exchange named it
+cd engine && /usr/bin/time -f 'wall %e s' ../.venv/bin/python -m graphy history --symbol graphy://func/graphy.showcase._clone --tenant tenants/graphy/tenant.json --tenant-id graphy | tail -1
+cd engine && for i in 1 2 3; do /usr/bin/time -f 'mint %e s' ../.venv/bin/python -m graphy history --repo .. --out /tmp/h$i --sessions ../.claude/recovery/sessions --code tenants/graphy/substrate/graphy_graph --code tenants/graphy/substrate/tests_graph --aliases tenants/graphy/aliases.json 2>&1 >/dev/null | tail -1; done
+cd engine && ../.venv/bin/python -m graphy history gallery --with showcase --tenant tenants/graphy/tenant.json --tenant-id graphy --sessions ../.claude/recovery/sessions | tail -1
+cd engine && ../.venv/bin/python -m pytest -q tests/test_history.py tests/test_timeline.py tests/test_doors.py -p no:cacheprovider | tail -1
+python3 review.py --diff HEAD~1 | tail -1 && python3 measure.py diff recon.before64.json recon.json | tail -1
+```
+
+| check | result |
+|---|---|
+| the shard | `HISTORY OK: 121 commit(s) · 42 session(s) · 100 section(s) · 59 issue(s) · 42 receipt(s) · 392 exchange(s) · 304 mention(s)`; 209 of 1,110 distinct literals bind through the roster's names, 0 name two or more; `via`: dotted 103 · file 153 · alias 48, onto 127 distinct code nodes; the mint 0.25 · 0.25 · 0.25 s wall (§94's five counts are the record's own — this section and #63's close are the movement since the tree before this commit, and a mint without exchanges gives the same five) |
+| the doors | `explain graphy.showcase._clone`: `DOCS (DOC_EXPLAINS endpoints, 3)`, all at hop 1 — the two sessions that shaped #58's clone (`f5f3ae96` ex 11–12, `db497e24` ex 10); `blast … --depth 1`: `BY OWNER: history=3  tests=2  graphy=1`; `blast open_for`: `history=2`; `explain compile_store`: `DOCS: none` |
+| the symbol timeline | `TIMELINE: 2 session(s) · 17 commit(s) · 12 section(s) · 11 issue(s) · 7 receipt(s) · 0.01 s`, `wall 0.09 s` cold — the first session's block reads `discussed: graphy.showcase.showcase ×5 · graphy.converge ×3 · …` |
+| the same answer | `gallery` × `showcase`: `5 session(s) · 52 commit(s) · 20 section(s) · 22 issue(s) · 9 receipt(s)` — §95's line read 3 · 45 · 13 · 17 · 4 over a 40-session archive; HEAD's own `timeline.py` loaded beside this tree's over today's store and archive gives the identical five, so the move is the archive's two new sessions, not the code |
+| blast radius, before the edit | `blast adapters.history.build_ir --depth 1`: `mint`; `blast doors.explain`: `cli._cmd_door` · `mcp.Doors._door` + 2 tests; `blast doors.blast`: the same two + 1 test; `blast timeline.story`: `timeline.timeline`; `blast cross_substrate.explanations_from_store`: `doors.explain` · `query.main` — every caller inside the diff or reading the same shape; `query.main`'s `--explains` now lists exchanges too, by the same family |
+| the floor | 560 passed, 3 skipped (553 before: the producer's six — the weld, the registry's refusals, the literal rule, the token-boundary alias, the edited body as drift, the refusal before the lightning import; the timeline's symbol mode; the doors' fixture grew a history shard with a neighbour-naming exchange inside its two tests); 10.1 · 10.8 across two receipts s in the receipt (9.9 before) |
+| the constraints | `BURDEN OK` (`burden.json` unchanged, the wheel 299,965 → 306,126 B); `CENSUS OK`; `REVIEW OK: 9 check(s) · 0 finding(s)` under `--diff`; `MEASURE DIFF OK: 43 number(s) moved, none the wrong way past tolerance` (`floor.seconds 9.9 → 10.8`, `gate.seconds` 19.7, `engine_hot_lanes` 0; one receipt in between read `wheel.seconds 2.8 → 3.5` — pip's own build clock, 3.0 on the rerun, the number the row carries); the gate `GRAPHY_STANDALONE_OK` in 19.3 s |
+| the review, `/code-review medium` under the adversarial-reviewer card | eleven findings, every one fixed or dispositioned: the top-level `_EX_RE` import re-introduced §95's stderr-before-refusal regression (fixed, RED test with no PATH — NOT NEW, the class §95 named; the door is the test); the digest blind to an edited body (fixed, RED test); `mentions` transitive in blast (fixed: `SEED_RELATIONS`, the fixture's neighbour-naming exchange) and in explain (fixed: `DOC_EXPLAINS_SEED_ONLY`); `_DOTTED`'s trailing lookahead refusing a sentence's dot (fixed, the review's four specimens pinned); an alias counted inside a name the roster binds (fixed: token boundaries); `bound` tallied per node not per literal (fixed: `bind` returns every literal that bound — 162 → 209 on the live archive, the number this row carries); the binding called a wormhole (the wording fixed everywhere; the mechanism is the issue's spec and `doors.resolve`'s rule — the law's question of whether `aliases.json` belongs under `join_keys` is put to the operator in the hold, not decided here); `--sessions`/`--window` unread beside `--symbol` (fixed: `--sessions` names the archive's captures the shard lacks, `--window` refuses); `_`-keys dropped from the registry (fixed: `_meta` alone); `aliases.json` untracked (added). Every disposition a test or a door; none eliminated |

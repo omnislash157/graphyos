@@ -22,8 +22,9 @@ from graphy.tenant import Tenant, TenantError, cli_tenant
 
 WIRE_BUCKET = "wire"
 RESERVED_SCHEMES = {"fetch", "artifact", "impl", "doctrine", "scrape"}
-DOC_SCHEMES = frozenset({"scrape"})
-DOC_EXPLAINS = frozenset({"governed_by", "documented_by"})
+DOC_SCHEMES = frozenset({"scrape", "history"})
+DOC_EXPLAINS = frozenset({"governed_by", "documented_by", "mentions"})
+DOC_EXPLAINS_SEED_ONLY = frozenset({"mentions"})   # an exchange explains the symbol it named, never a neighbour of it (graphyos #64)
 
 
 def load_standard(index_path: str | os.PathLike) -> frozenset:
@@ -365,7 +366,7 @@ def _explanations_core(nbrs_of, owner_of, seed: str, depth: int) -> list:
         if hn >= depth:
             continue
         for (nbr, rel) in nbrs_of(node):
-            if rel in DOC_EXPLAINS and _scheme(nbr) in DOC_SCHEMES:
+            if rel in DOC_EXPLAINS and _scheme(nbr) in DOC_SCHEMES and (hn == 0 or rel not in DOC_EXPLAINS_SEED_ONLY):
                 key = (nbr, rel)
                 cand = hn + 1
                 if key not in best or cand < best[key]:

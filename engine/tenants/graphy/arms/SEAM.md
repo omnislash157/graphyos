@@ -6,7 +6,7 @@
 `tenant` is the declared identity everything refuses without; `converge` resolves text labels through scope and counts the wormholes; `federated_store` compiles and reads the sqlite store; `cross_substrate` loads and walks a set of shards; `journal` records born and died; `container` and `index_estate` are the parquet; `cartograph` runs declared build lanes and measures freshness.
 
 <!-- graphy:arm SEAM generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=080697d397f568a7 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:741cb9ab137ef4f22a0ba8060ea6c3be8e9278f5b79f36149d93b64642b7540e -->
+     store=573234397f5c4108 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:741cb9ab137ef4f22a0ba8060ea6c3be8e9278f5b79f36149d93b64642b7540e -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.

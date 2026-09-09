@@ -16,6 +16,9 @@ from graphy.federated_store import WITH, AGAINST, Neighbour
 ROOT = Path(__file__).resolve().parents[2]
 S1 = "history://session/aaaa1111-0000-0000-0000-000000000001"
 S2 = "history://session/bbbb2222-0000-0000-0000-000000000002"
+X1 = "history://exchange/aaaa1111-0000-0000-0000-000000000001"
+X2 = "history://exchange/bbbb2222-0000-0000-0000-000000000002"
+CLONE = "graphy://func/graphy.showcase._clone"
 
 
 class FakeStore:
@@ -33,11 +36,26 @@ class FakeStore:
                                                 "numbers": {"floor.seconds": 9.8, "floor.passed": 5, "gate.rc": 0}},
             "history://receipt/recon.before4": {"node_type": "receipt", "name": "recon.before4", "measured_at": "2026-09-05T10:00:00+00:00",
                                                 "numbers": {"floor.seconds": 8.1, "floor.passed": 5, "gate.rc": 1, "x.rss_kb": 3}},
+            # graphyos #64: the exchanges under their sessions, welded to the code on the literals they name
+            X1 + "/1/user": {"node_type": "exchange", "session": S1, "n": 1, "speaker": "user", "captured_at": "2026-09-05T11:00:00+00:00"},
+            X2 + "/1/user": {"node_type": "exchange", "session": S2, "n": 1, "speaker": "user", "captured_at": "2026-09-05T13:30:00+00:00"},
+            X2 + "/2/assistant": {"node_type": "exchange", "session": S2, "n": 2, "speaker": "assistant", "captured_at": "2026-09-05T13:30:00+00:00"},
+            CLONE: {"node_type": "func", "dotted": "graphy.showcase._clone"},
+            "graphy://module/graphy.cli": {"node_type": "module", "dotted": "graphy.cli"},
         }
         self.edges = [(S2, "history://commit/a", "authored"), (S2, "history://commit/b", "authored"),
                       ("history://commit/a", "history://section/2", "records"), ("history://commit/a", "history://issue/4", "names"),
-                      ("history://receipt/recon.before4", "history://issue/4", "pins"), (S1, S2, "follows")]
+                      ("history://receipt/recon.before4", "history://issue/4", "pins"), (S1, S2, "follows"),
+                      (S1, X1 + "/1/user", "contains"), (S2, X2 + "/1/user", "contains"), (S2, X2 + "/2/assistant", "contains"),
+                      (X2 + "/1/user", CLONE, "mentions"), (X2 + "/2/assistant", CLONE, "mentions"),
+                      (X2 + "/2/assistant", "graphy://module/graphy.cli", "mentions"), (X1 + "/1/user", "graphy://module/graphy.cli", "mentions")]
         self.reads = 0
+
+    def membership(self, nid):
+        return "history" if nid.startswith("history://") else ("graphy" if nid in self.records else None)
+
+    def find(self, symbol):
+        return [n for n in self.records if n == symbol or n.endswith("." + symbol) or n.endswith("/" + symbol)]
 
     def record(self, nid):
         self.reads += 1
@@ -50,8 +68,9 @@ class FakeStore:
     def owned(self, owner):
         assert owner == "history"
         for nid, rec in self.records.items():
-            yield nid, {"node_type": rec["node_type"], "dotted": None, "module": "history", "role": rec["node_type"],
-                        "file": rec.get("file"), "line": None}
+            if nid.startswith("history://"):
+                yield nid, {"node_type": rec["node_type"], "dotted": None, "module": "history", "role": rec["node_type"],
+                            "file": rec.get("file"), "line": None}
 
 
 def _head(sid: str, cap: str) -> str:
@@ -109,6 +128,39 @@ def test_GREEN_the_story_is_the_shards_fan_out_in_time_order_with_the_numbers_th
     assert "not in the shard: 00004__x__cccc3333.md" in out
     assert out.splitlines()[-1].startswith("TIMELINE: 2 session(s) · 2 commit(s) · 1 section(s) · 1 issue(s) · 1 receipt(s) · ")
     assert t.counts() == {"sessions": 2, "commits": 2, "sections": 1, "issues": 1, "receipts": 1}
+    # graphyos #64: a session's block names the symbols its exchanges discussed, most mentioned first — from the store
+    assert s1.symbols == [("graphy://module/graphy.cli", 1)] and s2.symbols == [(CLONE, 2), ("graphy://module/graphy.cli", 1)]
+    assert "    discussed: graphy.cli\n" in out and "    discussed: graphy.showcase._clone ×2 · graphy.cli\n" in out
+
+
+def test_GREEN_the_symbol_mode_walks_the_mentions_from_the_store_and_reads_no_archive(tmp_path):
+    """graphyos #64: `--symbol` — the exchanges that mention a node, their sessions oldest first, the same story."""
+    store = FakeStore()
+    t = timeline.timeline_symbol(store, "showcase._clone")
+    assert t.symbol == CLONE and t.a == CLONE and t.corpus is None and t.exchanges == 2 and t.hit_files == 1
+    assert [s.id for s in t.sessions] == [S2] and t.unmatched == []
+    s2 = t.sessions[0]
+    assert s2.exchanges == (1, 2) and s2.snippet == "2 exchange(s) name it — ex 1 user, 2 assistant"
+    assert [c["sha"] for c in s2.commits] == ["aaaaaaa", "bbbbbbb"], "the fan-out is the same walk"
+    out = timeline.render(t)
+    assert out.splitlines()[0] == (f"# TIMELINE — `{CLONE}`  ·  2 exchange(s) mention it in 1 session file(s), 1 session(s) in the shard"
+                                   "  ·  from the store, no archive read  ·  oldest first")
+    assert "2026-09-05T13:30  session bbbb2222  ex 1-2   2 exchange(s) name it — ex 1 user, 2 assistant" in out
+    assert out.splitlines()[-1].startswith("TIMELINE: 1 session(s) · 2 commit(s) · 1 section(s) · 1 issue(s) · 1 receipt(s) · ")
+    # a symbol nothing mentions is an empty timeline, not a miss; two matches refuse, none refuses
+    t = timeline.timeline_symbol(store, "history://commit/b")
+    assert t.sessions == [] and t.exchanges == 0
+    with pytest.raises(timeline.TimelineError, match="names no node"):
+        timeline.timeline_symbol(store, "nope.nothing")
+    store.records["graphy://func/graphy.other._clone"] = {"node_type": "func"}
+    with pytest.raises(timeline.TimelineError, match="names 2 nodes; a door never guesses"):
+        timeline.timeline_symbol(store, "_clone")
+    # --sessions in this mode is read: the archive's captures the shard does not carry are named, never searched
+    t = timeline.timeline_symbol(store, CLONE, _archive(tmp_path))
+    assert t.searched == 4 and t.unmatched == ["00004__x__cccc3333.md"] and t.exchanges == 2
+    assert "not in the shard: 00004__x__cccc3333.md — captured after the shard was minted, so their exchanges cannot answer" in timeline.render(t)
+    with pytest.raises(timeline.TimelineError, match="no sessions archive"):
+        timeline.timeline_symbol(store, CLONE, tmp_path / "nope")
 
 
 def test_RED_a_store_with_no_history_shard_refuses_by_name(tmp_path):
@@ -148,6 +200,15 @@ def test_RED_the_verb_refuses_without_a_tenant_or_with_two_bare_terms(tmp_path):
     proc = subprocess.run([sys.executable, "-m", "graphy", "history", "gallery", "--repo", ".", "--out", str(tmp_path), "--verify"],
                           capture_output=True, text=True, cwd=ROOT / "engine")
     assert proc.returncode == 2 and proc.stderr.startswith("HISTORY REFUSED: one mode per call") and "verify" in proc.stderr
+    proc = subprocess.run([sys.executable, "-m", "graphy", "history", "gallery", "--symbol", "x", "--tenant", "t", "--tenant-id", "y"],
+                          capture_output=True, text=True, cwd=ROOT / "engine")
+    assert proc.returncode == 2 and proc.stderr.startswith("HISTORY REFUSED: one ask per call"), proc.stderr
+    proc = subprocess.run([sys.executable, "-m", "graphy", "history", "--symbol", "x", "--repo", ".", "--aliases", "a.json"],
+                          capture_output=True, text=True, cwd=ROOT / "engine")
+    assert proc.returncode == 2 and proc.stderr.startswith("HISTORY REFUSED: one mode per call") and "aliases" in proc.stderr
+    proc = subprocess.run([sys.executable, "-m", "graphy", "history", "--symbol", "x", "--window", "3", "--tenant", "t", "--tenant-id", "y"],
+                          capture_output=True, text=True, cwd=ROOT / "engine")
+    assert proc.returncode == 2 and proc.stderr.startswith("HISTORY REFUSED: one ask per call") and "no window" in proc.stderr
 
 
 def test_GREEN_cold_over_this_tenant_under_a_second():
@@ -164,10 +225,26 @@ def test_GREEN_cold_over_this_tenant_under_a_second():
     last = proc.stdout.splitlines()[-1]
     assert last.startswith("TIMELINE: ") and " 0 session(s)" not in last, last
     assert wall < 1.0, f"{wall:.2f} s"
+    t0 = time.perf_counter()
+    proc = subprocess.run([sys.executable, "-m", "graphy", "history", "--symbol", "graphy://func/graphy.showcase._clone", "--tenant", str(desc),
+                           "--tenant-id", "graphy"], capture_output=True, text=True, cwd=ROOT / "engine")
+    wall = time.perf_counter() - t0
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.startswith("# TIMELINE — `graphy://func/graphy.showcase._clone`") and "    discussed: " in proc.stdout
+    assert wall < 1.0, f"{wall:.2f} s"
 
 
-def test_GREEN_the_mcp_tool_is_the_same_door():
+def test_GREEN_the_mcp_tool_is_the_same_door(tmp_path):
     from graphy import mcp
     names = [t["name"] for t in mcp.TOOLS]
     assert "history" in names and len(names) == 7
-    assert {"term", "partner", "window", "sessions"} == set(next(t for t in mcp.TOOLS if t["name"] == "history")["inputSchema"]["properties"])
+    tool = next(t for t in mcp.TOOLS if t["name"] == "history")
+    assert {"term", "partner", "window", "sessions", "symbol"} == set(tool["inputSchema"]["properties"]) and "required" not in tool["inputSchema"]
+    d = mcp.Doors.__new__(mcp.Doors)
+    d.store, d.tenant, d.tenant_id, d.generation = FakeStore(), None, "t", "g"
+    out = d.history(symbol="showcase._clone")
+    assert out.startswith(f"# TIMELINE — `{CLONE}`") and out.endswith("DOOR: history generation=g")
+    for kwargs in ({}, {"term": "a", "symbol": "b"}, {"symbol": "b", "window": 3}, {"symbol": "b", "partner": "x"}):
+        with pytest.raises(mcp.ToolError, match="one ask per call"):
+            d.history(**kwargs)
+    assert "not in the shard: 00004__x__cccc3333.md" in d.history(symbol="showcase._clone", sessions=str(_archive(tmp_path)))

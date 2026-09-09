@@ -1011,6 +1011,10 @@ def _cmd_timeline(args: argparse.Namespace) -> int:
     if len(args.terms) > 1:
         print("HISTORY REFUSED: one term, and the second through --with", file=sys.stderr)
         return 2
+    if args.symbol and (args.terms or args.partner or args.window != 10):
+        print("HISTORY REFUSED: one ask per call — a term (with --with, --window) hunts the archive, --symbol reads the "
+              "store's mentions and no window; this call gave both", file=sys.stderr)
+        return 2
     if not args.tenant or not args.tenant_id:
         print("HISTORY REFUSED: --tenant and --tenant-id are required — the story is the tenant's history shard, "
               "and graphy resolves identity only through a declared Tenant", file=sys.stderr)
@@ -1027,9 +1031,12 @@ def _cmd_timeline(args: argparse.Namespace) -> int:
         return 2
     from graphy import timeline as timeline_lane          # after every refusal: lightning says so on stderr when rg is absent
     from graphy.lightning.archive import sessions_dir
-    corpus = Path(args.sessions).expanduser() if args.sessions else sessions_dir()
     try:
-        t = timeline_lane.timeline(store, args.terms[0], args.partner, corpus, window=args.window)
+        if args.symbol:                                    # --sessions names the archive's captures the shard lacks
+            t = timeline_lane.timeline_symbol(store, args.symbol, Path(args.sessions).expanduser() if args.sessions else None)
+        else:
+            corpus = Path(args.sessions).expanduser() if args.sessions else sessions_dir()
+            t = timeline_lane.timeline(store, args.terms[0], args.partner, corpus, window=args.window)
     except timeline_lane.TimelineError as exc:
         print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -1043,16 +1050,17 @@ def _cmd_history(args: argparse.Namespace) -> int:
     the timeline door (graphyos #60)."""
     from graphy.adapters import history as history_lane
     from graphy.ir import IRError
-    mint_flags = [f for f in ("repo", "out", "code", "verify") if getattr(args, f)]
-    story_flags = [f for f in ("terms", "partner", "tenant", "tenant_id") if getattr(args, f)]
+    mint_flags = [f for f in ("repo", "out", "code", "aliases", "verify") if getattr(args, f)]
+    story_flags = [f for f in ("terms", "partner", "symbol", "tenant", "tenant_id") if getattr(args, f)]
     if mint_flags and story_flags:
-        print(f"HISTORY REFUSED: one mode per call — the mint takes --repo/--out/--code/--verify, the timeline a term with "
-              f"--with/--tenant/--tenant-id; this call mixed {', '.join(mint_flags)} with {', '.join(story_flags)}", file=sys.stderr)
+        print(f"HISTORY REFUSED: one mode per call — the mint takes --repo/--out/--code/--aliases/--verify, the timeline a "
+              f"term with --with/--tenant/--tenant-id or --symbol; this call mixed {', '.join(mint_flags)} with "
+              f"{', '.join(story_flags)}", file=sys.stderr)
         return 2
     if story_flags:
-        if not args.terms:
-            print("HISTORY REFUSED: the timeline needs a term — `graphy history <A> --with <B> --tenant … --tenant-id …`",
-                  file=sys.stderr)
+        if not args.terms and not args.symbol:
+            print("HISTORY REFUSED: the timeline needs a term — `graphy history <A> --with <B> --tenant … --tenant-id …` — "
+                  "or a symbol: `graphy history --symbol <id> --tenant … --tenant-id …`", file=sys.stderr)
             return 2
         return _cmd_timeline(args)
     for flag in ("repo", "out"):
@@ -1065,7 +1073,8 @@ def _cmd_history(args: argparse.Namespace) -> int:
             fresh, why = history_lane.verify(args.out, repo=args.repo, sessions=args.sessions)
             print(f"HISTORY {'OK' if fresh else 'STALE'}: {Path(args.out).resolve()} {why}")
             return 0 if fresh else 1
-        prov = history_lane.mint(args.repo, args.out, sessions=args.sessions, recon=args.recon, code=args.code)
+        prov = history_lane.mint(args.repo, args.out, sessions=args.sessions, recon=args.recon, code=args.code,
+                                 aliases=args.aliases)
     except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
         print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -1073,7 +1082,8 @@ def _cmd_history(args: argparse.Namespace) -> int:
     print(f"HISTORY: {h['authored']} commit(s) authored by a session's window, {h['unauthored']} in no window · "
           f"{h['touches']} touches onto code module ids · {h['note']}")
     print(f"HISTORY OK: {h['commits']} commit(s) · {h['sessions']} session(s) · {h['sections']} section(s) · "
-          f"{h['issues']} issue(s) · {h['receipts']} receipt(s) -> {Path(args.out).resolve()}")
+          f"{h['issues']} issue(s) · {h['receipts']} receipt(s) · {h['exchanges']} exchange(s) · {h['mentions']} mention(s) "
+          f"-> {Path(args.out).resolve()}")
     return 0
 
 
@@ -1690,6 +1700,9 @@ def _build_parser() -> argparse.ArgumentParser:
                         "within a window, their commits, RECON sections, issues and the numbers that moved (graphyos #60)")
     p_hist.add_argument("terms", nargs="*", help="the timeline: one term (the second through --with)")
     p_hist.add_argument("--with", dest="partner", default=None, help="the second term — co-occurrence within the window")
+    p_hist.add_argument("--symbol", default=None,
+                        help="the timeline from the store: the exchanges that mention this node (an exact id or its dotted "
+                             "tail), their sessions oldest first with their commits — no archive read (graphyos #64)")
     p_hist.add_argument("--window", type=int, default=10, help="the co-occurrence window in tokens (default 10)")
     p_hist.add_argument("--tenant", default=None, help="the timeline: path to the tenant descriptor JSON")
     p_hist.add_argument("--tenant-id", default=None, help="the timeline: the receipt name open_for refuses to open without")
@@ -1703,6 +1716,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_hist.add_argument("--code", action="append", default=None,
                         help="a code shard whose module ids a commit's changed files map onto (repeatable); "
                              "absent, the shard carries no touches and says so")
+    p_hist.add_argument("--aliases", default=None,
+                        help="the override registry, a JSON object of exact literal → code node id: the hand weld for a "
+                             "literal the wormhole cannot bind (`bloodhound` → graphy://module/graphy.lightning.bloodhound); "
+                             "a target that is not a node refuses, a literal the wormhole already binds refuses as redundant")
     p_hist.add_argument("--verify", action="store_true",
                         help="mint nothing: is the shard at --out minted from these inputs as they stand — exit 1 when stale")
     p_hist.set_defaults(handler=_cmd_history)
@@ -1860,8 +1877,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     for door, blurb, depth in (
             ("descend", "the callees down through the ring to the primitives, and every package crossing", 4),
-            ("blast", "the dependents against the edges — who calls, inherits, imports or decorates it, own and ring", 4),
-            ("explain", "the record, the docs (DOC_EXPLAINS), the tests that reach it, the journal page that birthed its shard", 3)):
+            ("blast", "the dependents against the edges — who calls, inherits, imports, decorates or mentions it, own and ring", 4),
+            ("explain", "the record, the docs (DOC_EXPLAINS: a doc's binding, an exchange that mentions it), the tests that reach it, the journal page that birthed its shard", 3)):
         p_door = sub.add_parser(door, help=blurb)
         p_door.add_argument("symbol", nargs="?", default=None, help="an exact node id, or its dotted tail (get_request_handler)")
         p_door.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")

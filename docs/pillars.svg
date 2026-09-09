@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1053 374" role="img" aria-labelledby="svg-title svg-desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 374" role="img" aria-labelledby="svg-title svg-desc">
   <style>
     :root {
       --paper: #FAFAF7; --card: #FFFFFF; --ink: #1F2933; --muted: #52606D; --soft: #9AA5B1;
@@ -40,84 +40,83 @@
       <polygon points="8 0, 0 3, 8 6" class="mk-link"/>
     </marker>
   </defs>
-  <rect class="bg" x="0" y="0" width="1053" height="374"></rect>
+  <rect class="bg" x="0" y="0" width="1060" height="374"></rect>
       <path d="M 166,61 L 169.5,61" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
       <path d="M 169.5,47 L 169.5,215" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 169.5,47 L 250,47" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="CUT" data-to="CLI"/>
-      <path d="M 169.5,75 L 250,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
-      <path d="M 169.5,215 L 250,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 169.5,103 L 250,103" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 169.5,187 L 250,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 169.5,145 L 180,145" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="DOORS"/>
-      <path d="M 187,47 L 323.5,47 L 323.5,61 L 348,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="CUT" data-to="CLI"/>
-      <path d="M 187,75 L 323.5,75 L 323.5,103 L 411,103" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
-      <path d="M 355,103 L 484.5,103 L 484.5,117 L 502,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
-      <path d="M 187,215 L 337.5,215 L 337.5,299 L 411,299" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 355,299 L 568.5,299" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 509,299 L 638.5,299 L 638.5,229 L 670,229" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 187,103 L 337.5,103 L 337.5,159 L 411,159" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 355,159 L 568.5,159" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 509,159 L 652.5,159 L 652.5,117 L 670,117" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 187,187 L 323.5,187 L 323.5,243 L 411,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 355,243 L 568.5,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 509,243 L 652.5,243 L 652.5,187 L 747,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 677,187 L 834.5,187 L 834.5,61 L 866,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 474,61 L 477.5,61" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 477.5,47 L 477.5,117" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 477.5,75 L 568.5,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
-      <path d="M 477.5,47 L 568.5,47" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
-      <path d="M 477.5,117 L 502,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="EDGE"/>
-      <path d="M 509,75 L 638.5,75 L 638.5,117 L 670,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
-      <path d="M 509,47 L 747,47" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
-      <path d="M 677,47 L 827.5,47 L 827.5,61 L 866,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
-      <path d="M 320,145 L 330.5,145" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 330.5,61 L 330.5,271" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 330.5,131 L 411,131" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="EDGE"/>
-      <path d="M 330.5,271 L 411,271" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
-      <path d="M 330.5,187 L 411,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
-      <path d="M 330.5,215 L 411,215" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
-      <path d="M 330.5,61 L 348,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="CUT"/>
-      <path d="M 355,131 L 491.5,131 L 491.5,117 L 502,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="EDGE"/>
-      <path d="M 355,271 L 568.5,271" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
-      <path d="M 509,271 L 659.5,271 L 659.5,229 L 670,229" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
-      <path d="M 355,187 L 568.5,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
-      <path d="M 509,187 L 659.5,187 L 659.5,117 L 670,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
-      <path d="M 355,215 L 568.5,215" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
-      <path d="M 509,215 L 638.5,215 L 638.5,159 L 747,159" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
-      <path d="M 677,159 L 841.5,159 L 841.5,61 L 866,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
+      <path d="M 169.5,47 L 243,47" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="DOORS"/>
+      <path d="M 169.5,75 L 243,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 169.5,215 L 243,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
+      <path d="M 169.5,103 L 243,103" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 169.5,187 L 243,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 169.5,145 L 180,145" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="CUT" data-to="CLI"/>
+      <path d="M 187,47 L 309.5,47 L 309.5,89 L 334,89" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="DOORS"/>
+      <path d="M 187,75 L 316.5,75 L 316.5,47 L 404,47" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 341,47 L 477.5,47 L 477.5,117 L 502,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 187,215 L 323.5,215 L 323.5,271 L 404,271" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
+      <path d="M 341,271 L 477.5,271 L 477.5,299 L 568.5,299" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
+      <path d="M 509,299 L 666.5,299 L 666.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
+      <path d="M 187,103 L 309.5,103 L 309.5,131 L 404,131" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 341,131 L 477.5,131 L 477.5,187 L 568.5,187" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 509,187 L 652.5,187 L 652.5,117 L 677,117" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 187,187 L 309.5,187 L 309.5,243 L 404,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 341,243 L 484.5,243 L 484.5,271 L 568.5,271" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 509,271 L 645.5,271 L 645.5,243 L 754,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 684,243 L 841.5,243 L 841.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 306,145 L 316.5,145" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 316.5,89 L 316.5,215" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 316.5,159 L 404,159" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="EDGE"/>
+      <path d="M 316.5,187 L 404,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
+      <path d="M 316.5,215 L 404,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
+      <path d="M 316.5,89 L 334,89" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="DOORS" data-to="CUT"/>
+      <path d="M 341,159 L 491.5,159 L 491.5,117 L 502,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="EDGE"/>
+      <path d="M 341,187 L 484.5,187 L 484.5,215 L 568.5,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
+      <path d="M 509,215 L 659.5,215 L 659.5,117 L 677,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
+      <path d="M 341,215 L 477.5,215 L 477.5,243 L 568.5,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
+      <path d="M 509,243 L 638.5,243 L 638.5,215 L 754,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
+      <path d="M 684,215 L 848.5,215 L 848.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
+      <path d="M 474,89 L 484.5,89" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 484.5,47 L 484.5,159" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 484.5,159 L 568.5,159" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
+      <path d="M 484.5,75 L 568.5,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
+      <path d="M 484.5,47 L 568.5,47" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
+      <path d="M 484.5,117 L 502,117" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="EDGE" data-to="DOORS"/>
+      <path d="M 509,159 L 638.5,159 L 638.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
+      <path d="M 509,75 L 638.5,75 L 638.5,117 L 677,117" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
+      <path d="M 509,47 L 754,47" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
+      <path d="M 684,47 L 834.5,47 L 834.5,61 L 873,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
       <path d="M 635,117 L 645.5,117" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 645.5,75 L 645.5,229" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 645.5,75 L 747,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
-      <path d="M 645.5,229 L 670,229" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="MEMORY"/>
-      <path d="M 645.5,117 L 670,117" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="EDGE"/>
-      <path d="M 677,75 L 848.5,75 L 848.5,61 L 866,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
-      <path d="M 824,117 L 855.5,117 L 855.5,61 L 866,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
+      <path d="M 645.5,75 L 645.5,173" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
+      <path d="M 645.5,75 L 754,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
+      <path d="M 645.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="MEMORY"/>
+      <path d="M 645.5,117 L 677,117" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="EDGE"/>
+      <path d="M 684,75 L 855.5,75 L 855.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
+      <path d="M 831,117 L 862.5,117 L 862.5,61 L 873,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
       <g class="node" data-id="CLI">
         <rect x="40" y="40" width="126" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="103" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (123→ ·→9)</text>
+        <text x="103" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (124→ ·→9)</text>
       </g>
       <g class="node" data-id="CUT">
-        <rect x="348" y="40" width="126" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="411" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CUT (18→ ·→29)</text>
+        <rect x="180" y="124" width="126" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="243" y="149.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CUT (18→ ·→29)</text>
       </g>
       <g class="node" data-id="DOORS">
-        <rect x="180" y="124" width="140" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="250" y="149.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (39→ ·→31)</text>
+        <rect x="334" y="68" width="140" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="404" y="93.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (40→ ·→33)</text>
       </g>
       <g class="node" data-id="EDGE">
         <rect x="502" y="96" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="568.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (11→ ·→18)</text>
+        <text x="568.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (14→ ·→20)</text>
       </g>
       <g class="node" data-id="MEMORY">
-        <rect x="670" y="208" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="736.5" y="233.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">MEMORY (1→ ·→7)</text>
+        <rect x="677" y="152" width="133" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="743.5" y="177.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">MEMORY (1→ ·→8)</text>
       </g>
       <g class="node" data-id="PRODUCE">
-        <rect x="670" y="96" width="154" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="747" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (15→ ·→51)</text>
+        <rect x="677" y="96" width="154" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="754" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (16→ ·→52)</text>
       </g>
       <g class="node" data-id="SEAM">
-        <rect x="866" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="932.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (24→ ·→86)</text>
+        <rect x="873" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
+        <text x="939.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (24→ ·→86)</text>
       </g>
 </svg>

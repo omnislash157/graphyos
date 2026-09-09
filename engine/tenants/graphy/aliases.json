@@ -1,0 +1,8 @@
+{
+ "_meta": "the override registry (graphyos #64): an exact literal the archive says, on token boundaries → one code node id. The hand weld for a literal the shards' own names cannot bind — a bare word names nothing by itself. A target that is not a node refuses at mint; a literal the names already bind refuses as redundant; `_meta` is the one key that is not a literal. Read by tenants/graphy/rebuild.sh into history_graph as `mentions` edges tagged via: alias.",
+ "bloodhound": "graphy://module/graphy.lightning.bloodhound",
+ "the timeline door": "graphy://module/graphy.timeline",
+ "the reseed graph": "graphy://module/graphy.lightning.reseed_graph",
+ "sugiyama": "graphy://module/graphy.sugiyama",
+ "the showcase": "graphy://func/graphy.showcase.showcase"
+}

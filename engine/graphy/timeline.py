@@ -7,6 +7,11 @@ section it recorded and the issue it named, each issue to the receipt pinned to 
 to the numbers that moved against the receipt before it. Printed oldest first. No model decides an
 edge and none writes the story: every line is a node's attrs. The walk is a query over the store —
 never a shard opened, never a file parsed past the archive bloodhound already reads.
+
+`graphy history --symbol <id>` (graphyos #64): the same story from the other end — the exchanges that
+mention the symbol (the history shard's `mentions` edges, the wormhole on the code's own names), their
+sessions in time order, each session's commits; no archive is read at all. Either way a session's block
+names the symbols its exchanges discussed, from the store.
 """
 from __future__ import annotations
 
@@ -20,7 +25,7 @@ from graphy.adapters.history import read_sessions, _iso
 from graphy.federated_store import WITH, AGAINST, BOTH
 from graphy.lightning import bloodhound
 
-__all__ = ["TimelineError", "Session", "Timeline", "hunt", "story", "render", "timeline"]
+__all__ = ["TimelineError", "Session", "Timeline", "hunt", "hunt_symbol", "story", "render", "timeline", "timeline_symbol"]
 
 HISTORY_OWNER = "history"
 _SESSION_ID = re.compile(r"^history://session/(.+)$")
@@ -39,6 +44,7 @@ class Session:
     exchanges: tuple[int, int] | None
     snippet: str
     commits: list[dict] = field(default_factory=list)
+    symbols: list[tuple[str, int]] = field(default_factory=list)   # (code node id, mentions) the session's exchanges bound
 
 
 @dataclass
@@ -46,12 +52,14 @@ class Timeline:
     a: str
     b: str | None
     window: int
-    corpus: Path
+    corpus: Path | None
     searched: int
     hit_files: int                             # session files bloodhound hit, before the shard is asked
     sessions: list[Session]
     unmatched: list[str]                       # session files bloodhound hit that the shard does not carry
     seconds: float = 0.0
+    symbol: str | None = None                  # the --symbol mode: `a` is the node id, no archive was read
+    exchanges: int = 0                         # the --symbol mode: how many exchanges mention it
 
     def counts(self) -> dict:
         commits = [c for s in self.sessions for c in s.commits]
@@ -83,6 +91,45 @@ def hunt(a: str, b: str | None, corpus: Path, window: int = 10) -> tuple[list[tu
         snippet = re.sub(r"\s+", " ", text[best.start_char:best.end_char]).strip()[:160]
         hits.append((p.name, best.exchanges, snippet, best.density))
     return hits, len(files)
+
+
+def hunt_symbol(store, symbol: str) -> tuple[list[tuple[str, tuple | None, str, float]], int]:
+    """The captured sessions whose exchanges mention `symbol` — from the store, no archive read: the
+    `mentions` edges against the node, each exchange's session through its record, one hit per session
+    (its file name, the span of exchange numbers, the mentions as the snippet, their count as the
+    density), and how many exchanges name it. A symbol nothing mentions is an empty list, not a miss."""
+    per_session: dict[str, list[tuple[int, str]]] = {}
+    exchanges = 0
+    for nb in store.neighbours(symbol):
+        if nb.relation != "mentions" or nb.direction not in (AGAINST, BOTH):
+            continue
+        ex = store.record(nb.node) or {}
+        sid = ex.get("session")
+        if not sid:
+            continue
+        exchanges += 1
+        per_session.setdefault(sid, []).append((int(ex.get("n") or 0), ex.get("speaker") or ""))
+    hits = []
+    for sid, rows in per_session.items():
+        sess = store.record(sid) or {}
+        rows.sort()
+        snippet = f"{len(rows)} exchange(s) name it — ex " + ", ".join(f"{n} {r}" for n, r in rows[:6]) \
+            + (f", … {len(rows) - 6} more" if len(rows) > 6 else "")
+        hits.append((sess.get("file") or sid, (rows[0][0], rows[-1][0]), snippet, float(len(rows))))
+    hits.sort()
+    return hits, exchanges
+
+
+def _discussed(store, sid: str) -> list[tuple[str, int]]:
+    """The code nodes a session's exchanges mention, most mentioned first: contains → mentions, summed."""
+    counts: dict[str, int] = {}
+    for nb in store.neighbours(sid):
+        if nb.relation != "contains" or nb.direction not in (WITH, BOTH):
+            continue
+        for m in store.neighbours(nb.node):
+            if m.relation == "mentions" and m.direction in (WITH, BOTH):
+                counts[m.node] = counts.get(m.node, 0) + 1
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
 def _sessions_by_file(store) -> dict[str, str]:
@@ -179,6 +226,7 @@ def story(store, hits: list[tuple[str, tuple | None, str, float]]) -> tuple[list
             entry["issues"].sort(key=lambda x: x["number"] or 0)
             s.commits.append(entry)
         s.commits.sort(key=lambda c: _iso(c["authored"]) if c["authored"] else datetime.min.replace(tzinfo=timezone.utc))
+        s.symbols = _discussed(store, sid)
         sessions.append(s)
     sessions.sort(key=lambda s: s.captured_at)
     return sessions, unmatched
@@ -188,14 +236,27 @@ def _fmt_num(v) -> str:
     return f"{v:,}" if isinstance(v, int) else str(v)
 
 
-def render(t: Timeline) -> str:
-    label = f"`{t.a}`" + (f" × `{t.b}`" if t.b else "")
-    lines = [f"# TIMELINE — {label}  ·  window ±{t.window} tokens  ·  {t.searched} session file(s) searched, "
-             f"{t.hit_files} hold {'both' if t.b else 'it'}, {len(t.sessions)} session(s) in the shard  ·  oldest first"]
+def _tail(nid: str) -> str:
+    return nid.split("/", 3)[-1] if "://" in nid else nid
+
+
+def render(t: Timeline, limit: int = 8) -> str:
+    if t.symbol:
+        lines = [f"# TIMELINE — `{t.symbol}`  ·  {t.exchanges} exchange(s) mention it in {t.hit_files} session file(s), "
+                 f"{len(t.sessions)} session(s) in the shard  ·  from the store, no archive read  ·  oldest first"]
+    else:
+        label = f"`{t.a}`" + (f" × `{t.b}`" if t.b else "")
+        lines = [f"# TIMELINE — {label}  ·  window ±{t.window} tokens  ·  {t.searched} session file(s) searched, "
+                 f"{t.hit_files} hold {'both' if t.b else 'it'}, {len(t.sessions)} session(s) in the shard  ·  oldest first"]
     for s in t.sessions:
         when = s.captured_at[:16].replace("+00:00", "")
         ex = f"ex {s.exchanges[0]}" + (f"-{s.exchanges[1]}" if s.exchanges[1] != s.exchanges[0] else "") if s.exchanges else ""
-        lines.append(f"{when}  session {s.id.rsplit('/', 1)[-1][:8]}  {ex:<8} \"…{s.snippet}…\"")
+        quote = s.snippet if t.symbol else f"\"…{s.snippet}…\""
+        lines.append(f"{when}  session {s.id.rsplit('/', 1)[-1][:8]}  {ex:<8} {quote}")
+        if s.symbols:
+            shown = " · ".join(f"{_tail(n)} ×{c}" if c > 1 else _tail(n) for n, c in s.symbols[:limit])
+            more = f" (+{len(s.symbols) - limit} more)" if len(s.symbols) > limit else ""
+            lines.append(f"    discussed: {shown}{more}")
         for i, c in enumerate(s.commits):
             last = i == len(s.commits) - 1
             tee, bar = ("└─", "  ") if last else ("├─", "│ ")
@@ -208,7 +269,8 @@ def render(t: Timeline) -> str:
         if not s.commits:
             lines.append("    └─ (no commit in this session's window)")
     if t.unmatched:
-        lines.append(f"  not in the shard: {', '.join(t.unmatched)} — captured after the shard was minted; re-mint it "
+        lines.append(f"  not in the shard: {', '.join(t.unmatched)} — captured after the shard was minted"
+                     + (", so their exchanges cannot answer" if t.symbol else "") + "; re-mint it "
                      f"(`graphy history --out <shard> --repo <repo> --verify` names the drift)")
     c = t.counts()
     lines.append(f"TIMELINE: {c['sessions']} session(s) · {c['commits']} commit(s) · {c['sections']} section(s) · "
@@ -222,3 +284,28 @@ def timeline(store, a: str, b: str | None, corpus: Path, window: int = 10) -> Ti
     sessions, unmatched = story(store, hits)
     return Timeline(a=a, b=b, window=window, corpus=corpus, searched=searched, hit_files=len(hits), sessions=sessions,
                     unmatched=unmatched, seconds=round(time.perf_counter() - t0, 3))
+
+
+def timeline_symbol(store, symbol: str, corpus: Path | None = None) -> Timeline:
+    """The --symbol mode: `symbol` is an exact node id or a dotted tail the doors resolve (two matches
+    refuse); the hits come from the store's `mentions` edges, the story is the same walk. With `corpus`,
+    the archive's captured sessions the shard does not carry are named — captured after the mint, so
+    their exchanges cannot answer — never searched."""
+    from graphy.doors import DoorError, resolve
+    t0 = time.perf_counter()
+    try:
+        nid = resolve(store, symbol)
+    except DoorError as exc:
+        raise TimelineError(str(exc)) from exc
+    hits, exchanges = hunt_symbol(store, nid)
+    sessions, unmatched = story(store, hits)
+    searched = 0
+    if corpus is not None:
+        if not corpus.is_dir():
+            raise TimelineError(f"no sessions archive at {corpus} — nothing was compared, and that is not a miss")
+        by_file = _sessions_by_file(store)
+        files = [s["file"] for s in read_sessions(corpus)]
+        searched = len(files)
+        unmatched = sorted(set(unmatched) | {f for f in files if _session_for(by_file, f) is None})
+    return Timeline(a=nid, b=None, window=0, corpus=corpus, searched=searched, hit_files=len(hits), sessions=sessions,
+                    unmatched=unmatched, seconds=round(time.perf_counter() - t0, 3), symbol=nid, exchanges=exchanges)

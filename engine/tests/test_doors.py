@@ -16,6 +16,8 @@ from graphy.tenant import Tenant
 FIXTURES = Path(__file__).parent / "fixtures"
 FASTAPI_GRAPH = FIXTURES / "fastapi_graph"
 SEED = "fastapi://func/fastapi.routing.get_request_handler"
+EXCHANGE = "history://exchange/s1/3/user"
+NEIGHBOUR_EX = "history://exchange/s1/4/user"
 
 
 def _write_graph(dirpath: Path, nodes: dict, edges: list) -> None:
@@ -49,15 +51,32 @@ def _fixture(tmp_path: Path) -> tuple[Tenant, Path, list[str]]:
         {"kind": "edge", "edge_type": "calls", "src": "widgets://func/widgets.tests.test_gadget.test_it",
          "dst": "widgets://func/widgets.gadget", "line": 5},
     ])
+    # graphyos #64: a history shard whose exchange mentions the seed — the wormhole on the code's own dotted name
+    _write_graph(data_home / "history_graph", {
+        "history://session/s1": {"kind": "node", "node_type": "session", "id": "history://session/s1", "dotted": "history.session.s1",
+                                 "module": "history", "role": "session", "captured_at": "2026-09-05T11:00:00+00:00", "file": "00001__x__s1.md"},
+        EXCHANGE: {"kind": "node", "node_type": "exchange", "id": EXCHANGE, "dotted": "history.exchange.s1.3.user", "module": "history",
+                   "role": "exchange", "session": "history://session/s1", "n": 3, "speaker": "user", "literals": 1},
+        NEIGHBOUR_EX: {"kind": "node", "node_type": "exchange", "id": NEIGHBOUR_EX, "dotted": "history.exchange.s1.4.user", "module": "history",
+                       "role": "exchange", "session": "history://session/s1", "n": 4, "speaker": "user", "literals": 2},
+    }, [
+        {"kind": "edge", "edge_type": "contains", "src": "history://session/s1", "dst": EXCHANGE},
+        {"kind": "edge", "edge_type": "contains", "src": "history://session/s1", "dst": NEIGHBOUR_EX},
+        {"kind": "edge", "edge_type": "mentions", "src": EXCHANGE, "dst": SEED, "via": "dotted", "count": 1, "literal": "routing.get_request_handler"},
+        # an exchange that named the seed's caller and its callee — never the seed's own reader
+        {"kind": "edge", "edge_type": "mentions", "src": NEIGHBOUR_EX, "dst": "widgets://func/widgets.gadget", "via": "dotted", "count": 1, "literal": "widgets.gadget"},
+        {"kind": "edge", "edge_type": "mentions", "src": NEIGHBOUR_EX, "dst": "widgets://func/widgets.helper", "via": "dotted", "count": 1, "literal": "widgets.helper"},
+    ])
     (data_home / ".federation_scheme_index.json").write_text(json.dumps({
         "_meta": {}, "fastapi": {"own": ["fastapi"], "out": []}, "widgets": {"own": ["widgets"], "out": ["fastapi"]},
+        "history": {"own": ["history"], "out": ["fastapi"]},
     }), encoding="utf-8")
     join_keys = tmp_path / "registry.json"
     join_keys.write_text(json.dumps({"_meta": {}, "registered_joins": {"literal_joins": {}}}), encoding="utf-8")
-    lanes = {"fastapi_graph": (None, "static-dep"), "widgets_graph": (None, "static-dep")}
+    lanes = {"fastapi_graph": (None, "static-dep"), "widgets_graph": (None, "static-dep"), "history_graph": (None, "static-dep")}
     tenant = Tenant(root=tmp_path, data_home=data_home, adapters=(), build_lanes=lanes, join_keys=join_keys,
                     cursor="sha256:" + "0" * 64, policy="refuse", journal=tmp_path / "journal")
-    roster = ["fastapi", "widgets"]
+    roster = ["fastapi", "widgets", "history"]
     fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="doors")
     desc = tmp_path / "tenant.json"
     desc.write_text(json.dumps({
@@ -109,6 +128,13 @@ def test_blast_walks_against_the_edges_own_and_ring(tmp_path):
     assert b.by_owner["widgets"] == 2
     # a callee is never a dependent
     assert "widgets://func/widgets.helper" not in b.reached
+    # graphyos #64: an exchange that mentions the seed is a reader of it — a BY OWNER row of its own, and the
+    # walk stops there: `contains` is not a blast relation, so the session is never a dependent
+    assert ring[EXCHANGE] == 1 and b.reached[EXCHANGE].relation == "mentions" and b.by_owner["history"] == 1
+    assert "history://session/s1" not in b.reached
+    assert NEIGHBOUR_EX not in b.reached, "the exchange that named the seed's caller (gadget, hop 1) is the caller's reader, not the seed's"
+    rendered = doors.render_blast(b)
+    assert "history=1" in rendered and f"hop1 history          {EXCHANGE}  ◀─mentions─ {SEED}" in rendered
 
 
 def test_explain_record_tests_and_honest_absences(tmp_path):
@@ -116,10 +142,17 @@ def test_explain_record_tests_and_honest_absences(tmp_path):
     e = doors.explain(store, SEED, max_depth=3, tenant=tenant)
     assert e.record["file"] == "fastapi/routing.py"
     assert [t.node for t in e.tests] == ["widgets://func/widgets.tests.test_gadget.test_it"]
-    assert e.docs == []
+    # graphyos #64: an exchange that mentions the symbol explains it — the DOC_EXPLAINS family, hop 1
+    assert e.docs == [{"id": EXCHANGE, "relation": "mentions", "hops": 1, "owner": "history"}]
     assert e.journal is None and "no journal page" in e.journal_note
     rendered = doors.render_explain(e)
-    assert "TESTS (test modules that reach it" in rendered and "DOCS: none" in rendered
+    assert "TESTS (test modules that reach it" in rendered and f"hop1 mentions       {EXCHANGE}" in rendered
+    # the exchange that named helper (the seed's callee) and gadget (its caller) explains neither the seed nor prim
+    assert NEIGHBOUR_EX not in {d["id"] for d in e.docs}
+    e = doors.explain(store, "widgets://func/widgets.prim", max_depth=3, tenant=tenant)
+    assert e.docs == [] and "DOCS: none" in doors.render_explain(e)
+    e = doors.explain(store, "widgets://func/widgets.helper", max_depth=3, tenant=tenant)
+    assert [d["id"] for d in e.docs] == [NEIGHBOUR_EX]
 
 
 def test_cli_doors_answer_from_the_store_and_refuse_ambiguity(tmp_path, capsys):

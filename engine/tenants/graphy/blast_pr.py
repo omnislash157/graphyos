@@ -99,12 +99,14 @@ def main(argv=None) -> int:
         arm = cut.group_of(rec.get("module") or "")
         b = doors.blast(store, nid, args.depth)
         own = [n for n, r in b.reached.items() if r.hop > 0 and r.owner == "graphy"]
-        other = [n for n, r in b.reached.items() if r.hop > 0 and r.owner != "graphy"]
+        other = [n for n, r in b.reached.items() if r.hop > 0 and r.owner not in ("graphy", "history")]
+        said = [n for n, r in b.reached.items() if r.hop > 0 and r.owner == "history"]    # the exchanges that named it (graphyos #64)
         e = doors.explain(store, nid, args.depth, tenant=tenant)
         tests = [t.node.split("/", 3)[-1] for t in e.tests][: args.limit]
         seen_dep.update(own)
         print(f"\n  {nid}   [{arm}]   lines {', '.join(sorted(hits[nid], key=lambda s: int(s.rsplit(':', 1)[1])))[:80]}")
-        print(f"    depends on it: {len(own)} in graphy" + (f", {len(other)} in the ring" if other else "") + f" (depth {args.depth})")
+        print(f"    depends on it: {len(own)} in graphy" + (f", {len(other)} in the ring" if other else "")
+              + (f", {len(said)} conversation(s) named it" if said else "") + f" (depth {args.depth})")
         for n in sorted(own, key=lambda n: b.reached[n].hop)[: args.limit]:
             print(f"      hop{b.reached[n].hop} {n.split('/', 3)[-1]}")
         if len(own) > args.limit:

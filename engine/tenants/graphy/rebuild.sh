@@ -36,8 +36,11 @@ mv "$SUB/.tests/tests_graph" "$SUB/tests_graph" && rm -rf "$SUB/.tests"
 # The repo's own record as a third sibling (graphyos #59): commits · sessions · RECON sections · issues ·
 # receipts; a commit's `touches` names the module ids of the files it changed, so the history is a
 # wormhole into the code. The sessions archive is this box's and gitignored: absent, the shard says so.
+# Every exchange of a session is a node under it, welded to the code on the literals it names (graphyos #64):
+# the wormhole on the shards' own dotted names and file names, and the hand weld from aliases.json — the
+# override registry, the tenant's one curated input beside partition.json.
 SESSIONS="$ROOT/.claude/recovery/sessions"
-HIST_OPTS=(--code "$SUB/graphy_graph" --code "$SUB/tests_graph")
+HIST_OPTS=(--code "$SUB/graphy_graph" --code "$SUB/tests_graph" --aliases "$HERE/aliases.json")
 [ -d "$SESSIONS" ] && HIST_OPTS+=(--sessions "$SESSIONS")
 "$PY" -m graphy history --repo "$ROOT" --out "$SUB/history_graph" "${HIST_OPTS[@]}"
 LANES="$("$PY" - "$SUB/ring.json" <<'PY'
