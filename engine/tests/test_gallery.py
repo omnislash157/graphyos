@@ -64,6 +64,7 @@ def test_compose_index_links_only_green_pages_and_never_a_hollow_entry():
     assert "x/red" not in page and "x/refused" not in page and 'href="red/' not in page
     assert "<b>MODELS</b>" in page and "ring: 2 package(s) — certifi, idna" in page
     assert "1 codebase(s)" in page and "graphyos 0.2.1" in page
+    assert "GRAPH" in page and "walk before you read" in page and "graphy harness" in page
     assert "<script" not in page                            # the index is static html and nothing else
 
 

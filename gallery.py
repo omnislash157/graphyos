@@ -9,7 +9,8 @@ repo's arms and ring read from its showcase.txt and the MCP block on top, and `<
 receipt: every url, its clone's commit, the SHOWCASE line it ended on, the page's check. A page that is
 RED or REFUSED is named in the receipt and left out of the index — never a hollow entry. The directory is
 the site: `python3 -m http.server --directory <out>` serves it, and the Dockerfile at the repo root builds
-it inside the image so every Railway deploy is a fresh gallery on the current engine.
+it inside the image so every Railway deploy is a fresh gallery on the current engine. The index is GRAPH:
+walk before you read; still static html, nothing fetched.
 """
 from __future__ import annotations
 
@@ -125,33 +126,106 @@ def compose_index(pages: list[dict], *, built_at: str, engine: str, mcp: str = "
             f'<div class="arms">{arms}</div>'
             f'<div class="ring">ring: {ring["count"]} package(s){(" — " + html.escape(ring["names"])) if ring["names"] and ring["count"] else ""}</div></li>')
     mcp_html = f'<pre class="mcp">{html.escape(mcp)}</pre>' if mcp else ""
-    return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>graphy — the gallery</title>
-<style>
-:root{{color-scheme:light dark;--fg:#1a1a1a;--bg:#fafaf8;--mute:#666;--line:#ddd;--acc:#2a5db0}}
-@media(prefers-color-scheme:dark){{:root{{--fg:#e8e8e6;--bg:#151515;--mute:#9a9a9a;--line:#333;--acc:#8ab4f8}}}}
-body{{margin:0;padding:2rem 1rem 4rem;font:16px/1.5 system-ui,sans-serif;color:var(--fg);background:var(--bg);max-width:56rem;margin-inline:auto}}
-h1{{font-size:1.6rem;margin:0 0 .25rem}} p.lede{{color:var(--mute);margin:0 0 1.5rem}}
-pre{{overflow-x:auto;padding:1rem;border:1px solid var(--line);border-radius:6px;font-size:13px;background:transparent}}
-ul{{list-style:none;padding:0}} li{{padding:1rem 0;border-top:1px solid var(--line)}} li:last-child{{border-bottom:1px solid var(--line)}}
-a{{color:var(--acc);font-weight:600;font-size:1.1rem}} .arms{{margin-top:.25rem}} .ring,small{{color:var(--mute);font-size:.9rem}}
-code{{font-size:.95em}} footer{{margin-top:2rem;color:var(--mute);font-size:.85rem}}
-</style></head><body>
-<h1>graphy — the gallery</h1>
-<p class="lede">{len(green)} codebase(s), each drawn by one command: the modules, the pillars the walk proposes, the dependency ring, and the MCP block. No model decided an edge. Every page is a query over the code's own structure.</p>
-<pre>uvx --from 'graphyos[typescript]' graphy showcase .        # your own repo, one page, no venv
-pip install 'graphyos[typescript]' &amp;&amp; graphy showcase https://github.com/you/your-repo.git</pre>
-<p>Or open an issue on <a href="https://github.com/omnislash157/graphyos/issues/new">omnislash157/graphyos</a> naming a GitHub url — the CI posts your repo's page back, running nothing of your code.</p>
-<ul>
-{chr(10).join(rows)}
-</ul>
-<h2>Add your model</h2>
-<p>Paste into <code>.mcp.json</code> (Claude Code) or your client's MCP settings after <code>graphy eat .</code> — the tools: hunt · descend · blast · walk · draw · explain · history.</p>
-{mcp_html}
-<footer>built {html.escape(built_at)} · graphyos {html.escape(engine)} · <a href="https://github.com/omnislash157/graphyos">source, Apache 2.0</a> · <a href="https://pypi.org/project/graphyos/">PyPI</a></footer>
-</body></html>
-"""
+    n = len(green)
+    joined = "\n".join(rows)
+    built = html.escape(built_at)
+    eng = html.escape(engine)
+    return (
+        "<!doctype html>\n"
+        "<html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+        "<title>GRAPH — the gallery</title>\n"
+        "<style>\n"
+        ":root{color-scheme:dark;--bg:#0a0a0b;--fg:#f0f0f2;--muted:#9a9aa3;"
+        "--subtle:#71717a;--elev:#1a1a1e;--line:rgba(240,240,242,.12);--acc:#c8ccd4}\n"
+        "*{box-sizing:border-box}html{-webkit-font-smoothing:antialiased}\n"
+        "body{margin:0;background:var(--bg);color:var(--fg);"
+        "font:16px/1.5 ui-sans-serif,system-ui,sans-serif}a{color:var(--acc)}\n"
+        "header{border-bottom:1px solid var(--line);padding:1rem 1.25rem;"
+        "display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}\n"
+        ".mark{width:24px;height:24px;flex:none}\n"
+        ".word{font:500 1.25rem/1 Georgia,\"Iowan Old Style\",Palatino,serif;letter-spacing:-.02em}\n"
+        ".law{color:var(--muted);font-size:.9rem}\n"
+        "main{max-width:56rem;margin:0 auto;padding:2.5rem 1.25rem 4rem}\n"
+        ".kicker{font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;"
+        "color:var(--subtle);margin:0 0 .5rem}\n"
+        "h1{font:500 clamp(2rem,6vw,3.25rem)/1.1 Georgia,\"Iowan Old Style\",Palatino,serif;"
+        "letter-spacing:-.03em;margin:0 0 .75rem;text-wrap:balance}\n"
+        ".lede{color:var(--muted);max-width:62ch;margin:0 0 1.5rem;text-wrap:pretty}\n"
+        ".facts{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 2rem}\n"
+        ".facts span{border:1px solid var(--line);border-radius:8px;padding:.4rem .7rem;"
+        "font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}\n"
+        ".facts b{color:var(--fg);font-weight:500}\n"
+        "ol.steps{list-style:none;padding:0;margin:0 0 2.5rem;counter-reset:s}\n"
+        "ol.steps li{counter-increment:s;display:grid;grid-template-columns:2rem 1fr;"
+        "gap:.75rem;padding:.7rem 0;border-top:1px solid var(--line)}\n"
+        "ol.steps li:last-child{border-bottom:1px solid var(--line)}\n"
+        "ol.steps li::before{content:counter(s);font:12px/2rem ui-monospace,Menlo,Consolas,monospace;"
+        "color:var(--subtle)}\n"
+        "ol.steps strong{display:block;font-weight:500}ol.steps small{color:var(--muted)}\n"
+        "h2{font:500 1.5rem/1.2 Georgia,\"Iowan Old Style\",Palatino,serif;margin:0 0 .25rem}\n"
+        "p.sub{color:var(--muted);margin:0 0 1rem}\n"
+        "ul.repos{list-style:none;padding:0;margin:0 0 2.5rem}\n"
+        "ul.repos li{border:1px solid var(--line);border-radius:16px;padding:1rem 1.1rem;"
+        "margin:0 0 .75rem;background:var(--elev)}\n"
+        "ul.repos a{font-weight:500;font-size:1.05rem;text-decoration:none}\n"
+        "ul.repos a:hover{text-decoration:underline}\n"
+        ".arms{margin-top:.4rem;color:var(--fg);font-size:.9rem}\n"
+        ".arms small,.ring{color:var(--muted);font-size:.85rem}.ring{margin-top:.2rem}\n"
+        "pre{overflow-x:auto;padding:1rem;border:1px solid var(--line);border-radius:12px;"
+        "font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;background:transparent;color:var(--fg)}\n"
+        "h3{font:500 1.15rem/1.3 Georgia,\"Iowan Old Style\",Palatino,serif;margin:2rem 0 .5rem}\n"
+        "footer{margin-top:2.5rem;color:var(--subtle);font-size:.8rem}\n"
+        "</style></head><body>\n"
+        "<header>\n"
+        "<svg class=\"mark\" viewBox=\"0 0 32 32\" aria-hidden=\"true\">"
+        "<rect width=\"32\" height=\"32\" rx=\"7\" fill=\"#0a0a0b\"/>"
+        "<g fill=\"none\" stroke=\"#c8ccd4\" stroke-width=\"1.4\" stroke-linecap=\"round\">"
+        "<path d=\"M9 11h7M9 11l7 10M9 21h7M16 11h7M16 11l7 10M16 21h7\"/></g>"
+        "<circle cx=\"9\" cy=\"11\" r=\"2.6\" fill=\"#c8ccd4\"/>"
+        "<circle cx=\"9\" cy=\"21\" r=\"2.6\" fill=\"#c8ccd4\"/>"
+        "<circle cx=\"16\" cy=\"11\" r=\"2.6\" fill=\"#8aa090\"/>"
+        "<circle cx=\"16\" cy=\"21\" r=\"2.6\" fill=\"#c8ccd4\"/>"
+        "<circle cx=\"23\" cy=\"11\" r=\"2.6\" fill=\"#c8ccd4\"/>"
+        "<circle cx=\"23\" cy=\"21\" r=\"2.6\" fill=\"#c8ccd4\"/></svg>\n"
+        "<span class=\"word\">GRAPH</span>\n"
+        "<span class=\"law\">walk before you read</span>\n"
+        "</header>\n"
+        "<main>\n"
+        "<p class=\"kicker\">engine · the gallery</p>\n"
+        "<h1>GRAPH — arms for codebases the walk already cut</h1>\n"
+        f"<p class=\"lede\">{n} codebase(s), each drawn by one command: the modules, the pillars the walk proposes, the dependency ring, and the MCP block. No model decided an edge. Every page is a query over the code's own structure.</p>\n"
+        "<div class=\"facts\">\n"
+        "<span>Law <b>walk before you read</b></span>\n"
+        "<span>Eat then <b>harness</b></span>\n"
+        "<span>Site <b>graphy-os.com</b></span>\n"
+        "</div>\n"
+        "<h2>The compile</h2>\n"
+        "<p class=\"sub\">After eat, <code>graphy harness</code> is the missing step: partition, arms, drawings, first walk, GRAPH.md. Curated bytes win.</p>\n"
+        "<ol class=\"steps\">\n"
+        "<li><div><strong>Pillars</strong><small>propose only if partition.json is absent</small></div></li>\n"
+        "<li><div><strong>Arms generate</strong><small>inventory · inherits-out · re-walk — operator prose left alone</small></div></li>\n"
+        "<li><div><strong>Drawings</strong><small>pillars.svg + each ARM.svg, check_artifact</small></div></li>\n"
+        "<li><div><strong>First walk</strong><small>blast the crown, write .walk.txt</small></div></li>\n"
+        "<li><div><strong>GRAPH.md</strong><small>the hub: facts, real crowns, real paths</small></div></li>\n"
+        "<li><div><strong>Pointers</strong><small>thin CLAUDE.md / AGENTS.md only if missing or already a stub</small></div></li>\n"
+        "</ol>\n"
+        "<h2>The gallery</h2>\n"
+        "<p class=\"sub\">Ten repos people know. Open one page. Do not dump the tree into context.</p>\n"
+        f"<ul class=\"repos\">\n{joined}\n</ul>\n"
+        "<pre>uvx --from 'graphyos[typescript]' graphy showcase .        # your own repo, one page, no venv\n"
+        "pip install 'graphyos[typescript]' && graphy showcase https://github.com/you/your-repo.git\n"
+        "pip install graphyos && graphy eat . && graphy harness --repo .   # the hub: GRAPH.md</pre>\n"
+        "<p>Or open an issue on <a href=\"https://github.com/omnislash157/graphyos/issues/new\">omnislash157/graphyos</a> naming a GitHub url — the CI posts your repo's page back, running nothing of your code.</p>\n"
+        "<h3>Add your model</h3>\n"
+        "<p class=\"sub\">Paste into <code>.mcp.json</code> (Claude Code) or your client's MCP settings after <code>graphy eat .</code> — the tools: hunt · descend · blast · walk · draw · explain · history.</p>\n"
+        f"{mcp_html}\n"
+        f"<footer>built {built} · graphyos {eng} · "
+        "<a href=\"https://github.com/omnislash157/graphyos\">source, Apache 2.0</a> · "
+        "<a href=\"https://pypi.org/project/graphyos/\">PyPI</a></footer>\n"
+        "</main>\n"
+        "</body></html>\n"
+    )
 
 
 def jobs_for(n: int, jobs: int | None = None) -> int:
