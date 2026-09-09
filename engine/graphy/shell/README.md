@@ -19,6 +19,21 @@ echo 'Read GRAPHY.md first.' >> CLAUDE.md                          # 5. route th
 machine-local. `.claude/settings.json` and `GRAPHY.md` are yours to track: the settings name only
 `$CLAUDE_PROJECT_DIR`, the router names the interpreter that installed it.
 
+## The harnesses
+
+The three scripts are the memory lane; a harness is the wiring that fires them and the transcript
+shape the capture reads — and nothing downstream of the tail learns its name. `graphy shell install
+--repo <abs> --harness claude|codex|cursor` (repeatable; default claude) writes the wiring each one reads:
+
+| harness | the wiring `install` writes | the transcript the capture reads | the gate |
+|---|---|---|---|
+| Claude Code | `.claude/settings.json` — `SessionStart` · `SessionEnd` · `PreCompact` · `PreToolUse` | the project's `.jsonl` (`type: user\|assistant`, `message.content`) | wired |
+| Codex | `.codex/hooks.json` — the same event names and hook shape, the repo path filled in (Codex has no `$CLAUDE_PROJECT_DIR`); trust it once inside Codex with `/hooks` | the rollout (`type: response_item`, `payload.type: message`, `payload.role`; the harness's own `# AGENTS.md instructions` and `<environment_context>` user rows and every `developer` row dropped; the id from `session_meta`) | not wired — the pre-edit payload is not documented, and graphy never guesses |
+| Cursor | `.cursor/hooks.json` — `version: 1`, `sessionStart` (answers `{"additional_context": …}`: `session_start.sh --json`) · `sessionEnd` · `preCompact`; `conversation_id` is the session | a role/content `.jsonl` at `transcript_path`, the shape documented outside Cursor — a file in no known shape is refused by name | not wired |
+
+The shape decides, never a name: `session_tail.harness_of` reads a row's fields, so one archive holds
+sessions from every harness and the doors over it do not care.
+
 ## What fires
 
 | event | script | what it does |

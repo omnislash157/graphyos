@@ -53,3 +53,25 @@ def test_GREEN_memory_bloodhound_answers_over_an_installed_repo_sessions(tmp_pat
     out = subprocess.run(cmd.split(), capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr
     assert "gate" in out.stdout and "001.md" in out.stdout
+
+
+# graphyos #67 — the wiring per harness.
+
+def test_GREEN_install_writes_the_wiring_each_harness_reads_and_refuses_one_that_has_none(tmp_path):
+    repo = _eaten_repo(tmp_path)
+    info = shell_install.install(repo, python="/opt/venv/bin/python", harness=("claude", "codex", "cursor"))
+    assert set(info["harness"]) == {"claude", "codex", "cursor"}
+    codex = json.loads((repo / ".codex" / "hooks.json").read_text())
+    assert set(codex["hooks"]) == {"SessionStart", "SessionEnd", "PreCompact"}, "the gate is not wired for Codex"
+    cmd = codex["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+    assert str(repo.resolve()) in cmd and "$CLAUDE_PROJECT_DIR" not in cmd and cmd.endswith('session_start.sh"')
+    cursor = json.loads((repo / ".cursor" / "hooks.json").read_text())
+    assert cursor["version"] == 1 and set(cursor["hooks"]) == {"sessionStart", "sessionEnd", "preCompact"}
+    assert cursor["hooks"]["sessionStart"][0]["command"].endswith("session_start.sh --json")
+    assert (repo / ".claude" / "settings.json").is_file()
+    # idempotent: a second install adds nothing
+    shell_install.install(repo, python="/opt/venv/bin/python", harness=("codex", "cursor"))
+    assert len(json.loads((repo / ".cursor" / "hooks.json").read_text())["hooks"]["sessionStart"]) == 1
+    assert len(json.loads((repo / ".codex" / "hooks.json").read_text())["hooks"]["SessionStart"]) == 1
+    with pytest.raises(shell_install.ShellError, match="no wiring for harness aider"):
+        shell_install.install(repo, harness=("aider",))

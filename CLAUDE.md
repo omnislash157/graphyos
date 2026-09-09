@@ -97,7 +97,7 @@ index.py                the shard index: push · pull content-addressed shards, 
 converge.py             the seam: wormholes per shard pair; --resolve binds text labels through scope into wormhole_edges.json
 container.py            adjacency.parquet + nodes.parquet + a receipt beside every shard, one duckdb connection per batch; a receipt may say pending (eat defers the ring) and estate() — one view over all of them — emits it on the first ask (duckdb, optional)
 traversal.py            the traversal store: every walk lands as rows under <data_home>/traversals/<generation>/; walks compose (store · splice) and diff (replay)
-shell/                  what bolts graphy onto a repo: gate.py (walk-before-edit, PreToolUse) · install.py · claude/ (settings.json, GRAPHY.md — the walk's taps and the MEMORY table below, paths filled at install) · hooks/*.sh · README.md
+shell/                  what bolts graphy onto a repo: gate.py (walk-before-edit, PreToolUse) · install.py (`--harness claude|codex|cursor`, repeatable) · claude/ (settings.json, GRAPHY.md — the walk's taps and the MEMORY table below, paths filled at install) · codex/hooks.json · cursor/hooks.json (the wiring those harnesses read; the capture reads each transcript by its shape — session_tail.harness_of) · hooks/*.sh · README.md
 federated_store.py      compile_store → the sqlite store; open_for · path_to · spread — the reader
 cross_substrate.py      load_set · derive_roster · query_set · explanations — walk across substrates
 bridge.py               open_sides · verify_joins · cross — two tenants in one process, each reading only its own data_home; the walk crosses only on a declared join scheme
@@ -157,7 +157,7 @@ cli.py                  graphy eat | init | smash | history | push | pull | inde
 | the whole estate, one query | `python3 -m graphy estate --tenant <descriptor> --tenant-id <name> --sql "<over adj(corpus, src, dst, edge_type, …) and nodes(corpus, id, …)>"` — `pip install 'graphyos[estate]'`; `graphy build` emits the parquet when duckdb is present and says SKIPPED when it is not |
 | is the parquet as fresh as the shard | `python3 -m graphy container --tenant <descriptor> --tenant-id <name>` — fresh · pending · stale by name; `--emit` writes what is not fresh. `build --container <slug>_graph` writes one shard's now and leaves the rest pending until `graphy estate` asks; `--container none` leaves every shard pending and imports no duckdb, which is what `eat` does |
 | the stored walks; the hops the live generation broke | `python3 -m graphy traversals --tenant <descriptor> --tenant-id <name>` · `--replay` — exit 1 when a stored walk no longer holds |
-| bolt the hooks and the gate onto an eaten repo | `python3 -m graphy shell install --repo <abs>` → `.graphy/hooks/*.sh` · `.claude/settings.json` · `GRAPHY.md`; the gate: `echo <hook json> \| python3 -m graphy.shell.gate` — exit 2 blocks, the walk to run on stderr |
+| bolt the hooks and the gate onto an eaten repo; the wiring per harness | `python3 -m graphy shell install --repo <abs> [--harness claude\|codex\|cursor]…` → `.graphy/hooks/*.sh` · `.claude/settings.json` (`.codex/hooks.json` · `.cursor/hooks.json`) · `GRAPHY.md`; the gate: `echo <hook json> \| python3 -m graphy.shell.gate` — exit 2 blocks, the walk to run on stderr |
 
 ## MEMORY — the continuity lane, the dumb way
 

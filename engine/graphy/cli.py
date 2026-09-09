@@ -1697,7 +1697,7 @@ def _cmd_shell(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
     try:
-        info = shell_install.install(args.repo, python=args.python)
+        info = shell_install.install(args.repo, python=args.python, harness=tuple(args.harness or ("claude",)))
     except shell_install.ShellError as exc:
         print(f"SHELL REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -1705,6 +1705,8 @@ def _cmd_shell(args: argparse.Namespace) -> int:
         print(f"  wrote {w}")
     print(f"SHELL OK: hooks for tenant {info['tenant_id']} under {info['repo']} run on {info['python']}"
           f" · {info['memory_taps']} memory tap(s) in GRAPHY.md · history shard {info['history']}")
+    for h, note in info["harness"].items():
+        print(f"  harness {h}: {note}")
     print(f"  route the agent:  echo 'Read GRAPHY.md first.' >> {info['repo']}/CLAUDE.md")
     return 0
 
@@ -2027,6 +2029,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_shell.add_argument("shell_verb", nargs="?", default="install", help="install")
     p_shell.add_argument("--repo", default=None, help="the eaten repo (holds .graphy/tenant.json)")
     p_shell.add_argument("--python", default=None, help="the interpreter the hooks run on (default: this one)")
+    p_shell.add_argument("--harness", action="append", choices=("claude", "codex", "cursor"), default=None,
+                         help="the harness whose wiring is written (repeatable; default claude): .claude/settings.json · "
+                              ".codex/hooks.json · .cursor/hooks.json — the same three hook scripts behind each")
     p_shell.set_defaults(handler=_cmd_shell)
 
     p_check = sub.add_parser("check", help="read-only audit over the declared tenant")

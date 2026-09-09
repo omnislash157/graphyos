@@ -14,6 +14,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EVENTS = ("PreCompact", "SessionEnd", "SessionStart", "PreToolUse")
+HARNESSES = ("claude", "codex", "cursor")
+# What each harness's wiring carries (graphyos #67). The gate rides only where the pre-edit payload is
+# documented (Claude Code's PreToolUse: tool_name · tool_input.file_path); the memory lane rides everywhere.
+HARNESS_NOTE = {"claude": ".claude/settings.json — memory + the gate",
+                "codex": ".codex/hooks.json — memory; trust it once inside Codex with /hooks; the gate is not wired",
+                "cursor": ".cursor/hooks.json — memory (sessionStart answers in JSON); the gate is not wired"}
 
 
 class ShellError(RuntimeError):
@@ -37,7 +43,28 @@ def _merge_hooks(existing: dict, ours: dict) -> dict:
     return existing
 
 
-def install(repo: str | Path, python: str | None = None, *, log=print) -> dict:
+def _merge_cursor(existing: dict, ours: dict) -> dict:
+    """Cursor's hooks.json: `version: 1`, event → [{command, timeout}]; ours join by command."""
+    existing.setdefault("version", 1)
+    hooks = existing.setdefault("hooks", {})
+    for event, defs in ours["hooks"].items():
+        have = hooks.setdefault(event, [])
+        known = {d.get("command") for d in have}
+        have.extend(d for d in defs if d["command"] not in known)
+    return existing
+
+
+def _write_wiring(path: Path, ours: dict, merge) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    current = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    path.write_text(json.dumps(merge(current, ours), indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def install(repo: str | Path, python: str | None = None, *, log=print, harness: tuple[str, ...] = ("claude",)) -> dict:
+    unknown = sorted(set(harness) - set(HARNESSES))
+    if unknown:
+        raise ShellError(f"no wiring for harness {', '.join(unknown)} — the ones that exist: {', '.join(HARNESSES)}")
     repo = Path(repo).expanduser().resolve()
     desc = repo / ".graphy" / "tenant.json"
     ring = repo / ".graphy" / "substrate" / "ring.json"
@@ -56,12 +83,15 @@ def install(repo: str | Path, python: str | None = None, *, log=print) -> dict:
         dst.write_text(_fill(src.read_text(encoding="utf-8"), values), encoding="utf-8")
         dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         written.append(dst)
-    settings = repo / ".claude" / "settings.json"
-    settings.parent.mkdir(parents=True, exist_ok=True)
-    ours = json.loads((HERE / "claude" / "settings.json").read_text(encoding="utf-8"))
-    merged = _merge_hooks(json.loads(settings.read_text(encoding="utf-8")) if settings.is_file() else {}, ours)
-    settings.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
-    written.append(settings)
+    if "claude" in harness:
+        ours = json.loads((HERE / "claude" / "settings.json").read_text(encoding="utf-8"))
+        written.append(_write_wiring(repo / ".claude" / "settings.json", ours, _merge_hooks))
+    if "codex" in harness:                      # the same event names and hook shape as Claude Code; the repo path filled in
+        ours = json.loads(_fill((HERE / "codex" / "hooks.json").read_text(encoding="utf-8"), values))
+        written.append(_write_wiring(repo / ".codex" / "hooks.json", ours, _merge_hooks))
+    if "cursor" in harness:
+        ours = json.loads(_fill((HERE / "cursor" / "hooks.json").read_text(encoding="utf-8"), values))
+        written.append(_write_wiring(repo / ".cursor" / "hooks.json", ours, _merge_cursor))
     recovery = repo / ".claude" / "recovery"
     recovery.mkdir(parents=True, exist_ok=True)
     (recovery / ".gitignore").write_text("*\n", encoding="utf-8")   # the operator's sessions never reach the repo
@@ -70,6 +100,7 @@ def install(repo: str | Path, python: str | None = None, *, log=print) -> dict:
     written.append(router)
     return {"repo": repo, "tenant_id": tid, "python": py, "written": written,
             "memory_taps": memory_taps(router.read_text(encoding="utf-8")),
+            "harness": {h: HARNESS_NOTE[h] for h in HARNESSES if h in harness},
             "history": remint_history(repo, tid, log=log)}
 
 

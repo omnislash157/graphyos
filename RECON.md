@@ -5098,3 +5098,46 @@ cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py tests/test_shell
 | the floor | 564 passed, 3 skipped in 10.9–11.6 s (560 before: the eat mint and the walk into the exchange, the grown archive as STALE and the re-mint, the bare directory skipped, `repo_toplevel`; the timeline's refusal test re-worded) |
 | the constraints | `BURDEN OK` (the wheel 306,126 → 308,310 B); `CENSUS OK`; `SCRUB OK`; `REVIEW OK` under `--diff`; `MEASURE DIFF OK: 9 number(s) moved, none the wrong way past tolerance` (floor 11.6 s · gate 20.8 s · engine-hot lanes 0); the gate `GRAPHY_STANDALONE_OK` |
 | the hold | none: the README's fourth bullet is now true of a stranger's repo; the arm regions re-rendered (`remint_history`, `eat_history`, `repo_toplevel` in their inventories) |
+
+## 101 · THREE HARNESSES BEHIND THE MEMORY — the shape decides, never a name: `session_tail.harness_of` reads Claude Code's jsonl, a Codex rollout and a role/content jsonl by their fields; `shell install --harness codex|cursor` writes `.codex/hooks.json` and `.cursor/hooks.json` behind the same three scripts; a real Codex rollout on this box renders 16 exchanges with zero harness rows leaking (2026-09-09 · graphyos issue 67)
+
+**The number, from the board.** The operator: *"its sort of is a model harness … the hooks are sort of agnostic
+anyway."* They were agnostic in contract only: the shell README promised any harness the same entry points, but
+`install` wrote one wiring and `extract_turns` read one shape — a Codex rollout (`~/.codex/sessions/…/rollout-*.jsonl`)
+yielded zero exchanges and was refused as "essentially empty"; a Cursor `transcript_path` was never read.
+
+**The change.** `session_tail.harness_of(row)` names the shape from the row's fields (`payload` under a `type` →
+Codex; `type: user|assistant` or `message` → Claude Code; `role` + `content` at the top → the role/content jsonl);
+`turn_of(row)` → `(role, text, real)` per shape, and `extract_turns` · `scan_stats` read through it, so
+`assert_plausible` counts the same way for every harness. Codex: `response_item`/`message` rows by `payload.role`,
+`input_text`/`output_text` blocks; the harness's own `# AGENTS.md instructions`, `<environment_context>` and
+`<user_instructions>` user rows typed-not-real, every `developer` row noise; the session id read from the one
+`session_meta` row (`reseed._assert_exact_session`). Cursor: `conversation_id` accepted as the session;
+`reseed inject --json` prints `{"additional_context": …}` and `session_start.sh --json` calls it. `shell/install`
+takes `harness=(…)`: `.claude/settings.json` as before; `.codex/hooks.json` from `shell/codex/hooks.json` (the same
+event names and hook shape, `{{repo}}` filled — Codex has no `$CLAUDE_PROJECT_DIR`; the operator trusts it once with
+`/hooks`); `.cursor/hooks.json` from `shell/cursor/hooks.json` (`version: 1`, `sessionStart` · `sessionEnd` ·
+`preCompact`, merged by command); a harness with no wiring refuses by name. The gate rides only where the pre-edit
+payload is documented (Claude Code) and the SHELL OK line says so per harness. `pyproject` ships the two new data
+dirs. Fixtures are synthetic rows in the real shapes; no session body of this box reaches the tree.
+
+```bash
+cd engine && python3 -m graphy.reseed render --transcript "$(ls -t ~/.codex/sessions/2026/*/*/*.jsonl | head -1)" | grep -c '^--- \[[0-9]*\] USER$'   # 16 today
+cd engine && python3 -m graphy.reseed render --transcript "$(ls -t ~/.codex/sessions/2026/*/*/*.jsonl | head -1)" | grep -c '<environment_context>'   # 0
+cd engine && python3 -m graphy shell install --repo <eaten repo> --harness codex --harness cursor | grep harness
+cd engine && echo '{"session_id":"x","source":"startup"}' | bash <repo>/.graphy/hooks/session_start.sh --json | python3 -c 'import json,sys; print(list(json.load(sys.stdin)))'   # ['additional_context']
+cd engine && ../.venv/bin/python -m pytest -q tests/test_session_tail.py tests/test_reseed.py tests/test_shell.py
+```
+
+| check | result |
+|---|---|
+| a real Codex rollout on this box (3,851 rows: 17 user · 79 assistant · 19 developer message rows among 1,216 `item_completed`, 463 `reasoning`, 381 tool calls) | `render` → 16 `USER` markers, 16 `ASSISTANT`, `<environment_context>` 0, `<skills_instructions>` 0, `AGENTS.md instructions for` 0; before the change: refused as essentially empty |
+| the synthetic rollout fixture | 4 user rows typed · 2 real, 3 assistant typed · 3 real; the developer rows, the AGENTS.md and environment rows absent from the render; the id from `session_meta` matches the hook's and a stranger's id is a mismatch |
+| the role/content jsonl | two exchanges; the `tool_use` and `tool_result` rows skipped; a file in no known shape → `extract_turns == ([], 0)`, `render_full` refuses "essentially empty" |
+| the wiring | `install --harness codex --harness cursor` → `.codex/hooks.json` with `SessionStart` · `SessionEnd` · `PreCompact` and the repo's absolute path in every command, `.cursor/hooks.json` `version: 1` with `sessionStart` · `sessionEnd` · `preCompact` and `session_start.sh --json`; a second install adds nothing; `--harness aider` → `SHELL REFUSED: no wiring for harness aider` |
+| the hook, by hand | `echo '{…}' \| session_start.sh --json` → `{"additional_context": "# SESSION RE-SEED (startup) …"}`; the no-stdin form `session_start.sh --json now` the same |
+| the graphy tenant | `HISTORY OK: 126 commit(s) · 45 session(s) · 101 section(s) … 420 exchange(s) · 391 mention(s)`; `ARMS OK: 6 arm(s) match the walk (store 7bed1ff3f501890e)` after the re-render (MEMORY and CLI moved); `DRAW OK … docs/pillars.svg`; `CHECK OK … container fresh for 7/7` |
+| blast radius, before the edit | `extract_turns` 26 (tests 22) · `scan_stats` 25 · `turn_of` 29 · `harness_of` 17 · `reseed.do_capture` 12 · `do_inject` 9 · `shell.install.install` 5 · `_merge_cursor` 0 |
+| the floor | 571 passed, 3 skipped in 10.9–11.3 s (564 before: the Codex fixture, the role/content jsonl, the unclaimed shape refused, the Codex capture with its own id, the Cursor conversation id, inject --json, the wiring per harness) |
+| the constraints | `BURDEN OK` (the wheel 308,310 → 311,537 B; subprocess sites 26 → 27, `repo_toplevel`'s git); `CENSUS OK`; `SCRUB OK`; `REVIEW OK: 9 check(s)` under `--diff`; `MEASURE DIFF OK: 8 number(s) moved, none the wrong way`; the gate `GRAPHY_STANDALONE_OK` |
+| the hold | Cursor is not on this box: its reader is proven on the shape documented outside Cursor, and the README says which harness is first |

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "{{repo}}/.graphy/hooks/session_start.sh --json",
+        "timeout": 15
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "{{repo}}/.graphy/hooks/session_end.sh",
+        "timeout": 30
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "{{repo}}/.graphy/hooks/session_end.sh",
+        "timeout": 30
+      }
+    ]
+  }
+}

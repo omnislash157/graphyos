@@ -57,7 +57,7 @@ python3 -m graphy.lightning.bloodhound "gallery" --with "showcase"
 `lightning` is the search half: ripgrep discovers the files, lightning walks each hit out to the
 function, class or exchange that holds it. `bloodhound` maps two terms across the archive over
 time. Every exchange is also a node in the code graph, bound to the symbols it names, so the walk
-verbs answer "what did we say about this" with no archive read. The lane in full:
+verbs answer "what did we say about this" with no archive read. Claude Code is the first harness; `graphy shell install --harness codex` and `--harness cursor` write the wiring those two read, and the capture reads each one's transcript by its shape. The lane in full:
 [`engine/graphy/shell/README.md`](engine/graphy/shell/README.md).
 
 ## How the graph works

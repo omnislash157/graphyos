@@ -6,7 +6,7 @@
 `session_tail` turns a transcript into its semantic tail; `reseed` captures and injects it around a clear; `lightning` is the ripgrep-anchored search over the archive. The walk names this the floor no arm consumes — it runs beside the engine, not under the CLI.
 
 <!-- graphy:arm MEMORY generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=21db0d05845b1e38 cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:b8bdcaf859deb4131cd7409e03d869018e263d5cea08abad7673f86bb012daa1 -->
+     store=7bed1ff3f501890e cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:971cc6e97a191f68bb7a285716a3376e1187574b1ee7d8ea58a6d0663541e7f5 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -34,7 +34,7 @@ Every symbol the partition places in this arm, by module; a class carries its me
 **`graphy.lightning.ripgrep`** — functions: `_bounded_filesystem_inventory` · `_git_searchable_files` · `_relative_is_ignored` · `python_matching_files` · `resolve_rg` · `rg_matching_files` · `searchable_files`
 **`graphy.lightning.source_kind`** — functions: `_is_doc_file` · `_is_slop_dir` · `_is_test_file` · `classify_sources` · `gitignored_set` · `liveness_verdict`
 **`graphy.reseed`** — functions: `_age` · `_archive` · `_assert_exact_session` · `_atomic_write` · `_diag` · `_disk_fallback` · `_exchange_count` · `_header` · `_newest_archive_sha` · `_project_dir` · `_read_hook_stdin` · `do_capture` · `do_inject` · `main` · `recovery_dir`
-**`graphy.session_tail`** — classes: `TailError`; functions: `_blocks` · `_budget` · `_is_real_user` · `_text_of` · `assert_plausible` · `bounded_tail` · `extract_turns` · `pair_turns` · `project_slug` · `projects_root` · `projects_roots` · `render_full` · `render_json` · `render_markdown` · `render_recent_markdown` · `scan_stats` · `semantic_sha256`
+**`graphy.session_tail`** — classes: `TailError`; functions: `_blocks` · `_budget` · `_codex_text` · `_is_real_user` · `_text_of` · `assert_plausible` · `bounded_tail` · `extract_turns` · `harness_of` · `pair_turns` · `project_slug` · `projects_root` · `projects_roots` · `render_full` · `render_json` · `render_markdown` · `render_recent_markdown` · `scan_stats` · `semantic_sha256` · `turn_of`
 
 ## The inherits joins out — generated
 

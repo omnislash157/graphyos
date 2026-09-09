@@ -25,7 +25,7 @@ include = ["graphy*"]
 exclude = ["tenants*", "tests*"]
 
 [tool.setuptools.package-data]
-"graphy.shell" = ["README.md", "claude/*", "hooks/*"]
+"graphy.shell" = ["README.md", "claude/*", "codex/*", "cursor/*", "hooks/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

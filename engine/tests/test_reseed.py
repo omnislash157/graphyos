@@ -113,3 +113,34 @@ def test_GREEN_render_door(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert out.startswith("# RECENT CONVERSATION CONTEXT") and "--- [2] ASSISTANT" in out
+
+
+# graphyos #67 — the hooks take a Codex rollout and a Cursor payload; inject answers in JSON on request.
+
+def test_GREEN_capture_reads_a_codex_rollout_and_checks_its_own_id(tmp_path):
+    from tests.test_session_tail import _codex_rollout
+    rollout = _codex_rollout(tmp_path)
+    rec = tmp_path / "recovery"
+    info = reseed.do_capture({"session_id": "01a0-codex", "transcript_path": str(rollout), "cwd": str(tmp_path),
+                              "hook_event_name": "SessionEnd"}, rec)
+    assert info["exchanges"] == 2 and (rec / reseed.TAIL_NAME).is_file()
+    with pytest.raises(st.TailError, match="session mismatch"):
+        reseed.do_capture({"session_id": "someone-else", "transcript_path": str(rollout)}, rec)
+
+
+def test_GREEN_capture_takes_a_cursor_conversation_id(tmp_path):
+    rec = tmp_path / "recovery"
+    info = reseed.do_capture({"conversation_id": "fx-session-0001", "transcript_path": str(FIX),
+                              "hook_event_name": "sessionEnd", "reason": "completed"}, rec)
+    assert info["exchanges"] == 2
+    assert "resolved_by: sessionEnd:completed" in (rec / reseed.TAIL_NAME).read_text()
+
+
+def test_GREEN_inject_json_is_the_cursor_shape(tmp_path, capsys, monkeypatch):
+    rec = tmp_path / "recovery"
+    reseed.do_capture(_payload(), rec)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"session_id": "fx-session-0001", "source": "startup"})))
+    assert reseed.main(["--project-dir", str(tmp_path), "--recovery-dir", str(rec), "inject", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert set(out) == {"additional_context"} and out["additional_context"].startswith("# SESSION RE-SEED (startup)")
+    assert "--- [1] USER" in out["additional_context"] or "Read  " in out["additional_context"]

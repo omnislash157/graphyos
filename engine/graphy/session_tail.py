@@ -77,6 +77,69 @@ def _is_real_user(entry: dict, text: str) -> bool:
     return not _COMMAND_ECHO.search(text)
 
 
+# The harness's own rows in a Codex rollout: the AGENTS.md injection and the environment block arrive as
+# `role: user` and are never the person (graphyos #67).
+_CODEX_HARNESS_USER = ("# AGENTS.md instructions", "<environment_context>", "<user_instructions>")
+
+HARNESSES = ("claude", "codex", "generic")
+
+
+def harness_of(entry: dict) -> str | None:
+    """Which harness wrote this row, from its shape alone — never from a name in the payload. Claude
+    Code: `type: user|assistant` with `message`; Codex: `type: response_item|session_meta|…` with `payload`;
+    a role/content jsonl (Cursor's transcript_path, as documented outside Cursor): `role` at the top. None
+    for a row no harness shape claims."""
+    t = entry.get("type")
+    if "payload" in entry and isinstance(entry.get("payload"), dict) and isinstance(t, str):
+        return "codex"
+    if t in ("user", "assistant") or "message" in entry or t in NOISE_TYPES or t == "queue-operation":
+        return "claude"
+    if entry.get("role") in ("user", "assistant") and "content" in entry:
+        return "generic"
+    return None
+
+
+def _codex_text(payload: dict) -> str:
+    parts = [b.get("text", "") for b in payload.get("content") or []
+             if isinstance(b, dict) and b.get("type") in ("input_text", "output_text", "text")]
+    return "\n".join(x for x in parts if x and x.strip()).strip()
+
+
+def turn_of(entry: dict) -> tuple[str, str, bool] | None:
+    """(role, text, real) for a row that is a turn in any harness's shape; None for noise. `real` is
+    whether the row is a person's prompt or the model's prose — a tool result, a harness injection or an
+    empty body is typed but not real, which is what `assert_plausible` counts."""
+    h = harness_of(entry)
+    if h == "claude":
+        etype = entry.get("type")
+        if etype in NOISE_TYPES or entry.get("isMeta") or entry.get("isSidechain"):
+            return None
+        text = _text_of(entry)
+        if etype == "user":
+            return "user", text, _is_real_user(entry, text)
+        if etype == "assistant":
+            return "assistant", text, bool(text)
+        return None
+    if h == "codex":
+        p = entry["payload"]
+        if entry.get("type") != "response_item" or p.get("type") != "message":
+            return None
+        role = p.get("role")
+        text = _SYSTEM_REMINDER.sub("", _codex_text(p)).strip()
+        if role == "user":
+            return "user", text, bool(text) and not text.startswith(_CODEX_HARNESS_USER)
+        if role == "assistant":
+            return "assistant", text, bool(text)
+        return None                                   # developer rows are the harness, never the person
+    if h == "generic":
+        blocks = _blocks({"message": {"content": entry.get("content")}})
+        if any(b.get("type") in ("tool_result", "tool_use") for b in blocks):
+            return entry["role"], "", False
+        text = _SYSTEM_REMINDER.sub("", "\n".join(b.get("text", "") for b in blocks if b.get("type") == "text")).strip()
+        return entry["role"], text, bool(text) and not _COMMAND_ECHO.search(text)
+    return None
+
+
 def extract_turns(transcript: Path) -> tuple[list[dict], int]:
     try:
         raw = transcript.read_text(encoding="utf-8", errors="replace")
@@ -108,15 +171,16 @@ def extract_turns(transcript: Path) -> tuple[list[dict], int]:
             elif op == "remove" and qtext in queued:
                 queued.remove(qtext)
             continue
-        if etype in NOISE_TYPES or entry.get("isMeta") or entry.get("isSidechain"):
+        turn = turn_of(entry)
+        if turn is None or not turn[2]:
             continue
-        text = _text_of(entry)
-        if etype == "user" and _is_real_user(entry, text):
+        role, text, _real = turn
+        if role == "user":
             if text in queued:
                 queued.remove(text)
             else:
                 turns.append({"role": "user", "text": text})
-        elif etype == "assistant" and text:
+        else:
             turns.append({"role": "assistant", "text": text})
     return turns, undecodable
 
@@ -240,17 +304,13 @@ def scan_stats(transcript: Path) -> dict:
             st["undecodable"] += 1
             continue
         st["decodable"] += 1
-        if e.get("type") in NOISE_TYPES or e.get("isMeta") or e.get("isSidechain"):
+        turn = turn_of(e)
+        if turn is None:
             continue
-        text = _text_of(e)
-        if e.get("type") == "user":
-            st["user_typed"] += 1
-            if _is_real_user(e, text):
-                st["real_user"] += 1
-        elif e.get("type") == "assistant":
-            st["assistant_typed"] += 1
-            if text:
-                st["real_assistant"] += 1
+        role, _text, real = turn
+        st[f"{role}_typed"] += 1
+        if real:
+            st[f"real_{role}"] += 1
     return st
 
 

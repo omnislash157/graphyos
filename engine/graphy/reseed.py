@@ -75,6 +75,8 @@ def _assert_exact_session(transcript: Path, session_id: str) -> None:
                     continue
                 if isinstance(row, dict):
                     cand = row.get("sessionId") or row.get("session_id")
+                    if row.get("type") == "session_meta" and isinstance(row.get("payload"), dict):
+                        cand = row["payload"].get("session_id") or row["payload"].get("id")   # a Codex rollout names itself once
                     if isinstance(cand, str) and cand:
                         observed.add(cand)
     except OSError as exc:
@@ -116,7 +118,7 @@ def _archive(archive: Path, rendered: str, meta: dict) -> Path | None:
 
 
 def do_capture(payload: dict, recovery: Path) -> dict:
-    session_id = str(payload.get("session_id") or "")
+    session_id = str(payload.get("session_id") or payload.get("conversation_id") or "")   # Cursor names the conversation
     if not session_id:
         raise st.TailError("hook payload has no session_id")
     raw = payload.get("transcript_path")
@@ -255,6 +257,8 @@ def main(argv: list[str] | None = None) -> int:
     c.set_defaults(verb="capture")
     i = sub.add_parser("inject", help="SessionStart: print the newest tail as context (stdin = hook JSON)")
     i.add_argument("--inline-chars", type=int, default=DEFAULT_INLINE_CHARS)
+    i.add_argument("--json", action="store_true",
+                   help="print {\"additional_context\": …} — the shape a Cursor sessionStart hook returns; Claude Code and Codex take the text")
     r = sub.add_parser("render", help="render one transcript to stdout")
     r.add_argument("--transcript", required=True)
     r.add_argument("--budget-chars", type=int, default=None, help="bounded edge instead of the full record")
@@ -291,10 +295,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        sys.stdout.write(do_inject(payload, recovery, project_dir, inline_chars=args.inline_chars))
+        text = do_inject(payload, recovery, project_dir, inline_chars=args.inline_chars)
     except Exception as exc:  # fail-open
         _diag(recovery, f"inject FAILED: {exc}")
-        print(f"# SESSION RE-SEED FAILED — {exc}\nRe-orient from the board and git before trusting any memory.")
+        text = f"# SESSION RE-SEED FAILED — {exc}\nRe-orient from the board and git before trusting any memory.\n"
+    if getattr(args, "json", False):
+        sys.stdout.write(json.dumps({"additional_context": text}) + "\n")   # a Cursor sessionStart hook answers in JSON
+    else:
+        sys.stdout.write(text)
     return 0
 
 
