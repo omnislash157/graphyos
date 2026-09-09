@@ -579,6 +579,8 @@ def test_RED_store_under_the_blob_only_schema_refuses_naming_recompile(tmp_path)
         fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="store-test", db_path=db)
 
 
+
+@pytest.mark.durable
 def test_GREEN_the_tmp_store_syncs_once_before_the_rename(tmp_path, monkeypatch):
     """The tmp file pays no durability while it fills — the two pragmas run on its connection before
     the schema — and the finished file is fsynced once, then renamed: what lands under the store's
@@ -603,6 +605,8 @@ def test_GREEN_the_tmp_store_syncs_once_before_the_rename(tmp_path, monkeypatch)
         events.append(("connect", str(path)))
         return _Spy(real_connect(path, *a, **k))
 
+    import conftest
+    assert os.fsync is not conftest.NO_FSYNC, "the durable mark is load-bearing: this test gets the real fsync"
     real_fsync, real_replace = os.fsync, os.replace
     monkeypatch.setattr(fs.sqlite3, "connect", connect)
     monkeypatch.setattr(fs.os, "fsync", lambda fd: (events.append(("fsync", os.readlink(f"/proc/self/fd/{fd}"))), real_fsync(fd)))

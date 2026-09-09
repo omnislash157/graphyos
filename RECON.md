@@ -4851,3 +4851,39 @@ python3 measure.py diff recon.before61.json recon.json | tail -1
 | blast radius, before the edit | `blast container._write_parquet --depth 2`: `emit` · `emit_all` · `traversal.store_walk` and their tests — none touched: the engine's bytes are unchanged; the edit is the instrument and one test module |
 | the constraints | `BURDEN OK` (`burden.json` unchanged; the wheel 299,820 → 299,851 B is #60's last commit, `cli.py`'s import move, landing in this issue's before/after — neither the test module nor `measure.py` ships in the wheel); `CENSUS OK`; `MEASURE DIFF OK`; the gate `GRAPHY_STANDALONE_OK`; `container.py`'s bytes unchanged |
 | the review, `/code-review medium` | eight findings, every one fixed: the artifact rule judged inside the top three and fell through to a verdict on an all-artifact lane (the boundary is now named from the source, the judgement runs over the whole profile, nothing left is `null` and `unjudged`); self-over-cumulative is true of any thread-pool lane, hiding honest frames (the rule is the native boundary; the clock artifact is a label only); a boundary frame's caller inflated the same way (`emit` calls `duckdb.connect` itself and is in the set); the fsync finding kept as prose (graphyos #62); the wheel's 31 bytes attributed to a docstring not in the wheel (cli.py, #60's last commit); "~0.95 s apiece, the three slowest" was the profiler's number (0.35 s unprofiled, third to fifth); `measure.py`'s docstring still defining the old rule (rewritten); dead imports and a hand-copied threshold in the test (gone) |
+
+## 97 · THE FLOOR STOPS PAYING DURABILITY FOR STORES IT THROWS AWAY — 107 fsyncs, 390 ms of a 10 s floor by the wall clock (the 7.3 s was one busy disk under the profiler); a no-op in the floor's conftest, the engine untouched, the durability test marked `durable` and proving the real call (2026-09-08 · graphyos issue 62)
+
+**The number, two sources.** The receipt's profiled floor after #61 read `posix.fsync 7.34 s` of self time.
+A wall-clock log of every `os.fsync` in the floor (`engine/tests/fsync_log.py`, a pytest plugin wrapping it,
+by caller and test): **107 calls, 390 ms**, the largest 13 ms — 96 from `federated_store._sync_then_replace` (346 ms: `compile_store`'s
+one sync of the finished store before the rename, RECON §59), 10 from `reseed._atomic_write` (41 ms), 1
+from the durability test's own spy. The same log under the receipt's profiler on the next run: 834 ms,
+one call of 406 ms — the disk's answer, different every run, 7.3 s once. The issue's own third candidate
+set a refusal at 200 ms; the wall clock says 390, so the cheapest form landed: no engine door, no default
+moved.
+
+**The change.** `engine/tests/conftest.py`, the floor's one convention: an autouse fixture makes `os.fsync`
+a counted no-op for every test — a store built under `tmp_path` is thrown away — except a test marked
+`durable`, which gets the real call. `test_GREEN_the_tmp_store_syncs_once_before_the_rename` carries the
+mark, asserts it got the real function (the review's point: the ordering spy alone passed under the
+no-op — the mark was not load-bearing until the test checked `os.fsync is not conftest.NO_FSYNC`, red
+without the mark, green with it), and proves the sync lands before the rename. A future engine fsync
+written without the mark is a no-op in the floor; the convention says so in conftest's docstring and the
+log plugin shows what reached the kernel. The engine's bytes are unchanged; `graphy build` on a tenant
+syncs as it did. The wall log after: 1 real fsync left (the durable test's), 4 ms.
+
+```bash
+cd engine && rm -f /tmp/fs.log && FS_LOG=/tmp/fs.log ../.venv/bin/python -m pytest -q -p tests.fsync_log -p no:cacheprovider | tail -1 && python3 -c "import json; rows=[json.loads(l) for l in open('/tmp/fs.log')]; print(len(rows), 'fsync', round(sum(r['ms'] for r in rows)), 'ms')"
+cd engine && git stash -q && rm -f /tmp/fs0.log && FS_LOG=/tmp/fs0.log ../.venv/bin/python -m pytest -q -p tests.fsync_log -p no:cacheprovider | tail -1; git stash pop -q      # the before: the plugin is untracked there — copy it beside first
+cd engine && for i in 1 2 3; do /usr/bin/time -f 'floor %e s' ../.venv/bin/python -m pytest -q -p no:cacheprovider 2>&1 | grep floor; done
+python3 measure.py diff recon.before62.json recon.json | tail -1
+```
+
+| check | result |
+|---|---|
+| the wall clock | before: 107 `os.fsync` · 390 ms (96 `_sync_then_replace` 346 ms · 10 `reseed._atomic_write` 41 ms · 1 spy); after: 1 · 4 ms |
+| the floor | three runs each: before 9.76 · 11.31 · 9.90 s (§96's tree), after 9.52 · 10.16 · 10.52 s — a third of a second inside a ±1 s instrument; the receipt's floor 10.3 → 9.4 s; 546 passed, 3 skipped, the durable test green with the real fsync and red without its mark |
+| blast radius, before the edit | `blast federated_store._sync_then_replace --depth 2`: `compile_store` · `cli._cmd_build` · `federated_store.main`, 9 tests — none touched: the edit is one conftest and one marker |
+| the constraints | `BURDEN OK` (`burden.json` unchanged, the wheel 299,851 B unchanged); `CENSUS OK`; `MEASURE DIFF OK: 38 number(s) moved, none the wrong way past tolerance` (`floor.seconds 10.3 → 9.4 better`; a first run read the express tenant +0.9 s once — alone, `better`); the gate `GRAPHY_STANDALONE_OK`; `federated_store.py`'s bytes unchanged |
+| the review, `/code-review medium` | four findings, every one fixed: the re-derive command named a plugin that lived in a scratch directory (`engine/tests/fsync_log.py` is tracked, the command runs from the checkout); the `durable` mark was not load-bearing — the ordering spy passed under the no-op (the test asserts the real function; red without the mark); an unfilled template token in this table (this row); the process-wide no-op makes a future unmarked fsync test vacuous (accepted by name: the convention is in conftest's docstring, the no-op counts its calls, and the log plugin shows what reached the kernel — a per-module patch needs an alias the engine does not carry) |
