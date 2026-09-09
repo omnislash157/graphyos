@@ -19,7 +19,7 @@ from pathlib import Path
 from graphy import sugiyama as S
 from graphy.pillars import RELATIONS, _module_of
 
-__all__ = ["DrawError", "Picture", "units", "pillars", "arm", "neighbourhood", "render", "atlas", "RECEIPT"]
+__all__ = ["DrawError", "Picture", "units", "pillars", "arm", "neighbourhood", "render", "atlas", "RECEIPT", "emit_checked"]
 
 RECEIPT = "atlas.json"
 
@@ -205,6 +205,16 @@ def render(pic: Picture, *, emit: str = "ascii", lr: bool = False, color: bool =
     if emit == "json":
         return json.dumps(S.layout_json(lo, graph_id=t, adapter="graphy.draw", orient=orient), indent=1)
     return S.render(lo, color=color, title=t, orient=orient)
+
+
+def emit_checked(pic: Picture, path: str | Path, *, emit: str = "svg", lr: bool = True) -> list[str]:
+    """Write one picture and return ``check_artifact`` reasons (empty is green). ASCII is not a page."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(render(pic, emit=emit, lr=lr, interactive=(emit == "html")), encoding="utf-8")
+    if emit in ("html", "svg"):
+        return S.check_artifact(p)
+    return []
 
 
 def atlas(store, corpus: str, cut, out_dir: str | Path, *, lr: bool = True, min_weight: int = 1) -> dict:

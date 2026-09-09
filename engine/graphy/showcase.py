@@ -123,7 +123,13 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
          f'  <pre class="ascii">{_esc(ascii_p)}</pre>',
          "  <table><tr><th>arm</th><th>crown</th><th>units</th><th>the evidence</th></tr>"]
     h += [f"  <tr><td><b>{_esc(a)}</b></td><td class=\"mono\">{_esc(c)}</td><td>{n}</td><td>{_esc(e)}</td></tr>" for a, c, n, e in arms_rows]
-    h += ["  </table>",
+    hub = home / "GRAPH.md"
+    if hub.is_file():
+        text += ["", f"THE HUB: {hub} — open one arm, blast its crown, do not dump every arm into context"]
+    h += ["  </table>"]
+    if hub.is_file():
+        h += [f'  <h2>The hub</h2><p class="lede">Compiled arms live at <code>{_esc(str(hub))}</code>. Open one arm; blast its crown.</p>']
+    h += [
           f'  <h2>The ring</h2><p class="lede">{len(minted)} package(s) minted beside {_esc(package)}: <span class="mono">{_esc(", ".join(minted) or "none")}</span>. '
           f'Not carried: <span class="mono">{_esc(", ".join(sorted(unresolved)) or "nothing — the ring closed")}</span>.</p>',
           '  <h2>Add your model</h2><p class="lede">Paste this into <code>.mcp.json</code> (Claude Code) or your client\'s MCP settings. Any model; the walk is graphy\'s.</p>',

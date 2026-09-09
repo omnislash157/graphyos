@@ -38,3 +38,4 @@ reader lands in. `graphy pillars --against partition.json` prints every unit wit
 | weld a literal the shards' own names cannot bind | `$T/aliases.json` — an exact literal on token boundaries → one code node id, read by the rebuild into `history_graph` as `mentions` tagged `via: alias`; a target that is not a node refuses at mint, a literal the shards' own names already bind refuses as redundant |
 | draw it | `python3 -m graphy draw --tenant $T/tenant.json --tenant-id graphy --corpus graphy --pillars --partition $T/partition.json --lr` — the atlas lands at `$T/substrate/atlas/` |
 | the arms the walk proposes | `python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus graphy --against $T/partition.json` |
+| the compiled hub | `python3 -m graphy harness --repo "$ROOT" --tenant $T/tenant.json --tenant-id graphy --corpus graphy` — GRAPH.md, drawings, walk receipts; a human CLAUDE.md is left alone |

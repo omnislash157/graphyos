@@ -514,6 +514,49 @@ def _cmd_showcase(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_harness(args: argparse.Namespace) -> int:
+    from graphy import federated_store as fstore
+    from graphy import harness as harness_lane
+    from graphy import arms as arms_lane
+    from graphy import draw as draw_lane
+    from graphy import fanout
+    from graphy import pillars as pillars_lane
+    if args.repo and (args.tenant or args.tenant_id) and not (args.tenant and args.tenant_id):
+        print("HARNESS REFUSED: --tenant and --tenant-id travel together, or omit both and pass --repo "
+              "of an eaten checkout", file=sys.stderr)
+        return 2
+    repo = args.repo
+    if not repo:
+        print("HARNESS REFUSED: --repo is required — the checkout the pointers land in, never the cwd",
+              file=sys.stderr)
+        return 2
+    if not args.tenant or not args.tenant_id:
+        try:
+            desc, tenant_id = repo_tenant(repo)
+        except TenantError as exc:
+            print(f"HARNESS REFUSED: {exc} — pass --tenant and --tenant-id, or eat the repo first",
+                  file=sys.stderr)
+            return 2
+        args.tenant, args.tenant_id = str(desc), tenant_id
+    try:
+        tenant = _load_tenant(args.tenant)
+    except TenantError as exc:
+        print(f"HARNESS REFUSED: {exc}", file=sys.stderr)
+        return 2
+    try:
+        receipt = harness_lane.run(
+            repo=repo, tenant=tenant, tenant_id=args.tenant_id, corpus=args.corpus,
+            descriptor=args.tenant, roster=_roster(tenant), on_stale=args.on_stale, log=print)
+    except harness_lane.HarnessError as exc:
+        print(_flatten(f"HARNESS REFUSED: {exc}"), file=sys.stderr)
+        return 2
+    except (arms_lane.ArmsError, draw_lane.DrawError, fanout.FanoutError, pillars_lane.PillarsError,
+            fstore.StoreError, OSError) as exc:
+        print(_flatten(f"HARNESS REFUSED: {exc}"), file=sys.stderr)
+        return 2
+    return 0 if receipt else 1
+
+
 def _cmd_door(args: argparse.Namespace) -> int:
     from graphy import federated_store as fstore
     from graphy import doors
@@ -1576,7 +1619,17 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     clause = smash_lane.unreadable_phrase(unreadable)
     print(f"EAT OK: {package} + {len(deps)} ring shard(s) -> {home}  "
           f"({parsed} of {files} files parsed{'; ' + clause if clause else ''}, {time.perf_counter() - t0:.1f}s)")
-    print(_next_steps(desc, package, seed, target, home))
+    print(_next_steps(desc, package, seed, target, home, repo=repo))
+    try:
+        hrc = main(["harness", "--repo", str(repo), "--tenant", str(desc),
+                    "--tenant-id", package, "--corpus", package])
+    except Exception as exc:  # the store stands; the hub is a compile step on top of it
+        print(f"EAT: harness raised {type(exc).__name__}: {exc} — the store stands; "
+              f"rerun `graphy harness --repo {repo}`", file=sys.stderr)
+        hrc = 2
+    if hrc != 0:
+        print(f"EAT: harness exited {hrc} — the store stands; rerun `graphy harness --repo {repo}`",
+              file=sys.stderr)
     return 0
 
 
@@ -1601,13 +1654,15 @@ def _graphy_command() -> list[str]:
     return [exe] if exe else [sys.executable, "-m", "graphy"]
 
 
-def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path) -> str:
+def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
+                repo: Path | None = None) -> str:
     """What a stranger does next, printed once at the end of eat: the MCP block for the client
     they already use, the drawing, three questions. Any model; the walk is graphy's."""
     cmd = _graphy_command()
     mcp = json.dumps({"mcpServers": {"graphy": {"command": cmd[0], "args": cmd[1:] + mcp_args(desc, package)}}}, indent=2)
     g = " ".join(cmd)
     tenant = f"--tenant {desc} --tenant-id {package}"
+    repo_flag = str(repo) if repo is not None else str(home.parent)
     return "\n".join([
         "",
         "  ADD YOUR MODEL — paste this into .mcp.json (Claude Code) or your client's MCP settings; the model is yours, the walk is graphy's:",
@@ -1615,6 +1670,7 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path) ->
         "  or, in Claude Code, the plugin — one command, no pointer to write:  claude plugin install graphy@omnislash157/graphyos",
         "",
         "  SEE IT",
+        f"    {g} harness --repo {repo_flag} {tenant} --corpus {package}   # the hub: GRAPH.md, arms, drawings, walk receipts",
         f"    {g} pillars {tenant} --write {home / 'partition.json'}        # the arms the walk proposes",
         f"    {g} draw {tenant} --pillars --partition {home / 'partition.json'} --lr",
         f"    {g} draw {tenant} --corpus {package} --lr --min-weight 2 --emit html --interactive -o {home / 'map.html'}",
@@ -1719,7 +1775,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     "The exit code is the contract: 0 healthy, 1 an audit verdict "
                     "that cannot prove health, 2 the command never ran.",
     )
-    sub = parser.add_subparsers(dest="verb", metavar="{eat,init,smash,push,pull,index,converge,build,container,estate,walk,bridge,arms,farm,draw,showcase,descend,blast,explain,pillars,mcp,traversals,shell,check,fanout}")
+    sub = parser.add_subparsers(dest="verb", metavar="{eat,init,smash,push,pull,index,converge,build,container,estate,walk,bridge,arms,farm,draw,showcase,harness,descend,blast,explain,pillars,mcp,traversals,shell,check,fanout}")
 
     p_eat = sub.add_parser(
         "eat", help="the bolt-on: mint a repo's package and its import ring into <repo>/.graphy, "
@@ -1941,6 +1997,18 @@ def _build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("--no-provision", action="store_true",
                        help="eat with --no-provision: nothing of the repo's runs, the ring is empty")
     p_show.set_defaults(handler=_cmd_showcase)
+
+    p_harness = sub.add_parser(
+        "harness", help="compile the agent's hub from an eaten store: partition, arms, drawings, "
+                        "first walk, GRAPH.md, and thin pointers into --repo")
+    p_harness.add_argument("--repo", default=None,
+                           help="the checkout the pointers (CLAUDE.md / AGENTS.md) land in; also names "
+                                "the eaten tenant at <repo>/.graphy when --tenant is omitted")
+    p_harness.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
+    p_harness.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
+    p_harness.add_argument("--corpus", default=None, help="which corpus to cut (required when the tenant holds more than one)")
+    p_harness.add_argument("--on-stale", default="refuse", help="refuse (default) or warn when the store is stale")
+    p_harness.set_defaults(handler=_cmd_harness)
 
     p_trav = sub.add_parser(
         "traversals", help="the traversal store: list the stored walks, or --replay past generations against the live store")

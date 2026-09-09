@@ -33,6 +33,7 @@ graphy mcp      --tenant <descriptor> --tenant-id <name>              # the five
 graphy shell install --repo <abs>       # the hooks and the walk-before-edit gate, into an eaten repo — see graphy/shell/README.md
 graphy check    --tenant <descriptor> --tenant-id <name>                 # read-only audit: exit 0 healthy, 1 a verdict, 2 never ran
 graphy fanout   --graph-dir <shard> --out <dir>                          # the fan-out, with a receipt
+graphy harness  --repo <abs> [--tenant <descriptor> --tenant-id <name>] [--corpus <pkg>]  # the hub: GRAPH.md, arms, drawings, walk receipts
 ```
 
 ## The four pillars

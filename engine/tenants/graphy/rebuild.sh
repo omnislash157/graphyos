@@ -74,6 +74,7 @@ PY
 "$PY" -m graphy fanout --graph-dir "$SUB/graphy_graph" --out "$SUB/fanout" --partition "$HERE/partition.json"
 "$PY" -m graphy fanout --verify --out "$SUB/fanout"
 "$PY" -m graphy arms --tenant "$DESC" --tenant-id graphy --corpus graphy --partition "$HERE/partition.json" --dir "$HERE/arms" --verify
+"$PY" -m graphy harness --repo "$ROOT" --tenant "$DESC" --tenant-id graphy --corpus graphy
 "$PY" -m graphy draw --tenant "$DESC" --tenant-id graphy --corpus graphy --partition "$HERE/partition.json" --atlas "$SUB/atlas" --lr --min-weight 2
 # The README's picture: the pillars as one standalone svg, tracked at docs/pillars.svg — the walk's drawing,
 # never drawn by hand; standalone_check.sh re-renders it from the store and refuses a byte of drift.

@@ -9,6 +9,10 @@ it when no file exists and never touching a byte outside the markers. ``verify``
 the live store and names every arm whose region differs — the walk moved, or a hand edited
 inside the markers — so the drift is named, never absorbed. Byte-identical, or the receipt names
 the drift.
+
+A second marked region (``graphy:arm-draw``) holds the compact ASCII drawing; the harness writes
+it. A scaffold block (``graphy:scaffold``) is created once and never rewritten. A one-line last
+walk is stamped into the generated walk region when the store can blast the crown.
 """
 from __future__ import annotations
 
@@ -23,13 +27,18 @@ from graphy.fanout import Cut
 from graphy.pillars import _module_of
 
 __all__ = ["ArmsError", "Region", "Verdict", "render_region", "render_all", "generate", "verify",
-           "read_region"]
+           "read_region", "scaffold_block", "ensure_scaffold", "write_draw_band", "read_draw_band",
+           "has_scaffold"]
 
 JOIN_RELATIONS = frozenset({"inherits"})
 FANIN_RELATIONS = frozenset({"calls", "inherits", "decorates"})
 _OPEN = re.compile(r"<!-- graphy:arm (?P<name>[A-Za-z0-9_.-]+) generated[^\n]*\n"
                    r"\s*store=(?P<store>\S+) cut=(?P<cut>\S+) content=(?P<content>\S+) -->\n")
 _CLOSE_FMT = "<!-- /graphy:arm {name} -->"
+_DRAW_OPEN = re.compile(r"<!-- graphy:arm-draw (?P<name>[A-Za-z0-9_.-]+)[^\n]*-->\n")
+_DRAW_CLOSE_FMT = "<!-- /graphy:arm-draw {name} -->"
+_SCAFFOLD_OPEN = re.compile(r"<!-- graphy:scaffold (?P<name>[A-Za-z0-9_.-]+)[^\n]*-->")
+_SCAFFOLD_CLOSE_FMT = "<!-- /graphy:scaffold {name} -->"
 
 
 class ArmsError(RuntimeError):
@@ -127,8 +136,30 @@ def _joins_and_crowns(store, corpus: str, group_of: dict, records: dict) -> tupl
     return joins, crowns
 
 
+def _stamp_last_walks(store, crowns: dict[str, str], names) -> dict[str, dict]:
+    """One last-walk stamp per arm. A store without neighbours (the arms floor's mock)
+    stamps nothing, so the region stays the walk's inventory."""
+    if not hasattr(store, "neighbours"):
+        return {}
+    from graphy.doors import DoorError, blast
+    gen = store.generation()
+    out: dict[str, dict] = {}
+    for name in names:
+        crown = crowns.get(name)
+        dependents = 0
+        if crown:
+            try:
+                b = blast(store, crown, max_depth=4)
+                dependents = max(0, len(b.reached) - 1)
+            except (DoorError, AttributeError, TypeError, KeyError):
+                pass
+        out[name] = {"store": gen, "crown": crown or "—", "dependents": dependents}
+    return out
+
+
 def render_region(name: str, corpus: str, cut: Cut, inventory: dict, joins: list, crown: str | None,
-                  group_of: dict, *, tenant_dir: str, tenant_id: str) -> str:
+                  group_of: dict, *, tenant_dir: str, tenant_id: str,
+                  last_walk: dict | None = None) -> str:
     lines = ["## The walk's inventory — generated", "",
              "Every symbol the partition places in this arm, by module; a class carries its method count. "
              "The prose above is judgment; this region is the walk, re-rendered from the store on every "
@@ -160,6 +191,11 @@ def render_region(name: str, corpus: str, cut: Cut, inventory: dict, joins: list
     lines += [f"python3 -m graphy pillars --tenant $T/tenant.json --tenant-id {tenant_id} --corpus {corpus} --against $T/partition.json",
               f"python3 -m graphy arms --tenant $T/tenant.json --tenant-id {tenant_id} --corpus {corpus} --partition $T/partition.json --dir $T/arms --verify",
               "```", ""]
+    if last_walk:
+        lines.append(
+            f"Last walk: crown=`{last_walk['crown']}` "
+            f"dependents={last_walk['dependents']} → arms/{name}.walk.txt")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -168,12 +204,14 @@ def render_all(store, corpus: str, cut: Cut, *, tenant_dir: str, tenant_id: str)
         raise ArmsError("arms need a partition cut — a depth cut names no arm")
     inventory, group_of, records = _inventory(store, corpus, cut)
     joins, crowns = _joins_and_crowns(store, corpus, group_of, records)
+    last_walks = _stamp_last_walks(store, crowns, cut.groups)
     gen = store.generation()
     cut_sha = f"sha256:{cut.sha256}" if cut.sha256 else "unpinned"
     out = {}
     for name in cut.groups:
         body = render_region(name, corpus, cut, inventory.get(name, {}), joins.get(name, []),
-                             crowns.get(name), group_of, tenant_dir=tenant_dir, tenant_id=tenant_id)
+                             crowns.get(name), group_of, tenant_dir=tenant_dir, tenant_id=tenant_id,
+                             last_walk=last_walks.get(name))
         out[name] = Region(name=name, body=body, store=gen, cut=cut_sha)
     return out
 
@@ -200,9 +238,86 @@ def _stub(name: str) -> str:
             f"> Walk-derived; the region below is the walk's, the prose is the operator's.\n\n")
 
 
-def generate(regions: dict[str, Region], arms_dir: str | Path) -> list[tuple[str, str]]:
+def scaffold_block(name: str, seed: dict | None = None) -> str:
+    """The operator/agent judgment block. Created once; harness never rewrites it."""
+    seed = seed or {}
+    crown = seed.get("crown", "")
+    blast = seed.get("blast", "")
+    return (f"## Judgment — operator / agent\n"
+            f"<!-- graphy:scaffold {name} — harness will not touch this block once it exists -->\n"
+            f"- What this arm is for (one sentence):\n"
+            f"- Do not touch without blasting: {crown}\n"
+            f"- Walk path that usually matters: {blast}\n"
+            f"<!-- /graphy:scaffold {name} -->\n")
+
+
+def has_scaffold(text: str, name: str) -> bool:
+    return bool(re.search(rf"<!-- graphy:scaffold {re.escape(name)}\b", text))
+
+
+def ensure_scaffold(path: str | Path, name: str, seed: dict | None = None) -> str:
+    """Append a scaffold if the file has none. Existing bytes are never rewritten."""
+    p = Path(path)
+    if not p.is_file():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_stub(name) + scaffold_block(name, seed), encoding="utf-8")
+        return "created"
+    text = p.read_text(encoding="utf-8")
+    if has_scaffold(text, name):
+        return "unchanged"
+    p.write_text(text.rstrip("\n") + "\n\n" + scaffold_block(name, seed), encoding="utf-8")
+    return "appended"
+
+
+def read_draw_band(text: str, name: str) -> tuple[str | None, tuple[int, int] | None]:
+    m = _DRAW_OPEN.search(text)
+    while m and m.group("name") != name:
+        m = _DRAW_OPEN.search(text, m.end())
+    if not m:
+        return None, None
+    close = _DRAW_CLOSE_FMT.format(name=name)
+    end = text.find(close, m.end())
+    if end < 0:
+        raise ArmsError(f"arm {name}: the draw band opens but never closes — restore the `{close}` marker")
+    body = text[m.end():end]
+    span = (m.start(), end + len(close) + (1 if text[end + len(close):end + len(close) + 1] == "\n" else 0))
+    return body, span
+
+
+def render_draw_band(name: str, ascii_text: str) -> str:
+    return (f"<!-- graphy:arm-draw {name} — generated; `graphy harness` regenerates it -->\n"
+            f"## Drawing — generated\n\n"
+            f"```\n{ascii_text.rstrip()}\n```\n\n"
+            f"[`drawings/{name}.svg`](../drawings/{name}.svg)\n"
+            f"{_DRAW_CLOSE_FMT.format(name=name)}\n")
+
+
+def write_draw_band(path: str | Path, name: str, ascii_text: str) -> str:
+    """Replace the draw band in place, or prepend it when the file has none."""
+    p = Path(path)
+    new = render_draw_band(name, ascii_text)
+    if not p.is_file():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(new + "\n", encoding="utf-8")
+        return "created"
+    text = p.read_text(encoding="utf-8")
+    _old, span = read_draw_band(text, name)
+    if span is not None:
+        out = text[:span[0]] + new + text[span[1]:]
+        what = "unchanged" if out == text else "replaced"
+    else:
+        out = new + "\n" + text.lstrip("\n")
+        what = "prepended"
+    if what != "unchanged":
+        p.write_text(out, encoding="utf-8")
+    return what
+
+
+def generate(regions: dict[str, Region], arms_dir: str | Path,
+             seeds: dict[str, dict] | None = None) -> list[tuple[str, str]]:
     """Write every region into <arms_dir>/<NAME>.md — replaced in place, appended when the file
-    has none, a stub created when the file is absent. Returns (name, what) per arm."""
+    has none, a stub created when the file is absent. A missing file also gets the empty scaffold
+    (seeded with store facts when ``seeds`` names the arm). Returns (name, what) per arm."""
     d = Path(arms_dir)
     d.mkdir(parents=True, exist_ok=True)
     done = []
@@ -219,7 +334,8 @@ def generate(regions: dict[str, Region], arms_dir: str | Path) -> list[tuple[str
                 out = text.rstrip("\n") + "\n\n" + new
                 what = "appended"
         else:
-            out = _stub(name) + new
+            seed = (seeds or {}).get(name)
+            out = _stub(name) + new + "\n" + scaffold_block(name, seed)
             what = "created"
         if what != "unchanged":
             p.write_text(out, encoding="utf-8")
