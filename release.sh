@@ -4,6 +4,8 @@
 #                                interpreter, run `twine check` on both, regenerate CHANGELOG.md
 #   bash release.sh --changelog  regenerate CHANGELOG.md from RECON.md's section titles only
 #   bash release.sh --check      refuse when CHANGELOG.md is not byte-identical to what RECON derives
+#   bash release.sh --published  refuse when PyPI already carries this version with different content
+#                                (off-box: it reads pypi.org. Never in the gate, which is offline.)
 # Publishing is the operator's one command, printed at the end and never run here.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,17 +39,24 @@ versions() {
 import json, sys
 from pathlib import Path
 root, version = Path(sys.argv[1]), sys.argv[2]
+# The package's own __version__ is the fifth copy and was the unguarded one: the 0.2.4 cut found
+# it still reading 0.2.3 because nothing here looked at it, which is the same class of defect as
+# graphyos #79 one level down — a version is a promise and five literals cannot all be trusted.
+import re as _re
+init = (root / "engine" / "graphy" / "__init__.py").read_text(encoding="utf-8")
+init_version = _re.search(r'^__version__ = "(.+)"$', init, _re.M).group(1)
 plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
 server = json.loads((root / "server.json").read_text(encoding="utf-8"))
 market = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
 (entry,) = market["plugins"]
-found = {".claude-plugin/plugin.json": plugin["version"], "server.json": server["version"],
+found = {"engine/graphy/__init__.py": init_version,
+         ".claude-plugin/plugin.json": plugin["version"], "server.json": server["version"],
          "server.json packages[0]": server["packages"][0]["version"],
          ".claude-plugin/marketplace.json plugins[0]": entry["version"], ".claude-plugin/marketplace.json metadata": market["metadata"]["version"]}
 drift = {k: v for k, v in found.items() if v != version}
 if drift:
     sys.exit(f"VERSION DRIFT: pyproject.toml says {version}; " + "; ".join(f"{k} says {v}" for k, v in drift.items()))
-print(f"versions           OK  ({version} in pyproject.toml, .claude-plugin/plugin.json, marketplace.json, server.json)")
+print(f"versions           OK  ({version} in pyproject.toml, graphy/__init__.py, .claude-plugin/plugin.json, marketplace.json, server.json)")
 # The registry's two doors (graphyos #54): the ownership proof lives in the README the wheel ships —
 # the one pyproject names, never the repo's — as `mcp-name: <server name>` followed by a boundary;
 # and the registry caps the description at 100 characters, server-side only, so it is measured here.
@@ -63,6 +72,72 @@ print(f"registry           OK  (mcp-name in engine/{readme_name}, description {l
 PYV
 }
 
+# The published wheel IS the product; the local one is only a candidate. graphyos 0.2.3 went to PyPI
+# on 09-08 and the engine changed on 09-09 without the version moving, so `pip install graphyos`
+# handed a stranger an engine with no history.py and no eat_history while the README led with the
+# lane that work implements — 50 of 89 RECORD rows differed and nothing on this box could say so
+# (graphyos #79). RECORD is the comparison because it hashes CONTENT: a wheel is a zip and its bytes
+# carry timestamps, so two honest builds of one tree differ by sha256 and agree here.
+published() {
+    "$PY" - "$HERE" "$VERSION" <<'PYP'
+import hashlib, io, json, sys, urllib.error, urllib.request, zipfile
+from pathlib import Path
+root, version = Path(sys.argv[1]), sys.argv[2]
+
+def record_of(blob: bytes) -> dict:
+    with zipfile.ZipFile(io.BytesIO(blob)) as z:
+        name = next((n for n in z.namelist() if n.endswith(".dist-info/RECORD")), None)
+        if name is None:
+            raise SystemExit("PUBLISHED REFUSED: a wheel with no RECORD — nothing can be compared")
+        rows = {}
+        for line in z.read(name).decode("utf-8").splitlines():
+            path, _, rest = line.partition(",")
+            if path and not path.endswith("/RECORD"):
+                rows[path] = rest.split(",")[0]
+        return rows
+
+built = sorted(root.glob(f"dist/graphyos-{version}-*.whl"))
+if not built:
+    raise SystemExit(f"PUBLISHED REFUSED: no built wheel at dist/graphyos-{version}-*.whl — build before comparing")
+if len(built) > 1:
+    raise SystemExit(f"PUBLISHED REFUSED: {len(built)} wheels for {version} in dist/ — rm -rf dist and rebuild")
+
+try:                                    # the one off-box read in this lane; a failure REFUSES, never passes
+    with urllib.request.urlopen("https://pypi.org/pypi/graphyos/json", timeout=30) as r:
+        index = json.load(r)
+except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+    raise SystemExit(f"PUBLISHED REFUSED — COULD NOT TELL: pypi.org did not answer ({exc}). This check does "
+                     f"not pass when it cannot run; retry, or cut from a box with a network.")
+
+files = [f for f in index.get("releases", {}).get(version, []) if f["filename"].endswith(".whl")]
+if not files:
+    print(f"published          OK  ({version} is not on PyPI — a fresh cut, nothing to contradict)")
+    raise SystemExit(0)
+if len(files) > 1:
+    raise SystemExit(f"PUBLISHED REFUSED: PyPI carries {len(files)} wheels for {version}; this compares one")
+url = files[0]["url"]
+try:
+    with urllib.request.urlopen(url, timeout=60) as r:
+        blob = r.read()
+except (urllib.error.URLError, TimeoutError) as exc:
+    raise SystemExit(f"PUBLISHED REFUSED — COULD NOT TELL: {url} did not answer ({exc}).")
+if hashlib.sha256(blob).hexdigest() != files[0]["digests"]["sha256"]:
+    raise SystemExit("PUBLISHED REFUSED: the wheel PyPI served does not match the digest PyPI published")
+
+theirs, ours = record_of(blob), record_of(built[0].read_bytes())
+moved = sorted(set(theirs) ^ set(ours)) + sorted(k for k in set(theirs) & set(ours) if theirs[k] != ours[k])
+if moved:
+    show = ", ".join(moved[:6]) + (f", +{len(moved) - 6} more" if len(moved) > 6 else "")
+    raise SystemExit(
+        f"PUBLISHED REFUSED: PyPI already carries graphyos {version}, and it is NOT this engine — "
+        f"{len(moved)} of {len(set(theirs) | set(ours))} RECORD rows differ ({show}). A version is a "
+        f"promise about content: bump the version in engine/pyproject.toml (and the three manifests "
+        f"`release.sh --check` names) rather than publishing a second {version}.")
+print(f"published          OK  ({version} on PyPI is byte-identical to dist/ by RECORD, "
+      f"{len(ours)} row(s))")
+PYP
+}
+
 case "${1:-}" in
     --changelog) changelog > "$HERE/CHANGELOG.md"; echo "CHANGELOG OK: $(grep -c '^- §' "$HERE/CHANGELOG.md") entries -> CHANGELOG.md"; exit 0 ;;
     --check)
@@ -70,8 +145,9 @@ case "${1:-}" in
             echo "CHANGELOG DRIFT: CHANGELOG.md differs from what RECON.md derives — bash release.sh --changelog" >&2; exit 1
         fi
         echo "changelog          OK"; versions; exit 0 ;;
+    --published) published; exit 0 ;;
     "") ;;
-    *) echo "usage: release.sh [--changelog | --check]" >&2; exit 2 ;;
+    *) echo "usage: release.sh [--changelog | --check | --published]" >&2; exit 2 ;;
 esac
 
 versions
@@ -80,6 +156,7 @@ rm -rf "$HERE/dist"
 "$PY" -m build --outdir "$HERE/dist" "$HERE/engine" > "$HERE/dist.log" 2>&1 || { tail -20 "$HERE/dist.log"; exit 1; }
 rm -f "$HERE/dist.log"
 "$PY" -m twine check "$HERE"/dist/*
+published
 changelog > "$HERE/CHANGELOG.md"
 ls -1 "$HERE/dist"
 echo "RELEASE OK: graphyos $VERSION built and checked in dist/; CHANGELOG.md regenerated"

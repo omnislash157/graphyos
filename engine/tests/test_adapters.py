@@ -264,7 +264,10 @@ def test_RED_an_unreadable_file_is_named_with_its_reason_and_a_coding_cookie_is_
     (pkg / "nul.py").write_bytes(b"def n(): pass\n\x00")
     outside = tmp_path / "outside.py"
     outside.write_text("def secret(): pass\n", encoding="utf-8")
-    os.symlink(outside, pkg / "escaped.py")
+    try:                                   # Windows grants symlinks only to a privileged or developer-mode seat
+        os.symlink(outside, pkg / "escaped.py")
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"this seat cannot create a symlink, so the escape it proves cannot be staged: {exc}")
     os.symlink(pkg / "good.py", pkg / "inside.py")            # a link that stays inside is a module of the corpus
     os.symlink(tmp_path, pkg / "up")                          # a directory link is never descended
 

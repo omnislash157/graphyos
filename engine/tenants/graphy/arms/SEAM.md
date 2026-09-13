@@ -6,7 +6,7 @@
 `tenant` is the declared identity everything refuses without; `converge` resolves text labels through scope and counts the wormholes; `federated_store` compiles and reads the sqlite store; `cross_substrate` loads and walks a set of shards; `journal` records born and died; `container` and `index_estate` are the parquet; `cartograph` runs declared build lanes and measures freshness.
 
 <!-- graphy:arm SEAM generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=7bed1ff3f501890e cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:cf6256ab6f3be4c7ed873aa90a67058be573cbe768bcefc78bf3bfdb25fe03be -->
+     store=86d8be560c7a7d25 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:0e962875283d29e678fb056502bde0d275e40203ceff563e4568bdc39527ffe5 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -37,5 +37,7 @@ python3 -m graphy blast graphy://func/graphy.federated_store.open_for --tenant $
 python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus graphy --against $T/partition.json
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```
+
+Last walk: crown=`graphy://func/graphy.federated_store.open_for` dependents=73 → arms/SEAM.walk.txt
 
 <!-- /graphy:arm SEAM -->

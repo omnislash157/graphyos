@@ -129,15 +129,19 @@ re-rendered and compared byte for byte in the gate, never drawn by hand:
 ## Install, then eat — two lines
 
 ```bash
-pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.3 — the extras are optional
+pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.4 — the extras are optional
 cd /path/to/your/repo && graphy eat .        # a repo with several packages: graphy eat . --package <name>
 graphy showcase .                            # the page: .graphy/showcase/index.html — open it in a browser
 ```
 
 The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+ on
-Linux and macOS; on Windows, through WSL — `eat` resolves a venv on either layout by `sysconfig`,
-but the hooks, `shell install` and the MCP pointer are bash, and the store lock is a named no-op
-without `fcntl`.
+Linux and macOS; **on Windows, through WSL** — native Windows is not supported, and that is
+measured rather than assumed: the floor on `windows-latest` is 33 red, and the list is a rung with
+the runner's own output on it (graphyos #88). The hooks, `shell install` and the MCP pointer are
+bash; the store lock is a named no-op without `fcntl`; a shard minted there carries `\` in its
+file fields; and the CLI cannot print its own output on a `cp1252` console. What IS proven on the
+platform, on every push, is the store lane — CI's `store-windows` job runs the `durable` mark, so
+the defect that wrote no store at all there can never come back silently (graphyos #77).
 `[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build
 says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the TypeScript
 and JavaScript producer.

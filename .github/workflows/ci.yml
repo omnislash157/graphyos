@@ -29,6 +29,30 @@ jobs:
       - name: the floor
         run: cd engine && pytest -q
 
+  # The store lane on the platform that silently could not write one. `os.fsync` is `_commit` here
+  # and refuses a descriptor not open for writing, so every `graphy build` died with EBADF and no
+  # store was ever written — green on the Linux floor for the whole outage, found by a first
+  # client's debugger (graphyos #77). This job is the `durable` mark and nothing else, ON PURPOSE:
+  # the whole floor on windows-latest is 33 red (graphyos #88 carries the measured list), and a job
+  # that is permanently red teaches a reader to ignore it. What is claimed here is exactly what is
+  # proven here — the store is written, fsynced through a writable descriptor, and renamed — and
+  # the README says the platform is otherwise unsupported rather than letting a stranger find out.
+  store-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install graphyos with the dev extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "engine[dev]"
+      - name: the package imports, no host reachable
+        run: python -c "import graphy; print(graphy.__version__)"
+      - name: the durable mark — the store survives a rename on this platform
+        run: cd engine && pytest -m durable -q
+
   gate:
     runs-on: ubuntu-latest
     steps:

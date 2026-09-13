@@ -607,9 +607,17 @@ def test_GREEN_the_tmp_store_syncs_once_before_the_rename(tmp_path, monkeypatch)
 
     import conftest
     assert os.fsync is not conftest.NO_FSYNC, "the durable mark is load-bearing: this test gets the real fsync"
-    real_fsync, real_replace = os.fsync, os.replace
+    real_fsync, real_replace, real_open = os.fsync, os.replace, os.open
+    opened: dict[int, tuple[str, int]] = {}
+
+    def spy_open(path, flags, *a, **k):
+        fd = real_open(path, flags, *a, **k)
+        opened[fd] = (str(path), flags)
+        return fd
+
     monkeypatch.setattr(fs.sqlite3, "connect", connect)
-    monkeypatch.setattr(fs.os, "fsync", lambda fd: (events.append(("fsync", os.readlink(f"/proc/self/fd/{fd}"))), real_fsync(fd)))
+    monkeypatch.setattr(fs.os, "open", spy_open)      # not /proc/self/fd: the floor runs on Windows too (graphyos #77)
+    monkeypatch.setattr(fs.os, "fsync", lambda fd: (events.append(("fsync", *opened[fd])), real_fsync(fd)))
     monkeypatch.setattr(fs.os, "replace", lambda a, b: (events.append(("replace", str(a), str(b))), real_replace(a, b)))
     dbp = _compile(tenant, tmp_path)
     tmp = next(e[1] for e in events if e[0] == "connect")
@@ -618,7 +626,30 @@ def test_GREEN_the_tmp_store_syncs_once_before_the_rename(tmp_path, monkeypatch)
     assert first_two == list(fs.TMP_STORE_PRAGMAS), first_two          # before the schema, on the tmp connection
     order = [e[:2] for e in events if e[0] in ("fsync", "replace")]
     assert order == [("fsync", tmp), ("replace", tmp)], order
+    flags = next(e[2] for e in events if e[0] == "fsync")
+    assert flags & os.O_RDWR == os.O_RDWR, f"fsync was handed a descriptor opened {flags:#o} (graphyos #77)"
     assert sqlite3.connect(dbp).execute("PRAGMA journal_mode").fetchone()[0] == "delete"   # the pragma lived on the tmp connection only
+
+
+@pytest.mark.durable
+def test_GREEN_the_finished_store_is_fsynced_through_a_writable_descriptor(tmp_path, monkeypatch):
+    """Windows' `os.fsync` is `_commit`, which refuses a handle not open for writing: the store lane
+    opened the finished tmp file O_RDONLY, so every `graphy build` on the platform died with
+    `OSError: [Errno 9] Bad file descriptor` and no store was ever written (graphyos #77, measured by
+    the first client on their production box). POSIX permits the read-only fsync, so this floor was
+    green through the whole outage — the descriptor's access mode is the only thing that names it,
+    and asserting it is the only way this stays fixed on a runner that is not Windows."""
+    import os
+    tmp, dest = tmp_path / "store.tmp", tmp_path / "store.db"
+    tmp.write_bytes(b"the finished store")
+    seen: list[int] = []
+    real_open = os.open
+    monkeypatch.setattr(fs.os, "open", lambda path, flags, *a, **k: (seen.append(flags),
+                                                                    real_open(path, flags, *a, **k))[1])
+    fs._sync_then_replace(tmp, dest)
+    assert seen, "the lane did not open the tmp file at all"
+    assert seen[0] & os.O_RDWR == os.O_RDWR, f"opened {seen[0]:#o}: Windows' _commit refuses it"
+    assert dest.read_bytes() == b"the finished store" and not tmp.exists()
 
 
 def test_GREEN_two_builds_under_two_hash_seeds_land_the_same_row_order(tmp_path):

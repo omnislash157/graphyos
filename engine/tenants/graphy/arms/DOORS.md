@@ -6,7 +6,7 @@
 `doors` answers over one store; `traversal` keeps the walks; `query` spreads activation; `bridge` walks between two tenants on a declared literal; `mcp` serves the tools on stdio. A history shard in the roster makes the archive's exchanges readers of the code: `blast` lists the ones that mention a symbol under their own owner, `explain` lists them with the docs, and `timeline` walks from a symbol into the sessions that discussed it.
 
 <!-- graphy:arm DOORS generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=7bed1ff3f501890e cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:873552fe676bfdb8a037c996e57a942d10c495c20abd09097b8f165c6cbb58ef -->
+     store=86d8be560c7a7d25 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:7d92c8899d0b20cde99ebb7e3382a108e5785b69879e396527f12a2ded644670 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -29,5 +29,7 @@ python3 -m graphy blast graphy://func/graphy.doors.resolve --tenant $T/tenant.js
 python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus graphy --against $T/partition.json
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```
+
+Last walk: crown=`graphy://func/graphy.doors.resolve` dependents=17 → arms/DOORS.walk.txt
 
 <!-- /graphy:arm DOORS -->

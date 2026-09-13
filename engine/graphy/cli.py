@@ -1775,7 +1775,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     "The exit code is the contract: 0 healthy, 1 an audit verdict "
                     "that cannot prove health, 2 the command never ran.",
     )
-    sub = parser.add_subparsers(dest="verb", metavar="{eat,init,smash,push,pull,index,converge,build,container,estate,walk,bridge,arms,farm,draw,showcase,harness,descend,blast,explain,pillars,mcp,traversals,shell,check,fanout}")
+    sub = parser.add_subparsers(dest="verb")      # the metavar is derived at the end, never typed
 
     p_eat = sub.add_parser(
         "eat", help="the bolt-on: mint a repo's package and its import ring into <repo>/.graphy, "
@@ -2126,6 +2126,12 @@ def _build_parser() -> argparse.ArgumentParser:
                                "\"rest\": NAME}; longest prefix wins, the receipt pins its sha")
     p_fanout.set_defaults(handler=_cmd_fanout)
 
+    # The usage line IS the verb list, so it is read off the registered subparsers rather than
+    # retyped. The hand-kept literal had drifted: `history` and `refresh` parsed and had their own
+    # --help, but `graphy --help` did not list them, so a stranger reading the usage line concluded
+    # the verb did not exist (the first tenant found this probing for `eat_history`). Derived, the
+    # class of defect is gone — a verb registered below cannot be missing from the line above.
+    sub.metavar = "{" + ",".join(sub.choices) + "}"
     return parser
 
 

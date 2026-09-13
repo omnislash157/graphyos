@@ -6,7 +6,7 @@
 A producer maps a parse tree onto the nine words (`adapters.python_ast`, `adapters.typescript_ast`); `ir` validates; `smash` mints a package into a shard and follows its imports into the ring; `index` pushes and pulls content-addressed shards; `refresh` follows upstream into a sibling; `farm` mints many; `provision` installs a repo's own dependencies for `eat`; `release` enforces one release per scheme.
 
 <!-- graphy:arm PRODUCE generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=7bed1ff3f501890e cut=sha256:a6e7f6dc67aab9bb6fd7793a207caee4a59936ab2d05b2d99191628da7cda284 content=sha256:130ec86e0fd4250568bb695303c318a107942c4a9a137e0ab8c552741089108f -->
+     store=86d8be560c7a7d25 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:0641b4c7e30e644f92569aa1ca41a2175c3cf8f5561fa47b6dc1bc37003c0fad -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -38,5 +38,7 @@ python3 -m graphy blast graphy://func/graphy.native_json_graph_ir.load_graph_ir 
 python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus graphy --against $T/partition.json
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```
+
+Last walk: crown=`graphy://func/graphy.native_json_graph_ir.load_graph_ir` dependents=52 → arms/PRODUCE.walk.txt
 
 <!-- /graphy:arm PRODUCE -->

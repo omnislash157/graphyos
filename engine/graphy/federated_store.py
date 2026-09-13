@@ -60,8 +60,14 @@ def _sync_then_replace(tmp: Path, dest: Path) -> None:
     """fsync the finished tmp file, then rename it over dest: what lands under the store's name is
     complete, never torn — the durability the per-statement journal bought, paid once. (The
     directory is not synced: the old compile never synced it either, and a rename lost to a crash
-    leaves the previous store whole.)"""
-    fd = os.open(tmp, os.O_RDONLY)
+    leaves the previous store whole.)
+
+    The descriptor is opened O_RDWR because Windows demands it: there `os.fsync` is `_commit`, which
+    refuses a handle not open for writing and raises `OSError: [Errno 9] Bad file descriptor` on
+    every store — the whole engine wrote no store on the platform (graphyos #77). POSIX permits
+    fsync on a read-only descriptor and so never said a word, which is why this cost a first client
+    a debugger. O_RDWR is valid on both, so there is no platform branch."""
+    fd = os.open(tmp, os.O_RDWR)
     try:
         os.fsync(fd)
     finally:

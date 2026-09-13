@@ -5141,3 +5141,96 @@ cd engine && ../.venv/bin/python -m pytest -q tests/test_session_tail.py tests/t
 | the floor | 571 passed, 3 skipped in 10.9–11.3 s (564 before: the Codex fixture, the role/content jsonl, the unclaimed shape refused, the Codex capture with its own id, the Cursor conversation id, inject --json, the wiring per harness) |
 | the constraints | `BURDEN OK` (the wheel 308,310 → 311,537 B; subprocess sites 26 → 27, `repo_toplevel`'s git); `CENSUS OK`; `SCRUB OK`; `REVIEW OK: 9 check(s)` under `--diff`; `MEASURE DIFF OK: 8 number(s) moved, none the wrong way`; the gate `GRAPHY_STANDALONE_OK` |
 | the hold | Cursor is not on this box: its reader is proven on the shape documented outside Cursor, and the README says which harness is first |
+
+## 102 · WINDOWS WRITES A STORE AGAIN — `_sync_then_replace` fsynced an `O_RDONLY` descriptor, which POSIX permits and Windows refuses, so `graphy build` raised `EBADF` and no store was ever written on the platform; one word fixes it, two tests go red on the old line on any host, and a `windows-latest` runner now guards the store lane on every push while the README stops claiming the rest (2026-09-13 · graphyos issue 77)
+
+**The number, from the first client.** They ran graphyos 0.2.3 on a Windows production box
+and every `build` failed there while the same tree succeeded on Linux. The visible symptom was
+`BUILD REFUSED: [Errno 9] Bad file descriptor` — no path, no operation, no frame — so finding it took
+a debugger around `compile_store`. The cause is four characters: `os.open(tmp, os.O_RDONLY)` before
+`os.fsync(fd)`. On Windows `os.fsync` is `_commit`, which refuses a handle not open for writing.
+POSIX permits the read-only fsync and says nothing, so this floor was green through the entire outage.
+
+**The change.** `os.O_RDWR`, valid on both hosts, no platform branch. The work is the floor, because a
+Linux runner cannot see this defect:
+`test_GREEN_the_finished_store_is_fsynced_through_a_writable_descriptor` (durable) calls the lane
+directly and asserts the access mode of the descriptor `fsync` is handed;
+`test_GREEN_the_tmp_store_syncs_once_before_the_rename` resolved its fd through `/proc/self/fd/` —
+itself Linux-only, so the single test covering this lane could never have run on the platform that was
+broken — and now resolves it through a spy on the module's own `os.open`, which is portable and carries
+the open flags, proving the order and the access mode with one spy. `ci.yml` grows `store-windows`.
+
+**What the runner then said.** The first job ran the whole floor on `windows-latest` and came back 33
+red of 583. Both durability tests passed, so the store IS written there now — but the platform is not
+supported, and a permanently red job teaches a reader to ignore CI. The job narrows to `pytest -m
+durable`, exactly the lane #77 broke; the other 33 are graphyos #88 with the runner's own output, six
+of them the product rather than the floor (the producer writes the OS separator into node `file`
+fields, so a shard minted on Windows is not the shard minted on Linux; `shell install` writes a
+`settings.json` that will not parse; `bloodhound` cannot print its heat bars to a cp1252 console;
+`showcase` reads a drive-lettered path as a malformed git url; `--profile` imports `resource`; the
+journal mints a duplicate seq under a no-op lock). The README's platform paragraph states it with the
+number and the issue — #77's second done-bullet, taken because the first is not honestly available.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -m durable -q                      # 2 passed — the mark store-windows runs
+sed -n '/^def _sync_then_replace/,/os.replace/p' engine/graphy/federated_store.py | grep 'os.open'
+sed -i 's/os.O_RDWR/os.O_RDONLY/' engine/graphy/federated_store.py && (cd engine && ../.venv/bin/python -m pytest -m durable -q); sed -i 's/os.O_RDONLY/os.O_RDWR/' engine/graphy/federated_store.py
+python3 workflows.py | grep ci.yml                                            # ci.yml: 3 job(s) · 16 step(s)
+gh run view --log-failed -R omnislash157/graphyos --job 103780129817 | grep -c '^FAILED'
+```
+
+| check | result |
+|---|---|
+| the defect, on the client's own box | `BUILD REFUSED: [Errno 9] Bad file descriptor` on every store; after the one word, `BUILD OK` and `CONTAINER OK: 9 shard(s) · 17,903 node row(s) · 114,921 edge row(s) · 5.36 MB parquet · 1.88 s` |
+| both tests against the old line | red on Linux: `assert (0 & 2) == 2` — the access mode is the only thing that names this defect off-platform |
+| the whole floor on `windows-latest`, 3.12 | 33 failed of 583; **the two durability tests passed** — the store lane is fixed on the platform, measured, not argued |
+| the job that ships | `store-windows` runs `pytest -m durable` — 2 tests, green, and the one thing claimed is the one thing proven |
+| the symlink-escape test | skips by name where symlinks are not grantable (Windows gives them to a privileged or developer-mode seat only) rather than erroring |
+| the floor | 580 passed, 3 skipped (579 before: the new durability regression) |
+| the constraints | `WORKFLOWS OK` 5 files, `ci.yml` 3 jobs · 16 steps; `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+| the hold | the release bullet of #77 is graphyos #79: the client stays on a hand-patched `site-packages` until 0.2.4 carries this |
+
+## 103 · THE PUBLISHED WHEEL IS THE PRODUCT — graphyos 0.2.3 went to PyPI on 09-08 and the engine changed on 09-09 without the version moving, so `pip install graphyos` handed a stranger an engine with no `adapters/history.py` and no `eat_history` while the README led with the lane that work implements; 0.2.4 is the cut that carries it, and `release.sh --published` compares the published wheel's RECORD against the built one so no future cut can publish a changed engine under a published version (2026-09-13 · graphyos issue 79)
+
+**The number, from the first client.** They found it and then found the worse half of it. Their install
+came from a file URL — `direct_url.json` reading `file:///…/dist/graphyos-0.2.3-py3-none-any.whl` — so
+**this tenant had never run the published wheel**, and every green they had reported was against
+`dist/`, never PyPI. Meanwhile their own `pyproject.toml` pins `graphyos[typescript]==0.2.3` with no
+local path: the next clean venv resolves that from the index, gets the historyless wheel, and their
+rebuild dies on a verb that is not there. A 10,197-commit history lane was one `pip install -r` from
+unbuildable. That moves #79 from a stranger's first impression to *the first tenant cannot rebuild
+from a clean checkout*.
+
+**Why nothing on this box could say so.** The gate is offline by law, `measure.py adoption` is the one
+off-box verb and is never part of `run`, and neither reads the artifact. `twine check` validates
+metadata, not identity. So the one fact that matters — *is what PyPI serves the engine in this tree* —
+was checked by nobody.
+
+**The change.** `release.sh --published`: read PyPI's index for the version in `pyproject.toml`; if the
+version is absent, say so and pass (a fresh cut contradicts nothing); if present, download the wheel,
+verify it against the digest PyPI published, and compare RECORD sets against the built wheel. RECORD
+because it hashes **content** — a wheel is a zip and its bytes carry timestamps, so two honest builds
+of one tree differ by sha256 and agree on RECORD; comparing symbols instead would find `eat_history`
+in `cli.py` in a wheel whose adapter is missing. It runs in the default release lane, never in the
+gate, and a PyPI that does not answer REFUSES rather than passing. The host is `pypi.org`, already on
+the burden list, and the check lives at the root: `burden.scan_hosts` reads `engine/graphy` only, so
+the engine's zero host reach is untouched.
+
+```bash
+bash release.sh --published                       # against 0.2.3 before the bump: REFUSED, 27 of 88 rows
+bash release.sh                                   # versions · build · twine · published · changelog
+python3 -c "import zipfile;print(len(zipfile.ZipFile('dist/graphyos-0.2.4-py3-none-any.whl').namelist()))"
+python3 -m venv /tmp/v && /tmp/v/bin/pip install -q dist/graphyos-0.2.4-py3-none-any.whl && /tmp/v/bin/graphy eat <a git checkout> --package <pkg> --site-packages <its site-packages>
+```
+
+| check | result |
+|---|---|
+| the defect, named by the check that did not exist | `PUBLISHED REFUSED: PyPI already carries graphyos 0.2.3, and it is NOT this engine — 27 of 88 RECORD rows differ (graphy/adapters/history.py, graphy/shell/codex/hooks.json, graphy/shell/cursor/hooks.json, graphy/timeline.py, …)` |
+| the two artifacts | PyPI's 0.2.3 wheel 283,572 B, uploaded 09-08 17:51; `dist/`'s 0.2.3 wheel 311,537 B, built 09-09 16:49 — one version string, two engines |
+| the cut | graphyos 0.2.4: wheel 318,554 B · 90 files · sdist 422,510 B; `twine check` PASSED on both; `published OK (0.2.4 is not on PyPI — a fresh cut, nothing to contradict)` |
+| what 0.2.3 lacked, present now | `graphy/adapters/history.py` · `graphy/timeline.py` · `graphy/harness.py` · `graphy/shell/codex/hooks.json` · `graphy/shell/cursor/hooks.json`; `def eat_history` in `cli.py`; the `harness` verb |
+| a clean venv, the wheel, a scratch git checkout | `HISTORY OK: 1 commit(s) …` · `BUILD OK: compiled 4 nodes / 4 edges` · `CHECK OK` · `EAT OK`; `graphy history --repo . --out …` runs standalone; `graphy --help` lists `history` (graphyos #89) |
+| the version, in five places — the fifth was unguarded | the cut found `graphy/__init__.py` still reading `0.2.3` because `release.sh --check` looked at four literals and not the package's own. Now checked: `versions OK (0.2.4 in pyproject.toml, graphy/__init__.py, .claude-plugin/plugin.json, marketplace.json, server.json)`; `registry OK`. Same class as #79 one level down — a version is a promise, and five literals cannot all be trusted |
+| the floor | 581 passed, 3 skipped |
+| the constraints | `BURDEN OK` (the wheel 318,554 B, cap 400,000); `CENSUS OK`; `SCRUB OK`; `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+| the hold | #79's first two bullets close when the first tenant installs `graphyos[typescript]==0.2.4` from the INDEX in a clean venv and rebuilds their 10,197-commit lane. Publishing is the operator's command; this box builds and refuses, it does not upload |

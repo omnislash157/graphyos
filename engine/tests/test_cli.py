@@ -890,3 +890,19 @@ def test_GREEN_eat_skips_the_history_shard_by_name_on_a_directory_that_is_not_a_
     lanes = json.loads((repo / ".graphy" / "tenant.json").read_text())["build_lanes"]
     assert list(lanes) == ["solo_graph"]
     assert not (repo / ".graphy" / "substrate" / "history_graph").exists()
+
+
+def test_GREEN_the_usage_line_lists_every_verb_the_parser_registers():
+    """`graphy --help`'s positional line is the verb list a stranger reads, and it was typed by hand
+    beside the subparsers it was supposed to describe. It drifted: `history` and `refresh` parsed,
+    ran, and had their own `--help`, but the usage line did not name them — so the first tenant,
+    probing for the history lane, read the line and concluded the verb was not there. The metavar is
+    now derived from `sub.choices`, and this proves the two can never disagree again."""
+    import argparse
+    parser = cli._build_parser()
+    (sub,) = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+    assert sub.metavar == "{" + ",".join(sub.choices) + "}"
+    listed = set(sub.metavar.strip("{}").split(","))
+    assert listed == set(sub.choices), listed ^ set(sub.choices)
+    assert {"history", "refresh", "harness"} <= listed          # the three the hand-kept line missed
+    assert sub.metavar in parser.format_help().replace("\n", "").replace(" ", "")
