@@ -787,6 +787,44 @@ def test_repo_tenant_reads_the_descriptor_eat_wrote_and_the_root_the_ring_names(
     assert cli.mcp_args(tmp_path / "t.json", "x") == ["mcp", "--tenant", str(tmp_path / "t.json"), "--tenant-id", "x"]
 
 
+def _printed_mcp(block: str) -> dict:
+    lines = block.splitlines()
+    start = next(i for i, ln in enumerate(lines) if ln.strip() == "{")
+    end = next(i for i in range(start, len(lines)) if lines[i] == "  }")
+    return json.loads("\n".join(lines[start:end + 1]))
+
+
+@pytest.mark.parametrize("venv_inside_repo", [True, False])
+def test_next_steps_prints_a_project_mcp_json_that_runs_the_graphy_that_ate(tmp_path, monkeypatch, venv_inside_repo):
+    """graphyos #82: the block eat prints carries no ${CLAUDE_PROJECT_DIR} (a project .mcp.json
+    never expands it), `--repo .`, and the console script beside the eating interpreter — never the
+    decoy PATH names."""
+    repo = _eaten_repo(tmp_path)
+    venv = (repo if venv_inside_repo else tmp_path / "elsewhere") / ".venv" / "bin"
+    venv.mkdir(parents=True)
+    (venv / "graphy").write_text("#!/bin/sh\n", encoding="utf-8")
+    decoy = tmp_path / "local" / "bin"
+    decoy.mkdir(parents=True)
+    (decoy / "graphy").write_text("#!/bin/sh\n", encoding="utf-8")
+    (decoy / "graphy").chmod(0o755)
+    monkeypatch.setenv("PATH", str(decoy))
+    monkeypatch.setattr(cli.sys, "executable", str(venv / "python"))
+    desc = repo / ".graphy" / "tenant.json"
+    block = cli._next_steps(desc, "click", "click://module/click", "x://module/x", repo / ".graphy", repo=repo)
+    assert "CLAUDE_PROJECT_DIR" not in block and str(decoy) not in block
+    server = _printed_mcp(block)["mcpServers"]["graphy"]
+    assert server["args"] == ["mcp", "--repo", "."]
+    if venv_inside_repo:
+        assert server["command"] == ".venv/bin/graphy"
+    else:
+        assert server["command"] == str(venv / "graphy")
+    # no console script beside the interpreter: that interpreter with -m, still not PATH
+    (venv / "graphy").unlink()
+    server = _printed_mcp(cli._next_steps(desc, "click", "s", "t", repo / ".graphy", repo=repo))["mcpServers"]["graphy"]
+    assert server["args"] == ["-m", "graphy", "mcp", "--repo", "."]
+    assert server["command"] == (".venv/bin/python" if venv_inside_repo else str(venv / "python"))
+
+
 @pytest.mark.parametrize("breakage", ["no-repo", "no-ring", "no-root", "empty-root", "no-data-home"])
 def test_RED_repo_tenant_refuses_by_name_never_guesses(tmp_path, breakage):
     repo = _eaten_repo(tmp_path)

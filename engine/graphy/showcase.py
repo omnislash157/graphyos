@@ -62,9 +62,8 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     svg, script = S.emit_svg(lo_u, title=f"{package} · the modules", orient="LR", interactive=True, node_meta=pic_u.meta)
     g = " ".join(graphy_cmd)
     tenant = f"--tenant {desc} --tenant-id {package}"
-    from graphy.cli import mcp_args
-    mcp = json.dumps({"mcpServers": {"graphy": {"command": graphy_cmd[0],
-                                                 "args": graphy_cmd[1:] + mcp_args(desc, package)}}}, indent=2)
+    from graphy.cli import mcp_config
+    mcp = json.dumps(mcp_config(graphy_cmd, desc, package), indent=2)
     crowns = list(proposal.crowns.items())
     asks = []
     if crowns:
@@ -92,7 +91,7 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     text += ["  " + ln for ln in ascii_u.splitlines()]
     text += ["", f"THE RING: {len(minted)} package(s) minted beside {package}: {', '.join(minted) or 'none'}",
              f"  not carried: {', '.join(sorted(unresolved)) or 'nothing — the ring closed'}", "",
-             "ADD YOUR MODEL — paste into .mcp.json (Claude Code) or your client's MCP settings; any model, the walk is graphy's:"]
+             "ADD YOUR MODEL — paste into the repo's .mcp.json (Claude Code) or your client's MCP settings, and start the client in the repo root (the paths are relative); any model, the walk is graphy's:"]
     text += ["  " + ln for ln in mcp.splitlines()]
     text += ["", "ASK IT"] + [f"  {cmd}\n      # {why}" for cmd, why in asks]
     text += ["", "HOW IT WAS MADE", f"  pip install graphyos && cd <repo> && graphy eat . && graphy showcase .",
@@ -132,7 +131,7 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     h += [
           f'  <h2>The ring</h2><p class="lede">{len(minted)} package(s) minted beside {_esc(package)}: <span class="mono">{_esc(", ".join(minted) or "none")}</span>. '
           f'Not carried: <span class="mono">{_esc(", ".join(sorted(unresolved)) or "nothing — the ring closed")}</span>.</p>',
-          '  <h2>Add your model</h2><p class="lede">Paste this into <code>.mcp.json</code> (Claude Code) or your client\'s MCP settings. Any model; the walk is graphy\'s.</p>',
+          '  <h2>Add your model</h2><p class="lede">Paste this into the repo\'s <code>.mcp.json</code> (Claude Code) or your client\'s MCP settings, and start the client in the repo root: the paths are relative. Any model; the walk is graphy\'s.</p>',
           f'  <pre class="ascii">{_esc(mcp)}</pre>',
           '  <h2>Ask it</h2><ul class="ask">']
     h += [f'    <li><code>{_esc(cmd)}</code><br><span class="why">{_esc(why)}</span></li>' for cmd, why in asks]

@@ -5861,3 +5861,27 @@ but the literals bound only to the root package's names.
 | the floor | `cd engine && python3 -m pytest -q` green |
 | the gate | `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
 | the adversarial review | a cold subagent told the card. **VERDICT: REVISE** on the first draft: the hono refusal above, found by a real eat, and the touch-by-guess of a dependency's file. Disposition: NEW → fixed here by the names/code split, with its floor test. The ambiguity cost → ELIMINATED, named above. `rebuild.rebuild`'s last-ring read → ELIMINATED, latent, named above |
+
+## 118 · THE PRINTED MCP BLOCK RUNS THE GRAPHY THAT ATE — `eat` told a stranger to paste a config naming `shutil.which("graphy")`, which on the first client's box was another venv's engine, and an absolute `--repo` a tracked `.mcp.json` cannot carry; the command is now the console script beside the eating interpreter, spelled relative when it lives in the repo, with `--repo .` (2026-09-13 · graphyos issue 82)
+
+**The defect.** `cli._graphy_command` read PATH first. `_next_steps` and `showcase.compose` pasted
+`cmd[0]` and `mcp_args`' absolute repo into the block. The client's `~/.local/bin/graphy` was not
+the install that ate the repo.
+
+**The change.**
+
+- `cli._graphy_command` never reads PATH: graphy (or graphy.exe) beside `sys.executable`, else
+  `sys.executable -m graphy`.
+- `cli.mcp_config(cmd, desc, package)` is the one block both printers use. For eat's layout the
+  `--repo` is `.` and a command inside the repo is relative to it. A command outside the repo stays
+  the absolute path of the eating install. A descriptor elsewhere keeps `--tenant`/`--tenant-id`.
+- The printed line says the paths are relative, so the client starts in the repo root.
+
+| check | result |
+|---|---|
+| a real eat | `pallets/itsdangerous` cloned into the scratchpad with an in-repo `.venv` holding this engine, `.venv/bin/graphy eat --repo <abs> --site-packages <.venv site-packages> --package itsdangerous` → `EAT OK` 0.1 s, printed `"command": ".venv/bin/graphy"`, `"args": ["mcp", "--repo", "."]`, no `CLAUDE_PROJECT_DIR` |
+| the client, the surface | that block pasted into `.mcp.json`, `enableAllProjectMcpServers`, `claude -p "reply ok" --output-format stream-json --verbose` from the repo root → `graphy` `connected`, 7 `mcp__graphy__*` tools |
+| the limit, measured | the same launch from `src/` → `failed`; an absolute config launched from `src/` → `connected`. A project config's relative command and argv resolve against the launch directory, not the project root. The plugin (`${CLAUDE_PROJECT_DIR}`) failed from `src/` too. Filed as graphyos #99 |
+| the floor test | `test_next_steps_prints_a_project_mcp_json_that_runs_the_graphy_that_ate` (a decoy `graphy` on PATH, the venv inside and outside the repo, with and without the console script) — red with the source stashed |
+| the floor · the gate | `cd engine && ../.venv/bin/python -m pytest -q` green · `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
+| the adversarial review | a cold subagent told the card. **VERDICT: REVISE**, one blocker: a backticked graphy.exe in this section, which `review.py` reads as a dotted symbol, turned the gate red after it had passed. Disposition: fixed in the prose, gate re-run green. The code: all three done lines GREEN, and it confirmed the test goes red on the old code. Showcase text and page lacked the start-in-the-root line → fixed here. A script beside the interpreter without the executable bit → ELIMINATED, unlikely |

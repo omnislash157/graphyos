@@ -1883,9 +1883,33 @@ def _walk_target(sub: Path, package: str, deps: list[str]) -> str:
 
 
 def _graphy_command() -> list[str]:
-    """How this box runs graphy: the console script when it is on PATH, else this interpreter."""
-    exe = shutil.which("graphy")
-    return [exe] if exe else [sys.executable, "-m", "graphy"]
+    """How this box runs the graphy that is running now: the console script beside this
+    interpreter, else this interpreter with -m. Never PATH — `which graphy` can name another venv
+    whose engine did not build the store it would be pointed at (graphyos #82)."""
+    here = Path(sys.executable).parent
+    for name in ("graphy", "graphy.exe"):
+        if (here / name).is_file():
+            return [str(here / name)]
+    return [sys.executable, "-m", "graphy"]
+
+
+def mcp_config(cmd: list[str], desc: Path, package: str) -> dict:
+    """The `mcpServers` block for a project `.mcp.json`. A project config expands no
+    `${CLAUDE_PROJECT_DIR}` (only the plugin manifest does) and its spawn resolves a relative
+    command and argv against the project root — so for the tenant eat left under a repo the
+    `--repo` is `.` and an executable inside the repo is spelled relative to it; one outside the
+    repo stays the absolute path of the install that ate it (graphyos #82)."""
+    args = cmd[1:] + mcp_args(desc, package)
+    command = cmd[0]
+    desc = Path(desc)
+    if args[-2:-1] == ["--repo"]:
+        repo = desc.parent.parent
+        args[-1] = "."
+        try:
+            command = Path(command).relative_to(repo).as_posix()
+        except ValueError:
+            pass
+    return {"mcpServers": {"graphy": {"command": command, "args": args}}}
 
 
 def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
@@ -1893,13 +1917,14 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
     """What a stranger does next, printed once at the end of eat: the MCP block for the client
     they already use, the drawing, three questions. Any model; the walk is graphy's."""
     cmd = _graphy_command()
-    mcp = json.dumps({"mcpServers": {"graphy": {"command": cmd[0], "args": cmd[1:] + mcp_args(desc, package)}}}, indent=2)
+    mcp = json.dumps(mcp_config(cmd, desc, package), indent=2)
     g = " ".join(cmd)
     tenant = f"--tenant {desc} --tenant-id {package}"
     repo_flag = str(repo) if repo is not None else str(home.parent)
     return "\n".join([
         "",
-        "  ADD YOUR MODEL — paste this into .mcp.json (Claude Code) or your client's MCP settings; the model is yours, the walk is graphy's:",
+        "  ADD YOUR MODEL — paste this into the repo's .mcp.json (Claude Code) or your client's MCP settings; the model is yours, the walk is graphy's.",
+        "  Its paths are relative, so the client starts in the repo root:",
         *("  " + ln for ln in mcp.splitlines()),
         "  or, in Claude Code, the plugin — one command, no pointer to write:  claude plugin install graphy@omnislash157/graphyos",
         "",
