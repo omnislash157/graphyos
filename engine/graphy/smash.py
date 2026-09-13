@@ -471,6 +471,33 @@ def _schemes(edges: list) -> tuple[set[str], set[str]]:
     return src, dst
 
 
+def shard_schemes(graph_dir) -> tuple[set[str], set[str]]:
+    """The schemes a shard OWNS and the schemes it points OUT to, read from the shard itself.
+
+    `_schemes` derives "own" from edge sources, which is right for a lane this engine minted —
+    every edge leaves a node the lane owns. It is wrong for a lane a TENANT placed: a SQL census
+    binds `code → table`, so every src is the code lane's scheme and the census would claim to own
+    `core` and not to own the tables in its own nodes.json. A lane owns the ids it carries, so the
+    node ids are what say so (graphyos #71).
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    d = _Path(graph_dir)
+    edges = _json.loads((d / "edges.json").read_text(encoding="utf-8"))
+    src, dst = _schemes(edges)
+    try:
+        nodes = _json.loads((d / "nodes.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        nodes = {}
+    own = {nid.split("://", 1)[0] for nid in nodes if isinstance(nid, str) and "://" in nid}
+    if not own:
+        # An edges-only lane carries no id, so it can only be described by where its edges leave
+        # from — today's behaviour, kept rather than turning such a lane into one that owns nothing.
+        own = set(src)
+    return own, (src | dst) - own
+
+
 def _import_schemes(edges: list) -> set[str]:
     return {e["dst"].split("://", 1)[0] for e in edges
             if e.get("edge_type") == "imports" and isinstance(e.get("dst"), str) and "://" in e["dst"]}

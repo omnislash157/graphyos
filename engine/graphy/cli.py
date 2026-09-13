@@ -1425,8 +1425,11 @@ def _scheme_index_from_ring(sub: Path, description: str, extra: tuple[str, ...] 
     ring = json.loads((sub / smash_lane.RING_NAME).read_text(encoding="utf-8"))
     rows = dict(ring["scheme_index"])
     for slug in extra:
-        own, dst = smash_lane._schemes(json.loads((sub / f"{slug}_graph" / "edges.json").read_text(encoding="utf-8")))
-        rows[slug] = {"own": sorted(own), "out": sorted(dst - own)}
+        # A lane the ring did not mint owns the ids in its OWN nodes.json, not merely the schemes its
+        # edges leave from: a placed SQL census binds `code -> table`, so reading edge sources alone
+        # made it claim the code lane's scheme and disown its own tables (graphyos #71).
+        own, out = smash_lane.shard_schemes(sub / f"{slug}_graph")
+        rows[slug] = {"own": sorted(own), "out": sorted(out)}
     index = {"_meta": {"description": description, "standard": ring.get("standard", [])}, **rows}
     (sub / ".federation_scheme_index.json").write_text(json.dumps(index, indent=1, sort_keys=True) + "\n",
                                                        encoding="utf-8")

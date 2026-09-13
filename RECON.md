@@ -5442,3 +5442,53 @@ python3 -c "from graphy.adapters import python_ast as p; n,_,_ = p.mint_records(
 | the floor | 595 passed, 3 skipped (593 before) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
 | the bound | this fixes the shards graphy writes and normalises what any producer hands the IR. A foreign emitter writing `nodes.json` directly still writes its own bytes; the IR corrects them on the way in, so the store and every walk agree, and the shard's own bytes remain that emitter's to fix |
+
+## 108 · THE MULTI-LANE REBUILD IS PUBLIC — `eat` was first-class for one repo and one import ring and there was nothing for many lanes and mixed producers, so a tenant with its own emitters assembled the sequence out of `cli._clear_substrate`, `cartograph.repo_cursor` and `graphy._portable_flock`; `graphy.rebuild` runs clear → smash → history → init → converge → build → check with placed lanes kept across the clear, and a placed lane's schemes finally come from the ids it carries (2026-09-13 · graphyos issue 71)
+
+**The number, from the first client.** Their rebuild was ~210 lines, of which the engine-orchestration
+half was a reimplementation of `eat` minus the prune, resting on three names the engine never
+exported — two of them underscore-private and all three free to move under them at any release. And
+because the only thing that *looked* like a rebuild was `eat`, `eat` kept being reached for by
+tenants it was never written for. That is the root graphyos #70 grew from: `eat` prunes.
+
+**The shape, and the one line that decides it.** A MINTED lane names a package this engine's own
+producer walks. A PLACED lane is a shard the tenant wrote itself — and the engine does not run it.
+`cartograph` carries no build-lane runner and the engine never runs a shell, so a foreign emitter
+stays the tenant's to invoke; what the engine owns is the orchestration around it, which is exactly
+the half that was being copied. `clear_substrate(sub, keep=…)` holds a placed lane's whole directory
+aside rather than stripping it to the three files a splice reads, so an emitter's own sidecar
+survives a rebuild.
+
+**A defect the rung surfaced.** `smash._schemes` derives a lane's `own` from its edge SOURCES, which
+is right for a lane this engine minted — every edge leaves a node the lane owns. It is wrong for a
+placed lane: a SQL census binds `code → table`, so every src is the code lane's scheme, and the
+census claimed to own `core` while disowning the tables in its own `nodes.json`. `shard_schemes`
+reads the node ids, because **a lane owns the ids it carries**; `out` is everything else its edges
+touch, src or dst. An edges-only lane, which carries no id, keeps today's behaviour rather than
+becoming a lane that owns nothing.
+
+**A regression the floor caught the same minute.** Exporting the lane from `graphy/__init__.py`
+pulled `cartograph` into every `import graphy`, and the cost of importing this package is a measured
+invariant — `graphy.cli` loads five modules and no verb lane, so `--help` never pays for a door it
+will not open. The exports are lazy (PEP 562 `__getattr__`) and the invariant holds. The function
+`rebuild` is deliberately **not** exported at the package top level: a function of that name would
+shadow the module of that name, and `graphy.rebuild.rebuild` would stop resolving.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_rebuild.py
+python3 -c "import graphy; print(graphy.Lane, graphy.repo_cursor)"          # lazy, and resolving
+python3 -c "import graphy, sys; import graphy.cli; print(len([m for m in sys.modules if m.startswith('graphy')]))"
+```
+
+| check | result |
+|---|---|
+| the done check | one minted lane and one lane a foreign producer wrote, through the public API with no underscore import: `REBUILD OK: 2 lane(s) — 1 minted · 1 placed`, a descriptor declaring both, `CONVERGE` finding the seam unprompted (`pg_schema -> core 1 edge(s) … reads_table=1`), `BUILD OK`, `CHECK OK` |
+| the placed lane survives the clear | its `nodes.json` **and** the `emitter_receipt.json` the clear would otherwise have stripped |
+| the placed lane is not second-class | its declared `reads_table: [depends]` folds into the store and `blast` on the table returns the code node — graphyos #68 and #71 meeting |
+| the scheme index | `pg_schema` owns `pg_schema` and points out to `core`; before, it owned `core` and disowned its own tables |
+| the refusals | a placed lane with no shard on disk, an empty roster, a roster that is all placed (no ring to derive the index from), a minted lane with no corpus, an unnamed lane — each by name |
+| the three private names | `repo_cursor` and `clear_substrate` are public; `_portable_flock` is deliberately not exported — it is the call's business, not the caller's |
+| the import cost | unchanged: `import graphy.cli` still loads `graphy · graphy.cli · graphy.ir · graphy.parity · graphy.tenant` and nothing else |
+| the floor | 600 passed, 3 skipped (595 before: five rebuild tests) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+| the hold | the first tenant's rebuild dropping all three private imports is theirs to run; this box proved the entry point, not their 32-lane roster through it. No CLI verb was added — the caller is a Python script, which is what a tenant with foreign producers has |
