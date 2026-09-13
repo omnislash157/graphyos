@@ -5757,3 +5757,42 @@ against the old line and is the test the first fix needed and did not have.
 | disposition | `NEW · this card · BLOCK TWO ①, specimen added` + a floor test at the store surface |
 | the artifacts | arm regions and `docs/pillars.svg` re-rendered against store `a5d3511dca363bb5` |
 | **verdict** | **DONE BLOCK: GREEN · VERDICT: SHIP**, after the blocker was fixed in the same session |
+
+## 115 · A FAILURE IS NOT A REFUSAL — `build` printed a platform `OSError` in a refusal's shape, so `BUILD REFUSED: [Errno 9] Bad file descriptor` was the whole symptom of a Windows store bug; the tool's own judgement now refuses by name and everything else prints as a failure with its frame (2026-09-13 · graphyos issue 78)
+
+**The defect.** `_cmd_build` caught `(StoreError, OSError, ValueError)` and printed each as
+`BUILD REFUSED: {exc}`. A refusal is the engine's judgement. An `EBADF` from the platform is not one,
+and giving it the refusal's shape threw away the path, the operation and the frame. The first
+client had to put a debugger around `compile_store` to find the cause.
+
+**What the walk found before the edit.** Removing `OSError` from the refusal set would have been
+the one-line fix, and it would have been wrong. With a one-lane tenant and no shard on disk, today's
+tree answered:
+
+```text
+BUILD REFUSED: [Errno 2] No such file or directory: '…/data/x_graph/nodes.json'
+```
+
+The most common user mistake reached the CLI as a raw `FileNotFoundError` too. It carried a filename
+only because of where the loader happened to open the file. Every other expected read failure in
+`federated_store` was already wrapped in a `StoreError` with its path; this one was not. So the fix
+has two halves:
+
+- `compile_store` checks every declared lane's `<data_home>/<slug>_graph/{nodes,edges}.json` before
+  any open, and refuses by name: `lane 'x' is declared but has no shard (nodes.json + edges.json) at
+  … — missing edges.json; mint or place the shard, then build`.
+- `_cmd_build` keeps `StoreError` and `ValueError` as refusals. Any other `OSError` prints
+  `BUILD FAILED: unexpected <Type> (errno=…, filename=…) while compiling <store path> — this is not a
+  refusal; the traceback follows`, then the traceback, exit 2.
+
+| check | result |
+|---|---|
+| the surface, a missing shard | `python3 -m graphy build …` → `BUILD REFUSED: lane 'x' is declared but has no shard …`, no traceback |
+| the surface, an unexpected OSError | `test_RED_build_prints_an_unexpected_OSError_as_a_failure_with_its_frame_never_a_refusal` drives `cli.main(["build", …])`: no `BUILD REFUSED`, `errno=9`, the raising frame in the traceback |
+| both tests against the unfixed tree | red (source stashed, both FAILED) |
+| the graphy tenant | `build --container none` → `BUILD OK: compiled 3903 nodes / 9712 edges` |
+| the floor | 616 passed, 3 skipped (`cd engine && ../.venv/bin/python -m pytest`), up from 614 |
+| the gate and the battery | `GRAPHY_STANDALONE_OK`; `python3 review.py --diff HEAD` → `REVIEW OK: 9 check(s) · 0 finding(s)` |
+| found on the way | the arm regions' `dependents=` counts `history` owners, so a session that discusses a crown turns `arms --verify` red. The same surface as graphyos issue 90, commented there rather than filed twice |
+| the adversarial review | a cold subagent told the card re-ran the floor, the gate and the battery, and blasted `compile_store` (two engine callers plus 67 tests; the argv callers in `rebuild` · `refresh` · `eat` · `shell install` read only the exit code, which is still 2). It checked the new pre-check against `raw_shard`'s requirements and got a real `PermissionError` to print with its frame. **DONE BLOCK: JUDGED (each "Done when" bullet repro'd) · VERDICT: SHIP**, no blockers |
+| disposition | the required file list was written in two places, so the check now derives it from `native_json_graph_ir.SHARD_INPUTS`: ELIMINATED, fixed in this commit · the same defect in the other verbs' catches: a new rung, graphyos issue 95, not a widening · the history lane went stale on this section's own edit: re-minted before commit |

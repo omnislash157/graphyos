@@ -188,12 +188,22 @@ def _cmd_build(args: argparse.Namespace) -> int:
     except release_lane.ReleaseError as exc:
         print(f"BUILD REFUSED: {exc}", file=sys.stderr)
         return 2
+    store_path = None
     try:
         store_path = fstore.store_path_for(substrates, tenant=tenant)
         info = fstore.compile_store(substrates, store_path, tenant=tenant,
                                     tenant_id=args.tenant_id)
-    except (fstore.StoreError, OSError, ValueError) as exc:
+    except (fstore.StoreError, ValueError) as exc:
         print(f"BUILD REFUSED: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        # Not a refusal: the platform failed under the compile. Printed as one, an EBADF was the
+        # whole symptom of a Windows store bug — no path, no operation, no frame (graphyos #78).
+        import traceback
+        print(f"BUILD FAILED: unexpected {type(exc).__name__} (errno={exc.errno}, "
+              f"filename={exc.filename!r}) while compiling {store_path or 'the store path'} "
+              f"— this is not a refusal; the traceback follows", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return 2
     print(f"BUILD OK: compiled {info['nodes']} nodes / {info['edges']} edges "
           f"-> {info['db']}")

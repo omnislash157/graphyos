@@ -173,6 +173,47 @@ def test_build_refuses_malformed_descriptor_carrying_tenant_error(tmp_path, caps
     assert "root must be absolute" in out.err
 
 
+def _one_lane_tenant(tmp_path) -> Path:
+    (tmp_path / "root").mkdir()
+    (tmp_path / "keys.json").write_text("{}", encoding="utf-8")
+    desc = tmp_path / "tenant.json"
+    assert cli.main(["init", "--tenant", str(desc), "--root", str(tmp_path / "root"),
+                     "--data-home", str(tmp_path / "data"), "--join-keys", str(tmp_path / "keys.json"),
+                     "--journal", str(tmp_path / "journal"), "--cursor", "c", "--policy", "refuse",
+                     "--lane", "x_graph:static-dep"]) == 0
+    return desc
+
+
+def test_RED_build_prints_an_unexpected_OSError_as_a_failure_with_its_frame_never_a_refusal(
+        tmp_path, capsys, monkeypatch):
+    # graphyos #78: the whole symptom of a Windows store bug was `BUILD REFUSED: [Errno 9] Bad file descriptor`.
+    from graphy import federated_store as fstore
+    desc = _one_lane_tenant(tmp_path)
+    capsys.readouterr()
+    def _ebadf(*a, **k):
+        raise OSError(9, "Bad file descriptor")
+    monkeypatch.setattr(fstore, "compile_store", _ebadf)
+    rc = cli.main(["build", "--tenant", str(desc), "--tenant-id", "t"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "BUILD REFUSED" not in err
+    assert "BUILD FAILED: unexpected OSError (errno=9" in err
+    assert "Traceback (most recent call last)" in err and "_ebadf" in err
+
+
+def test_GREEN_build_refuses_a_declared_lane_with_no_shard_by_name_before_any_open(tmp_path, capsys):
+    desc = _one_lane_tenant(tmp_path)
+    (tmp_path / "data" / "x_graph").mkdir(parents=True)
+    (tmp_path / "data" / "x_graph" / "nodes.json").write_text("[]", encoding="utf-8")
+    capsys.readouterr()
+    rc = cli.main(["build", "--tenant", str(desc), "--tenant-id", "t"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "BUILD REFUSED: lane 'x' is declared but has no shard" in err
+    assert "missing edges.json" in err
+    assert "Traceback" not in err
+
+
 
 
 def test_init_lstat_first_refusal_leaves_target_byte_untouched(tmp_path, capsys):

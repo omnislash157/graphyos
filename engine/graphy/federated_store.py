@@ -24,7 +24,9 @@ from graphy.cross_substrate import (
 )
 from graphy.query import activate, rank
 from graphy._shared import _ast_edge_salience
-from graphy.native_json_graph_ir import _detect_duplicate_json_keys, shard_input_digest
+from graphy.native_json_graph_ir import (
+    SHARD_INPUTS, WORMHOLE_SIDECAR, _detect_duplicate_json_keys, shard_input_digest,
+)
 from graphy.tenant import Tenant
 
 SCHEMA = """
@@ -486,6 +488,16 @@ def compile_store(substrates: list[str], db_path: str | Path,
             f"compile_store: tenant_id is required — graphy resolves identity only "
             f"through a declared Tenant; absent or empty tenant_id = refuse"
         )
+    # A declared lane with no shard on disk is the tool's own judgement, so it refuses here by name —
+    # before any open. Left to the loader it surfaced as a bare OSError, the same shape the CLI must
+    # keep for a failure it did not expect (graphyos #78).
+    for s in sorted(substrates):
+        gd = Path(tenant.data_home) / f"{s}_graph"
+        missing = [f for f in SHARD_INPUTS if f != WORMHOLE_SIDECAR and not (gd / f).is_file()]
+        if missing:
+            raise StoreError(
+                f"lane {s!r} is declared but has no shard (nodes.json + edges.json) at {gd} — "
+                f"missing {', '.join(missing)}; mint or place the shard, then build")
     shard = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id)
     mesh = shard.mesh
     p = Path(db_path)
