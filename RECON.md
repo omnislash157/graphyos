@@ -5339,3 +5339,46 @@ python3 -c "import json,graphy.cli as c,graphy.federated_store as f; t=c._load_t
 | the tests, against the old line | all three declined tests fail with `render_declined` stubbed to empty — the notice is what they measure |
 | the floor | 590 passed, 3 skipped (585 before: five door tests) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK`; arm regions and `docs/pillars.svg` re-rendered against store `20cc3c8f6472c3fa` |
+
+## 106 · EAT NO LONGER DELETES A LANE IT DID NOT MINT — the prune could not tell "a dependency was dropped" from "something else minted this" and removed both at rc 0 with no count and no name; the previous ring, read before the substrate is cleared and trusted only for its own root package, tells them apart, so a dropped dependency is still pruned and a foreign lane refuses (2026-09-13 · graphyos issue 70)
+
+**The number, from the first client's Windows box.** They ran `graphy eat . --package core
+--site-packages .` from the install steps they were handed. It pruned the roster from **32 lanes to
+10** — the live Postgres schema, the customer book, the item lexicon, the session memory, the wire,
+identity, spec, egress and fourteen more — printed `EAT OK`, exited 0, and said nothing. They did not
+notice until a house skill card told them the verb was forbidden. The `/tmp` repro in the issue is
+110 bytes of Python; this is the same defect eating 22 lanes of a live tenant. And `check`'s
+stale-history remediation led with `graphy eat .`, so **the audit recommended the command that
+caused the loss**, with the safe verb in a parenthetical behind it.
+
+**The distinction the issue said could not be made.** The body reads *"The engine cannot distinguish
+'a shard the ring no longer names because a dependency was dropped' — correct to prune — from 'a
+shard this ring never named because something else minted it' — data loss."* It can. The previous
+`ring.json` names exactly what this lane minted last time, and `ring["root"]` names the package it
+minted for. A lane in the previous ring **of the same root** and not in the new one is a dependency
+this eat dropped — its own to prune, which is what the pruning was for. A lane in neither, or in a
+ring minted for a different package, was put there by something else and is not this ring's to
+remove at all. Two subtleties decided it: the read happens **before `_clear_substrate`**, which wipes
+`ring.json`; and the root check is what makes the monorepo case work, because `eat --package A` then
+`eat --package B` finds A's lanes in the previous ring and they are still not B's to delete.
+
+**What refuses, and when.** Only a foreign lane, and only at the deletion — the shards are minted and
+standing when it fires, so a refusal costs nothing but the build. `--force` prunes and names each
+one. A dropped dependency prints `EAT DROPPED (n): …` rather than vanishing silently.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py -k "did_not_mint or re_eat or lane_safe"
+graphy eat . --package pkg_a --site-packages . && graphy eat . --package pkg_b --site-packages .
+graphy eat . --package pkg_b --site-packages . --force
+```
+
+| check | result |
+|---|---|
+| the monorepo case, live | `eat --package pkg_a` → 2 lanes; `eat --package pkg_b` → `EAT REFUSED: 1 lane(s) here were not minted by pkg_b's import ring, now or last time … NOTHING WAS DELETED`, exit 2, and **all three lanes stand** |
+| `--force` | `EAT PRUNED (1, --force): pkg_a_graph`, then `EAT OK` — the deliberate path, naming what it removed |
+| a dropped dependency still prunes | the existing floor test (`alpha` stops importing `gamma`) passes unchanged: same root, so `gamma_graph` is this lane's own and is removed without a refusal |
+| the ordinary re-eat | same package twice: no refusal, no prune line, the lanes unchanged |
+| `check`'s remediation | now leads with `graphy shell install --repo <abs>`, "touches no other lane", and names `graphy eat .` behind an explicit caveat — "only equivalent for a tenant whose lanes ARE its ring" |
+| the floor | 593 passed, 3 skipped (590 before: the refusal, the ordinary re-eat, the remediation order) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+| the bound | a monorepo still cannot get two packages into one built store by eating twice — the second eat refuses rather than deleting, which is this rung's whole job. The multi-lane rebuild is graphyos #71 and this does not pretend to be it |

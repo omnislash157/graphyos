@@ -984,7 +984,12 @@ def _cmd_check(args: argparse.Namespace) -> int:
                 findings.append((
                     "RED",
                     f"history lane: STALE — {why.removeprefix('stale: ').removesuffix('; re-mint')}",
-                    "re-mint it: `graphy eat .` (or `graphy shell install --repo <abs>`, which re-mints the history shard alone)"))
+                    # The safe verb goes first. This line used to lead with `graphy eat .`, which on a
+                    # multi-lane tenant prunes every lane the package's ring does not name — so the
+                    # audit recommended the command that caused the data loss (graphyos #70).
+                    "re-mint it: `graphy shell install --repo <abs>`, which re-mints the history shard "
+                    "alone and touches no other lane (`graphy eat .` also does it, but re-mints the "
+                    "whole ring and is only equivalent for a tenant whose lanes ARE its ring)"))
 
     states = {}
     for graph_class in sorted(tenant.build_lanes):
@@ -1564,6 +1569,22 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     if not args.home:
         (home / ".gitignore").write_text("*\n", encoding="utf-8")   # rebuilt, never tracked by the eaten repo
     t0 = getattr(args, "_t0", None) or time.perf_counter()
+    # What THIS lane minted last time, read BEFORE _clear_substrate wipes ring.json. A lane in the
+    # previous ring and not the new one is a dependency this eat dropped — its own to prune, which
+    # is what the pruning was for. A lane in NEITHER ring was minted by something else and is not
+    # this ring's to remove at all. The engine CAN tell them apart, so it does (graphyos #70).
+    prev_live: set[str] = set()
+    prev_ring = sub / smash_lane.RING_NAME
+    if prev_ring.is_file():
+        try:
+            _pr = json.loads(prev_ring.read_text(encoding="utf-8"))
+            # …and only when that ring was THIS package's. A previous eat of a DIFFERENT package
+            # named its own lanes, and none of them are this ring's to drop — that is precisely the
+            # monorepo case, where `eat --package A` then `eat --package B` silently deleted A.
+            if _pr.get("root") == package:
+                prev_live = {f"{m['slug']}_graph" for m in _pr["minted"].values()}
+        except (OSError, ValueError, KeyError, TypeError):
+            prev_live = set()        # an unreadable previous ring claims nothing, so nothing is "mine"
     _clear_substrate(sub)
     if desc.exists():
         desc.unlink()
@@ -1577,9 +1598,32 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     ring = json.loads((sub / smash_lane.RING_NAME).read_text(encoding="utf-8"))
     live = {f"{m['slug']}_graph" for m in ring["minted"].values()}
     live.add(f"{HISTORY_SLUG}_graph")                            # re-minted below, or removed there by name
+    # A lane this ring does not name is one of two things the engine cannot tell apart: a dependency
+    # that was dropped, which is correct to prune, or a lane something ELSE minted, which is data
+    # loss. It used to delete both silently and say EAT OK. On the first client's tenant that was 22
+    # of 32 lanes — the live Postgres schema, the customer book, the item lexicon, the session
+    # memory — gone at rc 0 with no count and no name, and `check` recommended the command that did
+    # it. So the deletion is the thing that refuses, and --force is the deliberate path (graphyos #70).
+    doomed = sorted(d.name for d in sub.glob("*_graph") if d.is_dir() and d.name not in live)
+    dropped = [d for d in doomed if d in prev_live]      # this lane's own, a dependency it stopped importing
+    foreign = [d for d in doomed if d not in prev_live]  # minted by something else: never this ring's to delete
+    if foreign and not getattr(args, "force", False):
+        sys.stdout.flush()
+        shown = " · ".join(foreign[:8]) + (f" · … {len(foreign) - 8} more" if len(foreign) > 8 else "")
+        print(f"EAT REFUSED: {len(foreign)} lane(s) here were not minted by {package}'s import ring, "
+              f"now or last time, and eat does not delete a lane it did not mint: {shown}. NOTHING "
+              f"WAS DELETED — those shards stand and {package} is minted beside them. Another package "
+              f"or producer put them there; if they really are stale, `graphy eat . --force` prunes "
+              f"them and names each one.", file=sys.stderr)
+        return 2
     for d in sub.glob("*_graph"):
         if d.is_dir() and d.name not in live:
             shutil.rmtree(d, ignore_errors=True)                 # a shard the ring no longer names
+    if dropped:
+        print(f"EAT DROPPED ({len(dropped)}): " + " · ".join(dropped) +
+              " — this package stopped importing them")
+    if foreign:
+        print(f"EAT PRUNED ({len(foreign)}, --force): " + " · ".join(foreign))
     lanes = [f"--lane={m['slug']}_graph:static-dep" for m in ring["minted"].values()]
     # The repo's own record beside the code (graphyos #66): commits, the sessions archive the hooks
     # fill, every exchange welded to the symbols it names — so blast · explain · history --symbol
@@ -1792,6 +1836,10 @@ def _build_parser() -> argparse.ArgumentParser:
                             "with an empty ring, every import unresolved (eating a repo you do not trust runs its build otherwise)")
     p_eat.add_argument("--producer", default=None, choices=_PRODUCER_NAMES,
                        help="the ecosystem door (default: python_ast; typescript_ast when the repo carries a package.json and no importable Python package)")
+    p_eat.add_argument("--force", action="store_true",
+                       help="prune lanes this package's import ring does not name, and print each one. "
+                            "Without it a substrate holding a lane eat did not mint REFUSES rather than "
+                            "deleting it (graphyos #70)")
     p_eat.set_defaults(handler=_cmd_eat)
 
     p_init = sub.add_parser("init", help="scaffold a tenant descriptor + data-home skeleton")

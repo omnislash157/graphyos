@@ -906,3 +906,71 @@ def test_GREEN_the_usage_line_lists_every_verb_the_parser_registers():
     assert listed == set(sub.choices), listed ^ set(sub.choices)
     assert {"history", "refresh", "harness"} <= listed          # the three the hand-kept line missed
     assert sub.metavar in parser.format_help().replace("\n", "").replace(" ", "")
+
+
+def _two_package_repo(tmp_path):
+    """A git checkout with two importable packages and no dependencies — the monorepo shape."""
+    repo = tmp_path / "mono"
+    repo.mkdir(parents=True)
+    for name in ("pkg_a", "pkg_b"):
+        (repo / name).mkdir()
+        (repo / name / "mod.py").write_text(f'def f_{name}():\n    return "{name}"\n', encoding="utf-8")
+        (repo / name / "__init__.py").write_text(f"from {name}.mod import f_{name}\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "."], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "two"],
+                   cwd=repo, check=True)
+    return repo
+
+
+def _lanes(repo):
+    return sorted(d.name for d in (repo / ".graphy" / "substrate").glob("*_graph"))
+
+
+def test_RED_eat_refuses_to_delete_a_lane_it_did_not_mint_and_force_is_the_deliberate_path(tmp_path, capsys):
+    """`eat` pruned every lane the import ring did not name, at rc 0, with no count and no name.
+    On the first client's tenant that was 22 of 32 lanes — the live Postgres schema, the customer
+    book, the item lexicon, the session memory — and `check` recommended the command that did it.
+
+    The engine cannot tell "a dependency was dropped, prune it" from "something else minted this,
+    keep it", so the DELETION is what refuses and `--force` is the deliberate path (graphyos #70)."""
+    repo = _two_package_repo(tmp_path)
+    assert cli.main(["eat", str(repo), "--package", "pkg_a", "--site-packages", str(repo)]) == 0
+    assert _lanes(repo) == ["history_graph", "pkg_a_graph"]
+    capsys.readouterr()
+
+    assert cli.main(["eat", str(repo), "--package", "pkg_b", "--site-packages", str(repo)]) == 2
+    err = capsys.readouterr().err
+    assert "EAT REFUSED" in err and "pkg_a_graph" in err and "--force" in err
+    assert "NOTHING WAS DELETED" in err
+    # both lanes stand: the refusal is not a rollback, it is a deletion that did not happen
+    assert _lanes(repo) == ["history_graph", "pkg_a_graph", "pkg_b_graph"]
+
+    assert cli.main(["eat", str(repo), "--package", "pkg_b", "--site-packages", str(repo), "--force"]) == 0
+    out = capsys.readouterr().out
+    assert "EAT PRUNED (1, --force): pkg_a_graph" in out      # and it names what it removed
+    assert _lanes(repo) == ["history_graph", "pkg_b_graph"]
+
+
+def test_GREEN_a_re_eat_of_the_same_package_prunes_nothing_and_never_refuses(tmp_path, capsys):
+    """The refusal must not fire on the ordinary path: eating the same package twice names the same
+    lanes, so there is nothing outside the ring and no --force is ever needed."""
+    repo = _two_package_repo(tmp_path)
+    assert cli.main(["eat", str(repo), "--package", "pkg_a", "--site-packages", str(repo)]) == 0
+    capsys.readouterr()
+    assert cli.main(["eat", str(repo), "--package", "pkg_a", "--site-packages", str(repo)]) == 0
+    out, err = capsys.readouterr()
+    assert "EAT REFUSED" not in err and "EAT PRUNED" not in out
+    assert _lanes(repo) == ["history_graph", "pkg_a_graph"]
+
+
+def test_GREEN_check_recommends_the_lane_safe_verb_before_the_one_that_prunes(tmp_path):
+    """`check`'s stale-history remediation led with `graphy eat .`, which on a multi-lane tenant is
+    the command that deletes the other lanes — the audit recommending the data loss (graphyos #70).
+    The safe verb goes first and the caveat on the other is explicit."""
+    src = Path(cli.__file__).read_text(encoding="utf-8")
+    start = src.index("re-mint it: `graphy shell install")
+    remediation = src[start:src.index('"))', start)]
+    assert remediation.index("shell install") < remediation.index("graphy eat ."), remediation
+    assert "touches no other lane" in remediation
+    assert "lanes ARE its ring" in remediation        # the caveat, not a bare alternative
