@@ -168,8 +168,10 @@ cli.py                  graphy eat | init | smash | history | push | pull | inde
 
 ## MEMORY — the continuity lane, the dumb way
 
-Three hooks in `.claude/settings.json` and two files under `.claude/recovery/` (gitignored):
-`reseed_tail.md`, the last session as 1:1 user/assistant exchanges with tool use stripped, and
+Three hooks in `.claude/settings.json` and three files under `.claude/recovery/` (gitignored):
+**`NEXT_SESSION.md`, the cold-start orientation — read it first, before any opinion: the four
+commands, the repo trap, the loop, the fleet, what is open and what is the operator's**;
+`reseed_tail.md`, the last session as 1:1 user/assistant exchanges with tool use stripped; and
 `sessions/`, every distinct tail archived in sequence. PreCompact and SessionEnd capture; SessionStart
 on startup, clear or compact injects the newest bounded edge and names the file to read. A tail the
 parser cannot trust is refused loud, never injected hollow. No summarizer, no embeddings.
