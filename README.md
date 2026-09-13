@@ -163,6 +163,20 @@ runs nothing of theirs: the package is minted from its source with an empty ring
 left unresolved by name, no venv, no pip, no npm. `--site-packages` names an install you
 already have and skips the provisioning.
 
+**A monorepo is its own ring.** A repo with several importable packages refuses until you name
+one with `--package`. Name the directory the packages sit in (the repo root, or `src/`) as
+`--site-packages`, and the ring closes over the siblings from the checkout: nothing is
+installed, and every third-party import is named unresolved. Eat the package that imports the others:
+
+```bash
+graphy eat . --package app --site-packages .     # app imports core: both minted, requests named unresolved
+```
+
+The packages must sit in one directory: with some at the root and some under `src/`, one
+`--site-packages` reaches one of them, and a sibling in the other is named unresolved. One `eat`
+is one ring. A later `graphy eat . --package tools --site-packages .` does not delete `app`'s
+shards: it refuses, names them, and prints that command with `--force`, which replaces them.
+
 **What it reads today.** Python, through the standard library's own parser; TypeScript (with
 TSX) and JavaScript (ESM and CommonJS), through tree-sitter. Nothing else yet: a language is a
 producer, a resolver and a locator, and those are the ones that exist.

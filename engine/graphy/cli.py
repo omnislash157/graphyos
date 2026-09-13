@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import shutil
 import sys
 import time
@@ -1668,6 +1669,7 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         sys.stdout.flush(); print(f"EAT REFUSED: not a directory: {repo}", file=sys.stderr)
         return 2
     args._t0 = time.perf_counter()
+    args._site_packages_given = args.site_packages               # before provisioning fills it in
     candidates = _package_candidates(repo)
     producer = args.producer
     if producer is None:
@@ -1686,8 +1688,20 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         elif len(candidates) == 1:
             corpus = candidates[0]
         else:
+            # A monorepo's ring is its own checkout: naming the directory that holds the packages as
+            # --site-packages closes the ring over the siblings, installs nothing, and names every
+            # third-party import unresolved — where the default provision pip-installs the whole repo (graphyos #84).
+            ring = ""
+            homes = sorted({str(c.parent) for c in candidates})
+            if len(homes) == 1:
+                ring = (f" — the package that imports the others, with --site-packages {homes[0]} "
+                        f"as the ring: its siblings minted beside it, nothing installed, every third-party import named unresolved")
+            elif homes:
+                where = "; ".join(f"{h}: {', '.join(c.name for c in candidates if str(c.parent) == h)}" for h in homes)
+                ring = (f" — they sit in {len(homes)} directories ({where}), and --site-packages is one directory "
+                        f"as the ring: a sibling in the other is named unresolved, never minted")
             sys.stdout.flush(); print(f"EAT REFUSED: {'no' if not candidates else len(candidates)} importable package(s) under {repo}"
-                  f"{' — ' + ', '.join(c.name for c in candidates) if candidates else ''}; name one with --package",
+                  f"{' — ' + ', '.join(c.name for c in candidates) if candidates else ''}; name one with --package{ring}",
                   file=sys.stderr)
             return 2
     print(f"EAT: repo {repo}")                                   # after the package is settled: a refusal stands alone (graphyos #43)
@@ -1718,6 +1732,19 @@ def _cmd_eat(args: argparse.Namespace) -> int:
     if producer == "typescript_ast":
         return _eat_typescript(args, repo)
     return _eat_run(args, repo, corpus.name, corpus, "python_ast")
+
+
+def _eat_again(args: argparse.Namespace, repo: Path, package: str) -> str:
+    """This eat as a command to re-run: the package and the ring the user named, so the advice a
+    refusal prints does not fall back into the several-packages refusal (graphyos #84)."""
+    argv = ["graphy", "eat", shlex.quote(str(repo))]
+    if args.package:
+        argv += ["--package", shlex.quote(package)]
+    if getattr(args, "_site_packages_given", None):
+        argv += ["--site-packages", shlex.quote(str(Path(args._site_packages_given).expanduser().resolve()))]
+    elif getattr(args, "no_provision", False):
+        argv.append("--no-provision")
+    return " ".join(argv)
 
 
 def _clear_substrate(sub: Path) -> None:
@@ -1803,8 +1830,8 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         print(f"EAT REFUSED: {len(foreign)} lane(s) here were not minted by {package}'s import ring, "
               f"now or last time, and eat does not delete a lane it did not mint: {shown}. NOTHING "
               f"WAS DELETED — those shards stand and {package} is minted beside them. Another package "
-              f"or producer put them there; if they really are stale, `graphy eat . --force` prunes "
-              f"them and names each one.", file=sys.stderr)
+              f"or producer put them there; if they really are stale, `{_eat_again(args, repo, package)} --force` "
+              f"prunes them and names each one.", file=sys.stderr)
         return 2
     for d in sub.glob("*_graph"):
         if d.is_dir() and d.name not in live:

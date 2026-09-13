@@ -5907,3 +5907,28 @@ the package can check anything, so no check inside `graphy/` can see a shadow.
 | the floor test | `tests/test_launch.py`: an empty `graphy/` first on `PYTHONPATH` → exit 2, both paths named, no `No module named`; the engine alone launches; a namespace spec and the intended spec; both `[project.scripts]` entries name `_graphy_launch:main` — red with the entries reverted |
 | the floor · the gate | `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
 | the adversarial review | a cold subagent told the card. **VERDICT: REVISE**, one blocker: the floor called the launcher directly, so reverting `[project.scripts]` to the old entry stayed green. Disposition: the wiring test above, shown red on the reverted entries. The reviewer's own run: a wheel and strict · compat · lenient editable installs, an empty shadow refused in all four, clean launches in all four, no false refusal; a namespace directory shadows only the lenient editable finder, where the refusal fires, and loses to a regular package everywhere else. `out of the working directory` in the refusal → dropped, a console script's path starts at its own `bin/`. A `.pyc`-only distribution → ELIMINATED, unlikely |
+
+## 120 · A MONOREPO IS ITS OWN RING — `eat` over a repo with several importable packages refused with "name one with `--package`" and nothing more, so the first client named one and the default provision pip-installed the whole repo into a second venv; the move that works, `--site-packages` naming the directory the packages sit in, was found by reading source. The refusal now names that directory as the ring, and the README says it with the example (2026-09-13 · graphyos issue 84)
+
+**The change.**
+
+- The several-packages refusal in `_cmd_eat` appends: the package that imports the others, with
+  `--site-packages <dir>` as the ring, where the directory is the parent of the candidates (the repo
+  root, `src/`, or both).
+- README: "A monorepo is its own ring", the one-command example, and the line that a second
+  `eat --package` refuses and names the first ring's shards instead of deleting them (the #70 guard).
+- Packages under both the root and `src/`: the refusal groups them by directory and says one
+  `--site-packages` is one directory, a sibling in the other named unresolved.
+- The #70 guard's advice is this eat again (`_eat_again`): the repo, `--package`, the resolved
+  `--site-packages` or `--no-provision`, then `--force`, where it used to print `graphy eat . --force`,
+  which a monorepo refuses.
+- No `--ring repo` flag: the refusal prints the exact argument, so a flag would be a second
+  spelling of it.
+
+| check | result |
+|---|---|
+| the real run | a scratch git repo, `alpha` importing `beta.core` and `requests`, `beta` beside it: `graphy eat .` → `EAT REFUSED: 2 importable package(s) … alpha, beta; name one with --package — the package that imports the others, with --site-packages <repo> as the ring …`; `graphy eat . --package alpha --site-packages .` → `RING: 2 shard(s) · stdlib skipped 0 · unresolved requests`, `EAT OK … 0.1s`, no venv made; `eat --package beta` after it → exit 2, `NOTHING WAS DELETED`, naming `alpha_graph` |
+| the review's repros, after | `r84/root`: `eat --package core --site-packages .` after `app` → the advice `graphy eat <repo> --package core --site-packages <repo> --force`, which ran → `EAT PRUNED (1, --force): app_graph`, `EAT OK`; `r84/mixed` (`app/` at the root, `src/core/`) → `they sit in 2 directories (<repo>: app; <repo>/src: core) …` |
+| the floor tests | the root layout added to `test_RED_eat_settles_the_package_before_it_provisions_anything`; `test_the_several_packages_refusal_names_the_src_directory_as_the_ring`; `test_a_mixed_root_and_src_layout_is_told_one_directory_cannot_hold_both`; the advised argv asserted in `test_RED_eat_refuses_to_delete_a_lane_it_did_not_mint_and_force_is_the_deliberate_path` — all four red with `cli.py` stashed |
+| the floor · the gate | `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
+| the adversarial review | a cold subagent told the card. **VERDICT: REVISE**, two blockers. The README's `--force` sentence led to the guard's `graphy eat . --force`, which a monorepo refuses → the advice is the full argv, above. A mixed root and `src/` layout was promised siblings one directory cannot hold → grouped by directory, above. The dropped flag: acceptable, an alias. `showcase` over a monorepo passes on a refusal naming flags it does not take, and a repo package with a stdlib name is skipped silently: both predate this diff, filed as graphyos #100 and #101. The CLI arm region re-rendered for `_eat_again`; SEAM's 86→87 stays on #90 |

@@ -670,6 +670,32 @@ def test_RED_eat_settles_the_package_before_it_provisions_anything(tmp_path, mon
     assert "2 importable package(s)" in err and "alpha, beta" in err and "--package" in err
     assert called == [], "the repo was provisioned before the package was settled"
     assert not (repo / ".graphy").exists()
+    assert f"--site-packages {repo.resolve()} as the ring" in err, "the refusal names the monorepo ring (graphyos #84)"
+
+
+def test_the_several_packages_refusal_names_the_src_directory_as_the_ring(tmp_path, capsys):
+    """A src/ layout's ring is src/, not the root: the refusal names the directory the packages sit in (graphyos #84)."""
+    repo = tmp_path / "repo"
+    for name in ("alpha", "beta"):
+        (repo / "src" / name).mkdir(parents=True)
+        (repo / "src" / name / "__init__.py").write_text("x = 1\n")
+    assert cli.main(["eat", str(repo)]) == 2
+    err = capsys.readouterr().err
+    assert f"--site-packages {(repo / 'src').resolve()} as the ring" in err
+    assert f"--site-packages {repo.resolve()} " not in err
+
+
+def test_a_mixed_root_and_src_layout_is_told_one_directory_cannot_hold_both(tmp_path, capsys):
+    """Packages at the root and under src/: one --site-packages reaches one of them, and the refusal
+    says so instead of promising siblings it cannot mint (graphyos #84)."""
+    repo = tmp_path / "repo"
+    for base, name in ((repo, "app"), (repo / "src", "core")):
+        (base / name).mkdir(parents=True)
+        (base / name / "__init__.py").write_text("x = 1\n")
+    assert cli.main(["eat", str(repo)]) == 2
+    err = capsys.readouterr().err
+    assert "2 directories" in err and f"{repo.resolve()}: app" in err and f"{(repo / 'src').resolve()}: core" in err
+    assert "siblings minted beside it" not in err
 
 
 def test_GREEN_eat_no_provision_runs_nothing_of_the_repo_and_mints_an_empty_ring(tmp_path, monkeypatch, capsys):
@@ -1047,6 +1073,8 @@ def test_RED_eat_refuses_to_delete_a_lane_it_did_not_mint_and_force_is_the_delib
     err = capsys.readouterr().err
     assert "EAT REFUSED" in err and "pkg_a_graph" in err and "--force" in err
     assert "NOTHING WAS DELETED" in err
+    # the advice is this eat again, so a monorepo is not sent back into the several-packages refusal (graphyos #84)
+    assert f"`graphy eat {repo} --package pkg_b --site-packages {repo} --force`" in err
     # both lanes stand: the refusal is not a rollback, it is a deletion that did not happen
     assert _lanes(repo) == ["history_graph", "pkg_a_graph", "pkg_b_graph"]
 
