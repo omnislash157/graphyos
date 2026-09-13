@@ -135,13 +135,17 @@ graphy showcase .                            # the page: .graphy/showcase/index.
 ```
 
 The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+ on
-Linux and macOS; **on Windows, through WSL** — native Windows is not supported, and that is
-measured rather than assumed: the floor on `windows-latest` is 33 red, and the list is a rung with
-the runner's own output on it (graphyos #88). The hooks, `shell install` and the MCP pointer are
-bash; the store lock is a named no-op without `fcntl`; a shard minted there carries `\` in its
-file fields; and the CLI cannot print its own output on a `cp1252` console. What IS proven on the
-platform, on every push, is the store lane — CI's `store-windows` job runs the `durable` mark, so
-the defect that wrote no store at all there can never come back silently (graphyos #77).
+Linux and macOS. **On native Windows it builds** — a 32-lane tenant of 177,188 nodes and 460,209
+edges compiles green there off this wheel, with eighteen producers this engine never wrote — and it
+is not yet supported, which are two different sentences and both are measured. The known gaps, each
+a rung: a minted shard's `file` fields carry the OS separator, so shards are not byte-identical
+across hosts (node ids are clean, so a walk answers the same on both — graphyos #88); the journal
+can mint a duplicate seq under a lock that is a named no-op without `fcntl`; and a door that draws
+cannot encode its glyphs on a `cp1252` console unless `PYTHONUTF8=1` is set, which is one setting
+away. The hooks, `shell install` and the MCP pointer are bash, so WSL is still the smoother road.
+What is proven on the platform on every push is the store lane — CI's `store-windows` job runs the
+`durable` mark, so the defect that wrote no store at all there can never come back silently
+(graphyos #77).
 `[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build
 says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the TypeScript
 and JavaScript producer.
