@@ -6,12 +6,12 @@
 `cli` is every verb, one handler each, refusing by name before it reads anything; `shell` bolts the hooks and the gate onto an eaten repo. The walk crowns `cli` over the whole package — every other unit is its foundation — which is what a thin CLI over a library should look like.
 
 <!-- graphy:arm CLI generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=20cc3c8f6472c3fa cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:a1bed1383f41f14c743dd3ec396e12504da280b7c39ca46fbe53a7f58a4698fd -->
+     store=36174aa7e47c6276 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:eebf340d3b5f3a58c9bac62647bfe70a5195f0cf1323b1b5746c0054a350b675 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
 
-**`graphy.cli`** — functions: `_build_parser` · `_clear_substrate` · `_cmd_arms` · `_cmd_bridge` · `_cmd_build` · `_cmd_check` · `_cmd_container` · `_cmd_converge` · `_cmd_door` · `_cmd_draw` · `_cmd_eat` · `_cmd_estate` · `_cmd_estate_index` · `_cmd_fanout` · `_cmd_farm` · `_cmd_harness` · `_cmd_history` · `_cmd_index` · `_cmd_init` · `_cmd_mcp` · `_cmd_pillars` · `_cmd_pull` · `_cmd_push` · `_cmd_refresh` · `_cmd_shell` · `_cmd_showcase` · `_cmd_smash` · `_cmd_timeline` · `_cmd_traversals` · `_cmd_walk` · `_descriptor_dict` · `_eat_run` · `_eat_typescript` · `_flatten` · `_graphy_command` · `_history_report` · `_load_tenant` · `_main` · `_next_steps` · `_package_candidates` · `_parse_lanes` · `_profiled` · `_render_walk` · `_roster` · `_scheme_index_from_ring` · `_tenant_dirs` · `_torn_line` · `_walk_target` · `eat_history` · `main` · `mcp_args` · `repo_tenant`
+**`graphy.cli`** — functions: `_build_parser` · `_clear_substrate` · `_cmd_arms` · `_cmd_bridge` · `_cmd_build` · `_cmd_check` · `_cmd_container` · `_cmd_converge` · `_cmd_door` · `_cmd_draw` · `_cmd_eat` · `_cmd_estate` · `_cmd_estate_index` · `_cmd_fanout` · `_cmd_farm` · `_cmd_harness` · `_cmd_history` · `_cmd_index` · `_cmd_init` · `_cmd_mcp` · `_cmd_pillars` · `_cmd_pull` · `_cmd_push` · `_cmd_refresh` · `_cmd_shell` · `_cmd_showcase` · `_cmd_smash` · `_cmd_timeline` · `_cmd_traversals` · `_cmd_walk` · `_descriptor_dict` · `_eat_run` · `_eat_typescript` · `_endpoint_audit` · `_flatten` · `_graphy_command` · `_history_report` · `_load_tenant` · `_main` · `_next_steps` · `_package_candidates` · `_parse_lanes` · `_profiled` · `_render_walk` · `_roster` · `_scheme_index_from_ring` · `_tenant_dirs` · `_torn_line` · `_walk_target` · `eat_history` · `main` · `mcp_args` · `repo_tenant`
 **`graphy.shell.gate`** — functions: `_cited` · `_module` · `_symbols` · `main`
 **`graphy.shell.install`** — classes: `ShellError`; functions: `_fill` · `_merge_cursor` · `_merge_hooks` · `_write_wiring` · `install` · `memory_taps` · `remint_history`
 
@@ -28,6 +28,6 @@ python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus gr
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```
 
-Last walk: crown=`graphy://func/graphy.cli._load_tenant` dependents=26 → arms/CLI.walk.txt
+Last walk: crown=`graphy://func/graphy.cli._load_tenant` dependents=27 → arms/CLI.walk.txt
 
 <!-- /graphy:arm CLI -->
