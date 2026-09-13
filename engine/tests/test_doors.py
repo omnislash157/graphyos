@@ -274,3 +274,115 @@ def test_GREEN_the_shipped_producers_declare_exactly_the_families_the_doors_hard
     for vocab in (PYTHON_AST_VOCABULARY, TYPESCRIPT_AST_VOCABULARY):
         assert vocab.types_in(DEPENDS) == doors.BLAST_RELATIONS, vocab.producer
         assert vocab.types_in(REACHES) == doors.DESCEND_RELATIONS, vocab.producer
+
+
+def test_GREEN_a_door_names_the_relations_it_declined_and_stays_silent_on_an_honest_zero(tmp_path):
+    """A zero from a door is two very different statements — "nothing depends on this" and "I
+    declined to read every edge that does" — and printing the same thing for both is the worst
+    available answer for a tool whose contract is that no model decided an edge. The first client's
+    table had 22 inbound edges and `blast` said dependents=0 (graphyos #69).
+
+    The line appears only when unadmitted edges actually exist, so a genuinely unreferenced node
+    still reads as a clean zero and the notice never becomes noise to scroll past."""
+    silent = _census_store(tmp_path / "silent", declare=None)
+    b = doors.blast(silent, TABLE, max_depth=3)
+    assert [r for r in b.reached.values() if r.hop > 0] == []      # still zero dependents
+    assert b.declined == {"reads_table": 1}                        # but it says why
+    rendered = doors.render_blast(b)
+    assert "NOT WALKED: reads_table 1" in rendered
+    # nobody declared reads_table, so the notice is ACTIONABLE and says what to do
+    assert "No producer declared what reads_table mean" in rendered and "re-mint that lane" in rendered
+
+    # declared: walked, so nothing is declined and the notice is gone
+    declared = _census_store(tmp_path / "declared", declare={"reads_table": ["depends"]})
+    b2 = doors.blast(declared, TABLE, max_depth=3)
+    assert b2.declined == {}
+    assert "NOT WALKED" not in doors.render_blast(b2)
+
+    # an honest zero: a node with no inbound edges at all reads clean
+    b3 = doors.blast(silent, READER, max_depth=3)
+    assert b3.declined == {} and "NOT WALKED" not in doors.render_blast(b3)
+
+
+def test_GREEN_a_deliberate_classification_is_not_nagged_about_but_a_zero_still_explains_itself(tmp_path):
+    """`contains` sits on nearly every node a code producer mints and is declared STRUCTURAL on
+    purpose. Telling a reader to go declare it, on every healthy blast, would train them to scroll
+    past the line that matters — so a DECLARED skip is silent while the answer is non-zero, and an
+    UNDECLARED one speaks at any size. When the answer IS zero the notice always appears, because
+    that is the case where silence and the graph disagree (graphyos #69)."""
+    store = _census_store(tmp_path, declare={"reads_table": ["structural"]})
+    b = doors.blast(store, TABLE, max_depth=3)
+    assert b.declined == {"reads_table": 1} and b.declined_classes == {"reads_table": ["structural"]}
+    line = doors.render_blast(b)
+    assert "NOT WALKED" in line                                  # the answer was zero: always say so
+    assert "declared and deliberate: reads_table=structural" in line
+    assert "No producer declared" not in line                    # and never ask for what was given
+    # the same declared skip, with a non-zero answer, is silent
+    assert doors.render_declined({"contains": 1}, {"contains": ["structural"]}, answered=17) == ""
+    assert doors.render_declined({"contains": 1}, {}, answered=17) != ""    # undeclared still speaks
+
+
+def test_GREEN_descend_names_what_it_declined_on_the_way_out(tmp_path):
+    """The same for the forward door: `reads_table` leaves the reader and `descend` walked past it."""
+    silent = _census_store(tmp_path / "d-silent", declare=None)
+    d = doors.descend(silent, READER, max_depth=2)
+    assert TABLE not in d.reached
+    assert d.declined == {"reads_table": 1}
+    assert "NOT WALKED: reads_table 1" in doors.render_descend(d)
+    reaching = _census_store(tmp_path / "d-declared", declare={"reads_table": ["depends", "reaches"]})
+    d2 = doors.descend(reaching, READER, max_depth=2)
+    assert TABLE in d2.reached and d2.declined == {}
+
+
+def test_GREEN_the_notice_counts_every_unadmitted_relation_separately(tmp_path):
+    """The first client's seed declined five relation types at once; the line is a census, not a
+    flag, because which relations were skipped is what tells a reader what to declare."""
+    data_home = tmp_path / "data"
+    data_home.mkdir(parents=True)
+    _write_graph(data_home / "pg_schema_graph", {
+        TABLE: {"kind": "node", "node_type": "table", "id": TABLE, "dotted": "pg_schema.enterprise.credit_requests"},
+    }, [])
+    readers = {}
+    edges = []
+    for rel, n in (("reads_table", 3), ("indexes_on", 2), ("protects", 1)):
+        for i in range(n):
+            nid = f"core://func/core.{rel}_{i}"
+            readers[nid] = {"kind": "node", "node_type": "func", "id": nid, "dotted": f"core.{rel}_{i}"}
+            edges.append({"kind": "edge", "edge_type": rel, "src": nid, "dst": TABLE, "line": 1})
+    _write_graph(data_home / "core_graph", readers, edges)
+    (data_home / ".federation_scheme_index.json").write_text(json.dumps({
+        "_meta": {}, "pg_schema": {"own": ["pg_schema"], "out": []}, "core": {"own": ["core"], "out": ["pg_schema"]}}),
+        encoding="utf-8")
+    join_keys = tmp_path / "registry.json"
+    join_keys.write_text(json.dumps({"_meta": {}, "registered_joins": {"literal_joins": {}}}), encoding="utf-8")
+    lanes = {"pg_schema_graph": (None, "static-dep"), "core_graph": (None, "static-dep")}
+    tenant = Tenant(root=tmp_path, data_home=data_home, adapters=(), build_lanes=lanes, join_keys=join_keys,
+                    cursor="sha256:" + "0" * 64, policy="refuse", journal=tmp_path / "journal")
+    roster = ["pg_schema", "core"]
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="many")
+    store = fs.open_for(roster, tenant=tenant, tenant_id="many")
+    b = doors.blast(store, TABLE, max_depth=2)
+    assert len(b.reached) == 1                                    # the confident zero
+    assert b.declined == {"reads_table": 3, "indexes_on": 2, "protects": 1}   # ordered by count
+    line = doors.render_declined(b.declined, b.declined_classes, answered=0)
+    assert line.index("reads_table") < line.index("indexes_on") < line.index("protects")
+    assert "6 edge(s) on this seed" in line
+
+
+def test_GREEN_the_counting_proxy_forwards_what_the_doors_read_off_a_store(tmp_path):
+    """The CLI wraps every door's store in `traversal.Counting`, which forwarded four methods by
+    hand. The doors read their relation families off the store (graphyos #68), so the day that
+    landed, every door run through the CLI silently fell back to the hardcoded defaults while this
+    floor — which holds the store directly — stayed green. The declared vocabulary worked everywhere
+    except the one path a user takes, and only the NOT WALKED line made it visible.
+
+    Forwarding by default is the fix; this is the test that the proxy cannot go blind again."""
+    from graphy import traversal
+    store = _census_store(tmp_path, declare={"reads_table": ["depends"]})
+    counted = traversal.Counting(store)
+    assert counted.relations == store.relations
+    assert doors.blast_relations(counted) == doors.blast_relations(store)
+    assert "reads_table" in doors.blast_relations(counted)
+    b = doors.blast(counted, TABLE, max_depth=3)
+    assert [r.node for r in b.reached.values() if r.hop > 0] == [READER]
+    assert counted.reads > 0                                   # still counting

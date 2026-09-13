@@ -6,16 +6,16 @@
 `doors` answers over one store; `traversal` keeps the walks; `query` spreads activation; `bridge` walks between two tenants on a declared literal; `mcp` serves the tools on stdio. A history shard in the roster makes the archive's exchanges readers of the code: `blast` lists the ones that mention a symbol under their own owner, `explain` lists them with the docs, and `timeline` walks from a symbol into the sessions that discussed it.
 
 <!-- graphy:arm DOORS generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=b31998a02b935873 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:102d6e354a139b3986bb0865bd60b1491b2ed0d27e015e4bebaa74684e4b6147 -->
+     store=20cc3c8f6472c3fa cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:2feeb17fce2f7976cea931930561d84bf31d3ee983a30b263e4d2fa2f795f0ee -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
 
 **`graphy.bridge`** — classes: `BridgeError` · `BridgeResult` (1) · `Hop` (1) · `Side` (1); functions: `_roster` · `_scheme` · `cross` · `open_sides` · `render` · `verify_joins`
-**`graphy.doors`** — classes: `Blast` · `Crossing` · `Descent` · `DoorError` · `Explanation` · `Reach`; functions: `_bfs` · `_fmt_chain` · `blast` · `blast_relations` · `chain` · `descend` · `descend_relations` · `explain` · `render_blast` · `render_descend` · `render_explain` · `resolve`
+**`graphy.doors`** — classes: `Blast` · `Crossing` · `Descent` · `DoorError` · `Explanation` · `Reach`; functions: `_bfs` · `_fmt_chain` · `blast` · `blast_relations` · `chain` · `declined` · `descend` · `descend_relations` · `explain` · `render_blast` · `render_declined` · `render_descend` · `render_explain` · `resolve`
 **`graphy.mcp`** — classes: `Doors` (11) · `ToolError`; functions: `_error` · `_result` · `handle` · `open_tools` · `serve`
 **`graphy.query`** — classes: `LoadStats` · `Mesh` · `NodeState`; functions: `_build_parser` · `_coerce_salience` · `_coerce_witnesses` · `_format_human` · `_infer_edge_path` · `_nonneg_float` · `_pos_int_min1` · `_print_explanations` · `_print_mesh_set_human` · `_required_edge_fields` · `_strict_decay` · `activate` · `adjacency` · `classify` · `load` · `main` · `query` · `rank`
-**`graphy.traversal`** — classes: `Counting` (5) · `StoredWalk` (1) · `TraversalError` · `WalkOutcome`; functions: `_chain` · `_key` · `_paths` · `_steps` · `home_for` · `load_walk` · `replay` · `store_walk` · `stored` · `walk`
+**`graphy.traversal`** — classes: `Counting` (6) · `StoredWalk` (1) · `TraversalError` · `WalkOutcome`; functions: `_chain` · `_key` · `_paths` · `_steps` · `home_for` · `load_walk` · `replay` · `store_walk` · `stored` · `walk`
 
 ## The inherits joins out — generated
 

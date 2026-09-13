@@ -96,6 +96,52 @@ def _bfs(store, seed: str, max_depth: int, relations: frozenset, direction: str,
     return reached
 
 
+def declined(store, seed: str, admitted: frozenset, direction: str) -> dict[str, int]:
+    """The edges ON THE SEED that point the way this door walks and were NOT admitted, counted by
+    relation (graphyos #69).
+
+    A door that answers zero is making one of two very different statements — "nothing depends on
+    this" or "I declined to read every edge that does" — and for a tool whose whole contract is that
+    no model decided an edge, printing the same thing for both is the worst available answer. The
+    store knows the difference one query away, so the door says which it means."""
+    out: dict[str, int] = {}
+    for nb in store.neighbours(seed):
+        if nb.direction not in (direction, BOTH) or nb.relation in admitted:
+            continue
+        out[nb.relation] = out.get(nb.relation, 0) + 1
+    return dict(sorted(out.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def render_declined(counts: dict[str, int], classes: dict[str, list[str]], *, answered: int) -> str:
+    """``NOT WALKED: …``, or empty when there is nothing a reader could act on.
+
+    Two kinds of unwalked edge, and conflating them is how a true notice becomes noise. A relation
+    its producer DECLARED structural or lexical was skipped on purpose — `contains` sits on nearly
+    every node in a code shard, and telling a reader to go declare it, on every healthy blast, would
+    train them to scroll past the line that matters. A relation NOBODY declared took the default,
+    and that is the one worth a word, because it is the case where the door's silence and the
+    graph's content actually disagree (graphyos #69).
+
+    So the notice is printed when the answer was zero — where a reader could otherwise conclude
+    "nothing depends on this" — or when an undeclared relation was skipped at any result size."""
+    if not counts:
+        return ""
+    undeclared = {r: n for r, n in counts.items() if not classes.get(r)}
+    if answered and not undeclared:
+        return ""
+    shown = " · ".join(f"{rel} {n}" for rel, n in counts.items())
+    line = f"  NOT WALKED: {shown} — {sum(counts.values())} edge(s) on this seed this door does not walk."
+    if undeclared:
+        names = " · ".join(sorted(undeclared))
+        line += (f" No producer declared what {names} mean, so the default was taken. Declare them in "
+                 f"the minting producer's vocabulary (graphy.ir: depends · reaches · structural · "
+                 f"lexical) and re-mint that lane.")
+    else:
+        told = " · ".join(f"{r}={'/'.join(classes[r])}" for r in counts)
+        line += f" Every one is declared and deliberate: {told}."
+    return line
+
+
 def chain(reached: dict[str, Reach], node: str) -> list[str]:
     out: list[str] = []
     at: str | None = node
@@ -127,6 +173,8 @@ class Descent:
     crossings: list[Crossing]
     primitives: list[Reach]
     packages: list[str] = field(default_factory=list)
+    declined: dict[str, int] = field(default_factory=dict)      # graphyos #69
+    declined_classes: dict[str, list[str]] = field(default_factory=dict)
 
 
 def descend(store, seed: str, max_depth: int = 4) -> Descent:
@@ -154,7 +202,8 @@ def descend(store, seed: str, max_depth: int = 4) -> Descent:
     packages = sorted(first_seen, key=lambda o: (first_seen[o], o))
     return Descent(seed, reached[seed].owner, max_depth, reached, by_owner,
                    sorted(crossings.values(), key=lambda c: (c.hop, c.src_owner, c.dst_owner)),
-                   primitives, packages)
+                   primitives, packages, (_dec := declined(store, seed, walked, WITH)),
+                   {r: list(getattr(store, 'relations', {}).get(r) or []) for r in _dec})
 
 
 @dataclass
@@ -167,10 +216,13 @@ class Blast:
     by_hop: dict[int, int]
     own: list[Reach]
     ring: list[Reach]
+    declined: dict[str, int] = field(default_factory=dict)      # graphyos #69
+    declined_classes: dict[str, list[str]] = field(default_factory=dict)
 
 
 def blast(store, seed: str, max_depth: int = 4) -> Blast:
-    reached = _bfs(store, seed, max_depth, blast_relations(store), AGAINST, SEED_RELATIONS)
+    walked = blast_relations(store)
+    reached = _bfs(store, seed, max_depth, walked, AGAINST, SEED_RELATIONS)
     owner = reached[seed].owner
     by_owner: dict[str, int] = {}
     by_hop: dict[int, int] = {}
@@ -184,7 +236,9 @@ def blast(store, seed: str, max_depth: int = 4) -> Blast:
         (own if r.owner == owner else ring).append(r)
     key = lambda r: (r.hop, r.owner, r.node)  # noqa: E731
     return Blast(seed, owner, max_depth, reached, by_owner, dict(sorted(by_hop.items())),
-                 sorted(own, key=key), sorted(ring, key=key))
+                 sorted(own, key=key), sorted(ring, key=key),
+                 (_dec := declined(store, seed, walked | SEED_RELATIONS, AGAINST)),
+                 {r: list(getattr(store, "relations", {}).get(r) or []) for r in _dec})
 
 
 @dataclass
@@ -244,6 +298,8 @@ def render_descend(d: Descent, limit: int = 12) -> str:
     lines = [f"DESCEND seed={d.seed} owner={d.owner} depth={d.depth} reached={len(d.reached) - 1} "
              f"packages={' → '.join(d.packages)}"]
     lines.append("  BY OWNER: " + "  ".join(f"{o}={n}" for o, n in sorted(d.by_owner.items(), key=lambda kv: -kv[1])))
+    if (note := render_declined(d.declined, d.declined_classes, answered=len(d.reached) - 1)):
+        lines.append(note)
     for c in d.crossings:
         lines.append(f"  CROSSING {c.src_owner} → {c.dst_owner} @hop{c.hop} ×{c.count}: {_fmt_chain(d.reached, c.dst)}")
     if d.primitives:
@@ -261,6 +317,8 @@ def render_blast(b: Blast, limit: int = 12) -> str:
              f"own={len(b.own)} ring={len(b.ring)}"]
     lines.append("  BY HOP: " + "  ".join(f"hop{h}={n}" for h, n in b.by_hop.items()))
     lines.append("  BY OWNER: " + "  ".join(f"{o}={n}" for o, n in sorted(b.by_owner.items(), key=lambda kv: -kv[1])))
+    if (note := render_declined(b.declined, b.declined_classes, answered=len(b.reached) - 1)):
+        lines.append(note)
     for title, rows in (("OWN", b.own), ("RING", b.ring)):
         if not rows:
             continue

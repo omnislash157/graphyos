@@ -5290,3 +5290,52 @@ python3 -c "import json,graphy.cli as c,graphy.federated_store as f; t=c._load_t
 | the floor | 585 passed, 3 skipped (581 before: the four door tests) |
 | the constraints | `REVIEW OK: 8 check(s)`; `SCRUB OK`; the gate `GRAPHY_STANDALONE_OK`; the six arm regions and `docs/pillars.svg` re-rendered against store `b31998a02b935873` |
 | the bound, stated so it is not relitigated | a declaration makes reachable what is already minted; it does not invent an edge an emitter never wrote. One measured table stays `0/0/0` even declared, because its reads go through DuckDB over Parquet and no SQL census sees them. This is not a substitute for an emitter gap |
+
+## 105 · A DOOR SAYS WHAT IT DECLINED TO WALK — a zero from `blast` was two different statements, "nothing depends on this" and "I did not read the edges that do", printed identically; the doors now census the unwalked edges on the seed, tell a deliberate classification apart from an undeclared one, and the first run of that line found the declared vocabulary was being dropped on the only code path a user takes (2026-09-13 · graphyos issue 69)
+
+**The number, from the first client.** `blast` on a table answered `dependents=0 own=0 ring=0` while
+`estate --sql` listed 22 inbound edges across five relation types. For a tool whose contract is that
+no model decided an edge, a silent zero is the worst available answer: it is indistinguishable from
+an honest one, and the store knew the difference one query away.
+
+**The change.** `doors.declined(store, seed, admitted, direction)` counts the edges on the seed that
+point the way the door walks and were not admitted, by relation. `render_declined` prints
+`NOT WALKED: reads_table 9 · indexes_on 8 — …` and — the judgement that keeps it from becoming
+noise — **tells a declared skip from an undeclared one**. `contains` sits on nearly every node a code
+producer mints and is `STRUCTURAL` on purpose; nagging about it on every healthy blast would train a
+reader to scroll past the line that matters. So a DECLARED skip is silent while the answer is
+non-zero and reads *"Every one is declared and deliberate: follows=lexical"* when it is zero; an
+UNDECLARED one speaks at any size and says what to declare. The notice always appears on a zero,
+because that is exactly where the door's silence and the graph's content disagree.
+
+**What the first run of the line found, which is the real value of this rung.** On a healthy blast of
+a live symbol it printed *"No producer declared what contains mean"* — and `contains` had been
+declared `STRUCTURAL` an hour earlier in §104. Two defects behind one symptom:
+
+- `traversal.Counting`, the proxy the CLI wraps every door's store in, forwarded four methods **by
+  hand**. It did not forward `relations`, so every door run through the CLI fell back to the
+  hardcoded defaults while the floor — which holds the store directly — stayed green. **§104's
+  declared vocabulary worked everywhere except the one path a user takes.** It now forwards by
+  default, so the next field added to a store cannot repeat it.
+- `history.mint` writes its own PROVENANCE and never got §104's vocabulary block, so the history
+  producer declared `follows` and `touches` in code and its shard carried nothing. The lane now
+  carries its declaration like any other shard.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_doors.py
+python3 -m graphy blast <a symbol with only structural edges> --tenant … --tenant-id …
+python3 -c "import json,graphy.cli as c,graphy.federated_store as f; t=c._load_tenant('engine/tenants/graphy/tenant.json'); r=[s[:-6] for s in t.build_lanes]; print(json.dumps(f.open_for(r,tenant=t,tenant_id='graphy').relations))"
+```
+
+| check | result |
+|---|---|
+| the confident zero, explained | a lane whose `reads_table` nobody declared: `dependents=0` **and** `NOT WALKED: reads_table 1 — 1 edge(s) … No producer declared what reads_table mean, so the default was taken. Declare them … and re-mint that lane.` |
+| a deliberate classification is not nagged about | `reads_table` declared `structural`, answer zero → `Every one is declared and deliberate: reads_table=structural`, and never a request for what was already given; the same skip with a non-zero answer renders empty |
+| an honest zero stays clean | a node with no inbound edges at all: `declined == {}`, no line |
+| the census is ordered | three relations on one seed → `reads_table 3 · indexes_on 2 · protects 1`, biggest first, `6 edge(s) on this seed` |
+| `descend` too | `reads_table` leaving the reader, undeclared → the notice on the forward door; declared `[depends, reaches]` → walked, notice gone |
+| the proxy defect the line found | `traversal.Counting(store).relations` was `AttributeError`-shaped silence; now equal to the store's, and `blast_relations(counted) == blast_relations(store)` is a floor test |
+| the history lane | the tenant's store now folds 12 relation types across two producers: `authored·contains → structural`, `calls → depends,reaches`, `decorates·imports·inherits → depends`, `follows·mentions·names·pins·records·touches → lexical` |
+| the tests, against the old line | all three declined tests fail with `render_declined` stubbed to empty — the notice is what they measure |
+| the floor | 590 passed, 3 skipped (585 before: five door tests) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK`; arm regions and `docs/pillars.svg` re-rendered against store `20cc3c8f6472c3fa` |

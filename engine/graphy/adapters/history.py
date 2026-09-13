@@ -566,7 +566,11 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
                    "git_head": head, "sessions": smash_lane.portable(sess_dir) if sess_dir else None,
                    "recon": recon, "code": [smash_lane.portable(c) for c in shards],
                    "aliases": smash_lane.portable(alias_path) if alias_path else None},
-        "counts": smash_lane._counts(nodes, edges),
+        "counts": (_c := smash_lane._counts(nodes, edges)),
+        # The record's own relations, declared beside its census like any other shard (graphyos #68).
+        # Without this the history lane declares in code and carries nothing, so a door reads
+        # `follows` or `touches` as undeclared and tells a reader to go declare what already is.
+        "vocabulary": smash_lane._vocabulary_block(HISTORY_VOCABULARY, _c),
         "files": {name: smash_lane._file_receipt(out / name) for name in ("nodes.json", "edges.json")},
         "history": {"commits": len(commits), "sessions": len(sess), "sections": len(sections),
                     "issues": sum(1 for n in nodes.values() if n["node_type"] == "issue"),

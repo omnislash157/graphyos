@@ -59,6 +59,17 @@ class Counting:
         self._store = store
         self.reads = 0
 
+    def __getattr__(self, name: str):
+        """Anything this proxy does not name itself comes from the store behind it.
+
+        A hand-written proxy forwarding four methods silently drops the fifth thing anyone adds to a
+        store. It dropped `relations` the day it existed: the doors read their relation families off
+        the store (graphyos #68), the CLI wraps every door's store in this, and so every door run
+        through the CLI fell back to the hardcoded defaults while the tests — which hold the store
+        directly — passed. The declared vocabulary worked everywhere except the one path a user
+        takes. Forwarding by default means the next field added to a store cannot repeat it."""
+        return getattr(self._store, name)
+
     def neighbours(self, node: str):
         self.reads += 1
         return self._store.neighbours(node)
