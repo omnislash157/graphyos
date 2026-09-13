@@ -303,3 +303,46 @@ def test_RED_an_unreadable_file_is_named_with_its_reason_and_a_coding_cookie_is_
     # a readable file's records are the same whether the producer reads it or is handed the parse
     handed = list(python_ast._emit_records_for_file(pkg / "good.py", pkg, "badpkg", parsed=python_ast.read_source(pkg / "good.py")))
     assert handed == list(python_ast._emit_records_for_file(pkg / "good.py", pkg, "badpkg"))
+
+
+def test_GREEN_a_path_field_is_posix_whoever_minted_the_shard(tmp_path):
+    """A shard minted on Windows carried `idna\\cli.py` where a Linux mint of the same bytes at the
+    same commit carried `idna/cli.py`, so the generation digest, the golden fixtures and every
+    byte-identity check disagreed across hosts. Node IDS were always clean — 0 of 177,281 on a real
+    Windows roster — so no walk was ever wrong; this is parity, not correctness (graphyos #88).
+
+    The first client proved the shape exactly: same corpus, same engine, 58 nodes / 395 edges on
+    both hosts, 10 of 10 files parsed on both, and replacing `\\` with `/` in the file fields
+    reproduced the Linux digest character for character. One normalisation is the whole fix.
+
+    It is asserted at the TYPED RECORD, not only in graphy's own producers, because on that client's
+    roster 21 of 23 file-bearing lanes carried backslashes and most were minted by emitters this
+    engine never wrote. A producer that hands the IR a native path gets it normalised too."""
+    from graphy.ir import PYTHON_AST_VOCABULARY, Node
+    node = Node.from_mapping("x://func/x.f", {
+        "kind": "node", "node_type": "func", "id": "x://func/x.f", "dotted": "x.f",
+        "file": "x\\sub\\mod.py", "line": 1, "docstring": "",
+    }, PYTHON_AST_VOCABULARY)
+    assert node.file == "x/sub/mod.py"
+    # a path that is already posix is untouched, and a record with no file stays None
+    assert Node.from_mapping("x://func/x.g", {
+        "kind": "node", "node_type": "func", "id": "x://func/x.g", "dotted": "x.g",
+        "file": "x/sub/mod.py", "line": 1, "docstring": "",
+    }, PYTHON_AST_VOCABULARY).file == "x/sub/mod.py"
+
+
+def test_GREEN_the_producer_writes_a_posix_path_before_the_ir_ever_sees_it(tmp_path):
+    """The typed record is the backstop; the producer is where the bytes are decided. Both matter:
+    a shard's nodes.json is compared byte-for-byte across hosts by the golden fixtures, and that
+    file is written by the producer, not by the IR."""
+    pkg = tmp_path / "deep"
+    (pkg / "sub").mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "sub" / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "sub" / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    from graphy.adapters import python_ast
+    nodes, _edges, _sources = python_ast.mint_records(pkg)
+    files = {r.get("file") for r in nodes.values() if r.get("file")}
+    assert files, "the fixture minted no file-bearing node"
+    assert not any("\\" in f for f in files), files
+    assert "deep/sub/mod.py" in files

@@ -5382,3 +5382,63 @@ graphy eat . --package pkg_b --site-packages . --force
 | the floor | 593 passed, 3 skipped (590 before: the refusal, the ordinary re-eat, the remediation order) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
 | the bound | a monorepo still cannot get two packages into one built store by eating twice — the second eat refuses rather than deleting, which is this rung's whole job. The multi-lane rebuild is graphyos #71 and this does not pretend to be it |
+
+## 107 · A PATH FIELD IS POSIX ON EVERY HOST — a shard minted on Windows carried `idna\cli.py` where a Linux mint of the same bytes at the same commit carried `idna/cli.py`, so byte-identity, the golden fixtures and the generation digest disagreed across hosts while every node id stayed clean and no walk was ever wrong; one normalisation at the typed record, where 85.7% of a real tenant's file fields pass through (2026-09-13 · graphyos issue 88)
+
+**The measurement, from a Windows production box and two Linux boxes.** The first client built a
+matched control — `pip install --target <scratch> idna==3.19`, the engine pointed at that directory,
+the production venv untouched — and minted the same corpus this box minted:
+
+```text
+                    Linux            Windows
+nodes / edges       58 / 395         58 / 395        identical, to the unit
+files parsed        10 of 10         10 of 10        identical
+node ids            58, 0 with `\`   58, 0 with `\`   identical
+file-field digest   47e8d1eeb130931a 6b6d404c1ea8318c   the ONLY difference
+  the same fields, separators normalised to `/`  →  47e8d1eeb130931a
+```
+
+Replacing `\` with `/` reproduces the Linux digest **character for character**. Nothing structural
+diverges; it is the same graph with one field spelled in the local dialect. At production scale the
+same box read **0 backslashes in 177,281 node ids** across 32 lanes, and 14,675 of 113,799 file
+fields. So this is parity and reproducibility — genuinely broken — and never graph correctness.
+
+**Where the fix goes, settled by a number rather than by taste.** The client attributed every
+file-bearing node on their roster to the producer that minted it:
+
+```text
+file-bearing nodes            121,799   across 24 lanes
+  adapters graphyos ships      17,365     14.3%   (python_ast 8,510 · history 8,855)
+  emitters the house owns     104,434     85.7%   (session_memory 53,423 · item_lexicon 36,380 ·
+                                                   pg_schema 13,513 · seven more)
+```
+
+Fixing `python_ast` alone closes **7%** of that surface. Fixing every adapter this engine ships closes
+14.3%. The remaining 85.7% is minted by producers it does not own, in repos it will never see — and
+any tenant with its own emitters has that shape, because that is what a tenant is. So the
+normalisation goes at `ir.Node.from_mapping`, the last place a shard passes through before anything
+reads it, which catches all 24 lanes for one line and every emitter nobody has written yet. The two
+shipped producers normalise at their own walk as well, because a shard's `nodes.json` is compared
+byte-for-byte by the golden fixtures and those bytes are written by the producer, not by the IR.
+
+**A control that did not control, and the correction.** This box proposed `idna` as the cross-host
+corpus without pinning it. Two Linux boxes already disagreed at 58/395 against 55/351 (3.19 against
+3.18), and the Windows box shipped **3.11 — eight files, not ten**. Between 3.18 and 3.19 the digest
+is blind to the skew because both ship the same ten module files; at 3.11 the file SET moves and the
+digest moves with it for a reason that has nothing to do with separators. A bare "different digest"
+from that run would have been a true verdict reached through a broken control. The count rule this
+box wrote — *"if the counts also differ it is bigger than #88 says"* — was withdrawn before it fired.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_adapters.py -k posix
+python3 -c "from graphy.adapters import python_ast as p; n,_,_ = p.mint_records(<a package>); print({r['file'] for r in n.values() if r.get('file')})"
+```
+
+| check | result |
+|---|---|
+| the typed record | `Node.from_mapping` with `file: "x\\sub\\mod.py"` → `x/sub/mod.py`; an already-posix path untouched; a record with no file stays `None` |
+| the producer | `mint_records` over a nested package emits `deep/sub/mod.py` and no field carries a backslash |
+| against the old line | both tests fail with the normalisation removed |
+| the floor | 595 passed, 3 skipped (593 before) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+| the bound | this fixes the shards graphy writes and normalises what any producer hands the IR. A foreign emitter writing `nodes.json` directly still writes its own bytes; the IR corrects them on the way in, so the store and every walk agree, and the shard's own bytes remain that emitter's to fix |

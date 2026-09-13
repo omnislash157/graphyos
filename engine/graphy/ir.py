@@ -333,7 +333,13 @@ class Node:
             id=id_,
             node_type=node_type,
             dotted=dotted,
-            file=file,
+            # The path field is posix on every host, whoever minted the shard. graphy's own
+            # producers normalise at the walk, but a tenant's foreign producer resolves a path
+            # through pathlib and stores str() — on a first client's roster that was 21 of 23
+            # file-bearing lanes, most of them emitters this engine never wrote. Normalising where
+            # the TYPED record is built catches every one of them at the same cost, and it is the
+            # last place a shard passes through before anything reads it (graphyos #88).
+            file=file.replace("\\", "/") if isinstance(file, str) else file,
             docstring=docstring,
             kind=cls.kind,
             name=name,

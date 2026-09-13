@@ -433,7 +433,13 @@ def _emit_raw_records_for_file(
 
     module_dotted = _dotted_for(file, root, package)
     module_id = _node_id("module", module_dotted)
-    file_rel = str(file.relative_to(rel_base if rel_base is not None else root.parent))
+    file_rel = str(file.relative_to(rel_base if rel_base is not None else root.parent)).replace("\\", "/")
+  # The separator is normalised HERE, where the record is built: a shard minted on Windows
+    # carried `idna\\cli.py` where a Linux mint carried `idna/cli.py`, so the same tree at the same
+    # commit produced two different shards and the generation digest, the golden fixtures and every
+    # byte-identity check disagreed across hosts. Node IDS were always clean, so no walk was ever
+    # wrong — this is parity, not correctness (graphyos #88, measured on a Windows production box:
+    # 14,675 of 113,799 file fields, 0 of 177,281 ids).
 
     yield {
         "kind": "node",

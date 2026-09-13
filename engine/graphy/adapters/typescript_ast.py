@@ -564,7 +564,7 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
             tree = (ts if f.suffix in (".ts", ".mts", ".cts") else tsx).parse(src)   # JSX-safe for everything else
             module_dotted = dotted_of[f]
             module_id = modules[str(f.resolve())]
-            file_rel = str(f.relative_to(root.parent))
+            file_rel = str(f.relative_to(root.parent)).replace("\\", "/")   # posix on every host (graphyos #88)
             role = "test" if TEST_FILE.search(str(f.relative_to(root)).replace("\\", "/")) else None
             mod_rec = {"kind": "node", "node_type": "module", "id": module_id, "dotted": module_dotted, "file": file_rel,
                        "loc": src.count(b"\n") + 1, "docstring": ""}
