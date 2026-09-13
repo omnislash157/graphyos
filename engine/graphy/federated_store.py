@@ -249,12 +249,14 @@ class ShardStore:
         self._mesh = load_set(substrates, tenant=tenant, tenant_id=tenant_id)
         self._substrates = list(substrates)
         self._gen = _generation_digest(self._mesh, self._substrates)
+        self.relations = fold_relations(substrates, tenant)      # graphyos #68
 
     @classmethod
     def from_mesh(cls, mesh, substrates: list[str]) -> "ShardStore":
         self = cls.__new__(cls)
         self._mesh = mesh
         self._substrates = list(substrates)
+        self.relations = {}                    # no tenant to read a PROVENANCE through: the defaults stand
         self._gen = _generation_digest(mesh, self._substrates)
         return self
 
@@ -331,6 +333,10 @@ class SQLiteStore:
                 f"(the bytes hashed, never parsed). Its freshness cannot be compared with "
                 f"ours — recompile with `compile_store`")
         self._gen = meta["generation"]
+        try:                                   # a store compiled before graphyos #68 has no row
+            self.relations = json.loads(meta.get(RELATIONS_META) or "{}")
+        except ValueError:
+            self.relations = {}
 
     def generation(self) -> str:
         return self._gen
@@ -408,6 +414,65 @@ def store_path_for(substrates: list[str], *, tenant: Tenant | None = None) -> Pa
     return Path(tenant.data_home) / f".mesh_store_{key}.sqlite"
 
 
+RELATIONS_META = "relations"       # meta key: the folded relation vocabulary, JSON
+
+
+def fold_relations(substrates: list[str], tenant) -> dict:
+    """Every lane's declared relation vocabulary, folded into one table the doors read once
+    (graphyos #68).
+
+    A door must answer without opening thirty-two PROVENANCE files, so the declarations are read at
+    compile and stamped into the store's own meta. Two lanes declaring one edge type with different
+    meanings is a REFUSAL naming both lanes: a shared vocabulary stays shared only if disagreement
+    is impossible to commit. A lane with no declaration contributes nothing and its types fall to
+    DEFAULT_RELATION_CLASS, so a store built from shards minted before this existed answers exactly
+    as it did."""
+    folded: dict[str, tuple[str, ...]] = {}
+    source: dict[str, str] = {}
+    for slug in substrates:
+        prov_path = Path(tenant.data_home) / f"{slug}_graph" / "PROVENANCE.json"
+        if not prov_path.is_file():
+            continue
+        try:
+            prov = json.loads(prov_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue                      # a shard whose PROVENANCE cannot be read declares nothing
+        declared = (prov.get("vocabulary") or {}).get("relations") or {}
+        if not isinstance(declared, dict):
+            continue
+        for edge_type, classes in sorted(declared.items()):
+            if isinstance(classes, str):
+                classes = [classes]
+            try:
+                cs = tuple(sorted(str(c) for c in classes))
+            except TypeError:
+                continue
+            prior = folded.get(edge_type)
+            if prior is not None and prior != cs:
+                raise StoreError(
+                    f"relation vocabulary conflict on {edge_type!r}: lane {source[edge_type]!r} "
+                    f"declares it {list(prior)} and lane {slug!r} declares it {list(cs)}. One edge "
+                    f"type means one thing across a roster; a door cannot walk it both ways. Fix the "
+                    f"disagreeing producer's vocabulary and re-mint that lane."
+                )
+            folded[edge_type] = cs
+            source.setdefault(edge_type, slug)
+    return {k: list(v) for k, v in sorted(folded.items())}
+
+
+def relations_in(store, relation_class: str, default: frozenset) -> frozenset:
+    """The edge types a store places in a class, or ``default`` when the store declares nothing.
+
+    The default is what makes this safe to land: a store compiled before any producer declared a
+    thing has no relations row, so every door falls back to the constants it used to hardcode and
+    answers byte-identically."""
+    declared = getattr(store, "relations", None)
+    if not declared:
+        return default
+    found = frozenset(t for t, cs in declared.items() if relation_class in cs)
+    return found if found else default
+
+
 def compile_store(substrates: list[str], db_path: str | Path,
                   *, tenant: Tenant | None = None,
                   tenant_id: str | None = None) -> dict:
@@ -458,6 +523,7 @@ def compile_store(substrates: list[str], db_path: str | Path,
             ("nodes", str(mesh.stats.nodes)),
             ("edges", str(len(mesh.directed))),
             ("input_digest", _compute_input_digest(substrates, tenant=tenant)),
+            (RELATIONS_META, json.dumps(fold_relations(substrates, tenant), sort_keys=True)),
         ])
         db.commit()
     finally:

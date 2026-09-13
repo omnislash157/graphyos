@@ -20,9 +20,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from graphy.cross_substrate import AGAINST, BOTH, WITH, WIRE_BUCKET, explanations_from_store
+from graphy.federated_store import relations_in
+from graphy.ir import DEPENDS, REACHES
 
+# The DEFAULTS, not the law (graphyos #68). A store whose lanes declare their relation vocabulary
+# answers from the declaration; one whose lanes declare nothing — every shard minted before this
+# existed — falls back to exactly these, so the doors are byte-identical on an old store.
 DESCEND_RELATIONS = frozenset({"calls"})
 BLAST_RELATIONS = frozenset({"calls", "inherits", "imports", "decorates"})
+
+
+def descend_relations(store) -> frozenset:
+    """What ``descend`` walks over this store: the declared REACHES family, else the default."""
+    return relations_in(store, REACHES, DESCEND_RELATIONS)
+
+
+def blast_relations(store) -> frozenset:
+    """What ``blast`` walks against over this store: the declared DEPENDS family, else the default."""
+    return relations_in(store, DEPENDS, BLAST_RELATIONS)
 SEED_RELATIONS = frozenset({"mentions"})   # admitted from the seed only: a conversation that named X is X's reader, never its callers' (graphyos #64)
 TEST_ROLE = "test"     # the producer says what a test is; a door never reads a filename
 
@@ -115,7 +130,8 @@ class Descent:
 
 
 def descend(store, seed: str, max_depth: int = 4) -> Descent:
-    reached = _bfs(store, seed, max_depth, DESCEND_RELATIONS, WITH)
+    walked = descend_relations(store)
+    reached = _bfs(store, seed, max_depth, walked, WITH)
     by_owner: dict[str, int] = {}
     first_seen: dict[str, int] = {}
     crossings: dict[tuple[str, str], Crossing] = {}
@@ -133,7 +149,7 @@ def descend(store, seed: str, max_depth: int = 4) -> Descent:
                     c.hop, c.src, c.dst, c.relation = r.hop, r.via, r.node, r.relation or ""
     # a primitive is a callee that calls nothing the store carries, at the deepest hops first
     primitives = [r for r in reached.values() if r.hop > 0 and not any(
-        nb.relation in DESCEND_RELATIONS and nb.direction in (WITH, BOTH) for nb in store.neighbours(r.node))]
+        nb.relation in walked and nb.direction in (WITH, BOTH) for nb in store.neighbours(r.node))]
     primitives.sort(key=lambda r: (-r.hop, r.owner, r.node))
     packages = sorted(first_seen, key=lambda o: (first_seen[o], o))
     return Descent(seed, reached[seed].owner, max_depth, reached, by_owner,
@@ -154,7 +170,7 @@ class Blast:
 
 
 def blast(store, seed: str, max_depth: int = 4) -> Blast:
-    reached = _bfs(store, seed, max_depth, BLAST_RELATIONS, AGAINST, SEED_RELATIONS)
+    reached = _bfs(store, seed, max_depth, blast_relations(store), AGAINST, SEED_RELATIONS)
     owner = reached[seed].owner
     by_owner: dict[str, int] = {}
     by_hop: dict[int, int] = {}
@@ -186,7 +202,7 @@ def explain(store, seed: str, max_depth: int = 3, tenant=None) -> Explanation:
     owner = store.membership(seed) or WIRE_BUCKET
     record = store.record(seed)
     docs = explanations_from_store(store, seed, max_depth)
-    dependents = _bfs(store, seed, max_depth, BLAST_RELATIONS, AGAINST, SEED_RELATIONS)
+    dependents = _bfs(store, seed, max_depth, blast_relations(store), AGAINST, SEED_RELATIONS)
     tests: list[Reach] = []
     for r in dependents.values():
         if r.hop == 0:

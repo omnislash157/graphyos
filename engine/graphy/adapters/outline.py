@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from graphy.ir import Vocabulary
+from graphy.ir import STRUCTURAL, Vocabulary
 
 __all__ = ["build_ir", "OUTLINE_VOCABULARY"]
 
@@ -13,6 +13,7 @@ OUTLINE_VOCABULARY = Vocabulary(
     node_types=("outline_line",),
     edge_types=("contains",),
     producer="outline",
+    relations={"contains": (STRUCTURAL,)},       # graphyos #68
 )
 
 _BULLET = re.compile(r"^[-*+]\s+(.*)$")

@@ -275,6 +275,31 @@ def _counts(nodes: dict, edges: list) -> dict:
             "node_types": dict(sorted(node_types.items())), "edge_types": dict(sorted(edge_types.items()))}
 
 
+def _vocabulary_block(vocabulary, counts: dict) -> dict:
+    """What this shard's relations MEAN, beside the census of what it minted (graphyos #68).
+
+    It is written here, in the shard's own PROVENANCE, and not in the tenant descriptor, for the
+    reason the first client gave: the census is already in this file, so declared-against-minted is
+    a local check needing nothing else open. A vocabulary declared centrally can drift from what the
+    lane actually contains with nothing noticing, a descriptor holds no producer knowledge to
+    transcribe from, and a roster of eighteen foreign producers cannot hold a registration ceremony
+    in one shared file without a merge conflict per emitter.
+
+    The comparison is against the MINT census and never the compiled store: resolution happens at
+    converge, not at mint, so in a real roster 100% of `calls` and `inherits` sit in edges.json with
+    a `dst_repr` and no `dst` — 81,441 of 547,767 edges in the first client's. A check that read the
+    store would report every healthy code lane as declaring types it does not mint."""
+    minted = sorted(counts.get("edge_types", {}))
+    declared = {t: list(vocabulary.classes_of(t)) for t in minted}
+    return {
+        "producer": vocabulary.producer,
+        "relations": declared,
+        # Minted, and nobody said what it means: LEXICAL, named here rather than left to be
+        # inferred from a silence. A reader of this file can see the default was taken.
+        "undeclared": [t for t in minted if t not in vocabulary.relations],
+    }
+
+
 SOURCES_KEY = "sources"
 UNREADABLE_KEY = "unreadable"       # PROVENANCE: {relpath: reason} — the files the producer could not read
 
@@ -418,7 +443,8 @@ def mint(corpus: str | Path, shard_dir: str | Path, *, mint_command: str,
         "corpus": {"scheme": package or (corpus.stem if corpus.is_file() else corpus.name), "kind": kind,
                    "path": portable(corpus), "files": n_files, "sha256": digest, "git_head": head,
                    **(distribution or {})},
-        "counts": _counts(node_map, edges),
+        "counts": (_c := _counts(node_map, edges)),
+        "vocabulary": _vocabulary_block(prod.vocabulary, _c),
         "files": {name: _file_receipt(shard_dir / name) for name in ("nodes.json", "edges.json")},
         SOURCES_KEY: {**sources, **({"splice_refused": refusal} if refusal else {})},
         UNREADABLE_KEY: unreadable,

@@ -5234,3 +5234,59 @@ python3 -m venv /tmp/v && /tmp/v/bin/pip install -q dist/graphyos-0.2.4-py3-none
 | the floor | 581 passed, 3 skipped |
 | the constraints | `BURDEN OK` (the wheel 318,554 B, cap 400,000); `CENSUS OK`; `SCRUB OK`; `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
 | the hold | #79's first two bullets close when the first tenant installs `graphyos[typescript]==0.2.4` from the INDEX in a clean venv and rebuilds their 10,197-commit lane. Publishing is the operator's command; this box builds and refuses, it does not upload |
+
+## 104 · A RELATION'S MEANING IS DECLARED, NOT HARDCODED — a tenant could always say what its edge types ARE and never what they MEAN, so every door walked `python_ast`'s four and went blind to the other 35 a real roster mints; the producer now declares `DEPENDS` · `REACHES` · `STRUCTURAL` · `LEXICAL` per edge type, the shard carries it in its own `PROVENANCE.json` beside the census, the build folds it into one store table and refuses two lanes that disagree, and an undeclared type is `LEXICAL` so an old shard answers exactly as it did (2026-09-13 · graphyos issue 68)
+
+**The number, from the first client.** 547,767 edges, 67 distinct types, 32 lanes, 18 of them from
+producers this engine never wrote. `BLAST_RELATIONS` saw 16.5% of it and `DESCEND_RELATIONS` 14.5%.
+`blast` on a table with 22 inbound edges answered a confident **zero** while `estate --sql` listed
+its readers — the door was not wrong about the graph, it was reading a vocabulary that was not the
+graph's.
+
+**Why the obvious fix is the wrong one.** Classified by meaning, that roster is 18.1% depends, 30.6%
+containment and **51.3% lexical co-occurrence** — `touched` (commit → file) alone is 129,044 edges.
+Walking every relation a tenant mints would make `blast` on a document node return a five-figure set
+that means nothing, which is a worse door than one answering zero. The frozenset is wrong in one
+direction and follow-all in the other, and one roster proves both. **The dense half of a real store
+IS the lexical class, so classifying it is not a nicety on top of the traversal — it is what keeps
+the traversal sparse.**
+
+**Where it is declared, and why not the descriptor.** The shard's own `PROVENANCE.json`, because the
+edge-type census is already in that file: declared-against-minted is a local check needing nothing
+else open, and a vocabulary declared elsewhere can drift from what the lane contains with nothing
+noticing. A tenant descriptor holds no producer knowledge to transcribe from, and a roster of 18
+foreign producers cannot hold a registration ceremony in one shared file without a merge conflict
+per emitter. The comparison is against the **mint** census and never the compiled store: resolution
+happens at converge, not at mint, so 81,441 of those 547,767 edges sit in `edges.json` with a
+`dst_repr` and no `dst` — 100% of `calls` and `inherits` — and a store-based check would report every
+healthy code lane as declaring types it does not mint.
+
+**The change.** `ir` gains the four classes and `Vocabulary.relations`, validated against the
+producer's own edge types. `PYTHON_AST_VOCABULARY` and the TypeScript vocabulary declare
+`calls → (depends, reaches)`, `inherits · imports · decorates → depends`, `contains → structural`,
+which is exactly what `doors.py` hardcoded. `smash` writes a `vocabulary` block into every
+`PROVENANCE.json`, naming the types it took the default for rather than leaving a silence.
+`federated_store.fold_relations` reads every lane at compile into one `meta` row and raises on a
+conflict naming both lanes; `relations_in` answers a class, or the default when a store declares
+nothing. `doors.descend_relations` / `blast_relations` replace the constants at every use site, and
+the constants become the fallback.
+
+```bash
+cd engine && ../.venv/bin/python -m pytest -q tests/test_doors.py
+python3 -c "from graphy.ir import PYTHON_AST_VOCABULARY as V, DEPENDS, REACHES; print(sorted(V.types_in(DEPENDS)), sorted(V.types_in(REACHES)))"
+python3 -c "import json,graphy.cli as c,graphy.federated_store as f; t=c._load_tenant('engine/tenants/graphy/tenant.json'); r=[s[:-6] for s in t.build_lanes]; print(json.dumps(f.open_for(r,tenant=t,tenant_id='graphy').relations))"
+```
+
+| check | result |
+|---|---|
+| the equivalence that makes it landable | what the two shipped producers DECLARE is what `doors.py` hardcoded: `depends` = `{calls, decorates, imports, inherits}`, `reaches` = `{calls}`, asserted against `doors.BLAST_RELATIONS` and `doors.DESCEND_RELATIONS` in the floor |
+| a foreign relation, same shard twice | a `sql_census`-shaped lane whose `reads_table` binds code to a table: **PROVENANCE silent → `blast` returns 0 dependents** (today's answer, the constants untouched); **PROVENANCE declaring `reads_table: [depends]` → `blast` returns the reader**, tagged `reads_table`. The only difference between the two runs is the PROVENANCE |
+| `DEPENDS` and `REACHES` are separate | declaring `[depends, reaches]` opens `descend` onto the table; declaring `[depends]` alone leaves `descend_relations` at the default and the table unreached — `imports` is exactly that case today |
+| two lanes disagreeing | `StoreError: relation vocabulary conflict on 'reads_table': lane 'core' declares it ['depends'] and lane 'other' declares it ['lexical']` — the build refuses and names both |
+| the old store | the graphy tenant's store compiled before this change carries no relations row: `store.relations == {}`, `blast walks ['calls','decorates','imports','inherits']`, `descend walks ['calls']` — the fallback, proven on a real store rather than argued |
+| the re-minted store | `{"calls": ["depends","reaches"], "contains": ["structural"], "decorates": ["depends"], "imports": ["depends"], "inherits": ["depends"]}`, and the doors walk the same sets they walked before |
+| before and after, on a live symbol | `descend` and `blast` on `graphy.doors.resolve` are **byte-identical** across the re-mint once the store generation is normalised (`dependents=17 own=11 ring=6`, `reached=1`); `explain` differs in one field, `reads=245 → 251`, because the source itself grew by two functions |
+| the tests, against the old line | both declaration tests fail with the constants restored — the fix is what they measure |
+| the floor | 585 passed, 3 skipped (581 before: the four door tests) |
+| the constraints | `REVIEW OK: 8 check(s)`; `SCRUB OK`; the gate `GRAPHY_STANDALONE_OK`; the six arm regions and `docs/pillars.svg` re-rendered against store `b31998a02b935873` |
+| the bound, stated so it is not relitigated | a declaration makes reachable what is already minted; it does not invent an edge an emitter never wrote. One measured table stays `0/0/0` even declared, because its reads go through DuckDB over Parquet and no SQL census sees them. This is not a substitute for an emitter gap |

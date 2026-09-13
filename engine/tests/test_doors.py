@@ -164,3 +164,113 @@ def test_cli_doors_answer_from_the_store_and_refuse_ambiguity(tmp_path, capsys):
     assert cli.main(["blast", "__init__", "--tenant", str(desc), "--tenant-id", "doors"]) == 1
     assert "a door never guesses" in capsys.readouterr().err
     assert cli.main(["descend", "get_request_handler", "--tenant-id", "doors"]) == 2
+
+
+# ── the declared relation vocabulary (graphyos #68) ────────────────────────────────────────────
+TABLE = "pg_schema://table/pg_schema.enterprise.credit_requests"
+READER = "core://func/core.billing.charge"
+
+
+def _census_lane(data_home: Path, declare: dict | None) -> None:
+    """A lane from a producer this engine never wrote: a SQL census whose `reads_table` edges bind
+    code to the table it reads. `declare` is what its PROVENANCE says the relation MEANS — None
+    writes no vocabulary block at all, which is every shard minted before graphyos #68."""
+    _write_graph(data_home / "pg_schema_graph", {
+        TABLE: {"kind": "node", "node_type": "table", "id": TABLE,
+                "dotted": "pg_schema.enterprise.credit_requests", "module": "pg_schema", "role": "table"},
+    }, [])
+    _write_graph(data_home / "core_graph", {
+        READER: {"kind": "node", "node_type": "func", "id": READER, "dotted": "core.billing.charge",
+                 "module": "core", "role": "code", "file": "core/billing.py", "line": 7},
+    }, [
+        {"kind": "edge", "edge_type": "reads_table", "src": READER, "dst": TABLE, "line": 12},
+    ])
+    prov = {"counts": {"edge_count": 1, "edge_types": {"reads_table": 1}}}
+    if declare is not None:
+        prov["vocabulary"] = {"producer": "sql_census", "relations": declare, "undeclared": []}
+    (data_home / "core_graph" / "PROVENANCE.json").write_text(json.dumps(prov), encoding="utf-8")
+
+
+def _census_store(tmp_path: Path, declare: dict | None):
+    data_home = tmp_path / "data"
+    data_home.mkdir(parents=True)
+    _census_lane(data_home, declare)
+    (data_home / ".federation_scheme_index.json").write_text(json.dumps({
+        "_meta": {}, "pg_schema": {"own": ["pg_schema"], "out": []},
+        "core": {"own": ["core"], "out": ["pg_schema"]}}), encoding="utf-8")
+    join_keys = tmp_path / "registry.json"
+    join_keys.write_text(json.dumps({"_meta": {}, "registered_joins": {"literal_joins": {}}}), encoding="utf-8")
+    lanes = {"pg_schema_graph": (None, "static-dep"), "core_graph": (None, "static-dep")}
+    tenant = Tenant(root=tmp_path, data_home=data_home, adapters=(), build_lanes=lanes, join_keys=join_keys,
+                    cursor="sha256:" + "0" * 64, policy="refuse", journal=tmp_path / "journal")
+    roster = ["pg_schema", "core"]
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="census")
+    return fs.open_for(roster, tenant=tenant, tenant_id="census")
+
+
+def test_GREEN_a_declared_foreign_relation_reaches_blast_and_an_undeclared_one_does_not(tmp_path):
+    """The whole of graphyos #68 in one comparison. A first client minted 67 edge types across 32
+    lanes and 35 of them meant `depends`; every door walked four, so `blast` on a table with 22
+    inbound edges answered a confident zero while `estate --sql` listed its readers. The fix is not
+    "walk everything" — over half that roster is lexical co-occurrence and walking it would bury
+    every honest dependent — it is that the producer DECLARES which of its relations mean impact.
+
+    Same shard, same edges, same store, twice. The only difference is the PROVENANCE."""
+    silent = _census_store(tmp_path / "silent", declare=None)
+    assert silent.relations == {}                       # nothing declared
+    assert doors.blast_relations(silent) == doors.BLAST_RELATIONS      # the constants, untouched
+    b = doors.blast(silent, TABLE, max_depth=3)
+    assert [r for r in b.reached.values() if r.hop > 0] == []          # today's answer: zero
+
+    declared = _census_store(tmp_path / "declared", declare={"reads_table": ["depends"]})
+    assert declared.relations == {"reads_table": ["depends"]}
+    assert "reads_table" in doors.blast_relations(declared)
+    b2 = doors.blast(declared, TABLE, max_depth=3)
+    assert [r.node for r in b2.reached.values() if r.hop > 0] == [READER]
+    assert b2.reached[READER].relation == "reads_table"
+
+
+def test_GREEN_a_declared_reaches_relation_opens_descend_the_same_way(tmp_path):
+    """DEPENDS and REACHES are separate declarations, so a producer can say a relation means impact
+    without also saying a descent should follow it — `imports` is exactly that today."""
+    store = _census_store(tmp_path / "both", declare={"reads_table": ["depends", "reaches"]})
+    assert "reads_table" in doors.descend_relations(store)
+    d = doors.descend(store, READER, max_depth=2)
+    assert TABLE in d.reached
+    depends_only = _census_store(tmp_path / "one", declare={"reads_table": ["depends"]})
+    assert doors.descend_relations(depends_only) == doors.DESCEND_RELATIONS
+    assert TABLE not in doors.descend(depends_only, READER, max_depth=2).reached
+
+
+def test_RED_two_lanes_declaring_one_edge_type_differently_refuse_the_build(tmp_path):
+    """A shared vocabulary stays shared only if disagreement cannot be committed. Two producers
+    declaring `reads_table` with different meanings is a refusal that names both lanes — a door
+    cannot walk one edge type two ways, and guessing which producer meant it is a name match."""
+    data_home = tmp_path / "data"
+    data_home.mkdir(parents=True)
+    _census_lane(data_home, {"reads_table": ["depends"]})
+    _write_graph(data_home / "other_graph", {
+        "other://x/other.x": {"kind": "node", "node_type": "func", "id": "other://x/other.x", "dotted": "other.x"},
+    }, [])
+    (data_home / "other_graph" / "PROVENANCE.json").write_text(json.dumps({
+        "counts": {"edge_types": {"reads_table": 1}},
+        "vocabulary": {"producer": "other", "relations": {"reads_table": ["lexical"]}, "undeclared": []},
+    }), encoding="utf-8")
+    lanes = {"pg_schema_graph": (None, "static-dep"), "core_graph": (None, "static-dep"),
+             "other_graph": (None, "static-dep")}
+    join_keys = tmp_path / "registry.json"
+    join_keys.write_text(json.dumps({"_meta": {}, "registered_joins": {"literal_joins": {}}}), encoding="utf-8")
+    tenant = Tenant(root=tmp_path, data_home=data_home, adapters=(), build_lanes=lanes, join_keys=join_keys,
+                    cursor="sha256:" + "0" * 64, policy="refuse", journal=tmp_path / "journal")
+    with pytest.raises(fs.StoreError, match=r"relation vocabulary conflict on 'reads_table'"):
+        fs.fold_relations(["core", "other"], tenant)
+
+
+def test_GREEN_the_shipped_producers_declare_exactly_the_families_the_doors_hardcoded(tmp_path):
+    """The equivalence that makes this landable: what python_ast and typescript_ast now DECLARE is
+    what doors.py used to hardcode, so an eaten repo answers byte-identically before and after."""
+    from graphy.adapters.typescript_ast import TYPESCRIPT_AST_VOCABULARY
+    from graphy.ir import DEPENDS, PYTHON_AST_VOCABULARY, REACHES
+    for vocab in (PYTHON_AST_VOCABULARY, TYPESCRIPT_AST_VOCABULARY):
+        assert vocab.types_in(DEPENDS) == doors.BLAST_RELATIONS, vocab.producer
+        assert vocab.types_in(REACHES) == doors.DESCEND_RELATIONS, vocab.producer

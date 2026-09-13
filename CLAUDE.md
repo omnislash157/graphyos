@@ -20,6 +20,7 @@ lens : the whole world is traversable through our lens
 - **No ambient fallback. An absent tenant refuses.** Root, data home, join keys, journal — every one
   is a declared field on the descriptor, absolute, and an absent one is an error, never a guess.
   Two tenants run in one process without either reading the other's data.
+- **A relation's meaning is declared by the producer that mints it, never by a door.** The four classes (`DEPENDS` · `REACHES` · `STRUCTURAL` · `LEXICAL`) live on the producer's vocabulary, travel in the shard's own `PROVENANCE.json` beside the census they must agree with, and fold into one store table at build — two lanes declaring one edge type differently is a refusal naming both. An undeclared type is `LEXICAL`, so a shard minted before the declaration existed answers exactly as it did. A door never hardcodes a vocabulary.
 - **No model ever decides an edge.** Every edge is structural (AST), a wormhole (the same literal is
   a node id in two or more graphs — free by construction), or an admitted weld (an exact,
   byte-identical literal carried by two or more rostered corpora, through the gate). A text label
@@ -89,7 +90,7 @@ staging/              gitignored — the corpora, the indexes and the farm work 
 
 ```text
 tenant.py               the Tenant descriptor: eight required fields, absolute paths, refuse|warn
-ir.py                   the Graph IR — typed node/edge/provenance/evidence records; validate_graph
+ir.py                   the Graph IR — typed node/edge/provenance/evidence records; validate_graph; and what a relation MEANS: `DEPENDS` (blast follows it, reversed) · `REACHES` (descend follows it, forward) · `STRUCTURAL` (containment, never impact) · `LEXICAL` (co-occurrence — a seed and a search, never a door), declared per edge type on the producer's `Vocabulary.relations` and defaulting to `LEXICAL` for a type nobody declared
 native_json_graph_ir.py load_graph_ir · validate_shard — a shard is nodes.json + edges.json (+ wormhole_edges.json beside them)
 adapters/               producers, each with its own vocabulary: python_ast · typescript_ast (TypeScript and JavaScript, tree-sitter, `graphyos[typescript]`) · outline · native JSON · history (the repo's own record — commits · sessions · RECON sections · issues · receipts, and every exchange of a session as a node under it — a commit's `touches` the code shard's module ids: the wormhole; an exchange's `mentions` the code node a literal it carries names, bound through the shards' own dotted names and files the way `doors.resolve` binds a query, each edge saying how (`via: dotted|file`); `--aliases` the override registry, an exact literal → one node id, the hand weld tagged `via: alias`) — a producer says a node's `module` and `role`, and its ring receipt names the ecosystem's `standard` schemes; no consumer reads a file path or the running interpreter
 smash.py                the minting lane: mint a package into a shard, follow its import ring, parity against a golden

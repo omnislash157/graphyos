@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Collection, Mapping
 
 __all__ = [
@@ -16,12 +16,40 @@ __all__ = [
     "EDGE_TYPES",
     "Vocabulary",
     "PYTHON_AST_VOCABULARY",
+    "DEPENDS",
+    "REACHES",
+    "STRUCTURAL",
+    "LEXICAL",
+    "RELATION_CLASSES",
+    "DEFAULT_RELATION_CLASS",
 ]
 
 SCHEMA_VERSION = 1
 
 NODE_TYPES = ("module", "func", "class", "method")
 EDGE_TYPES = ("imports", "contains", "calls", "inherits", "decorates")
+
+# WHAT A RELATION MEANS, declared by the producer that mints it (graphyos #68). A tenant could
+# always declare what its edge types ARE and never what they MEAN, so every door was blind to any
+# vocabulary but python_ast's: a first client minting 67 types across 32 lanes had 35 relation
+# types no door would walk, and `blast` on a table with 22 inbound edges answered zero.
+#
+# Four classes, and the fourth is why there are not two. Measured over 547,767 real edges:
+# 18.1% depend, 30.6% are containment, and 51.3% are LEXICAL co-occurrence — one type alone
+# (`touched`, commit → file) is 129,044 edges. Admitting everything a tenant mints would make
+# blast on a document node return a five-figure set that means nothing, which is a worse door than
+# one that answers zero. The dense half of a real store IS the lexical class, so classifying it is
+# not a nicety on top of the traversal — it is what keeps the traversal sparse.
+DEPENDS = "depends"          # blast follows it, reversed: who is affected if this changes
+REACHES = "reaches"          # descend follows it, forward: what this arrives at
+STRUCTURAL = "structural"    # containment and scoping — real, and never impact
+LEXICAL = "lexical"          # co-occurrence: a seed and a search, never either door
+RELATION_CLASSES = frozenset({DEPENDS, REACHES, STRUCTURAL, LEXICAL})
+
+# An undeclared type is LEXICAL, never DEPENDS. Fail quiet, not loud: a shard minted before any
+# producer declared anything must degrade to the behaviour it already had, not silently widen
+# every blast in the roster it joins.
+DEFAULT_RELATION_CLASS = LEXICAL
 
 NODE_KIND = "node"
 EDGE_KIND = "edge"
@@ -37,6 +65,18 @@ class Vocabulary:
     node_types: Collection[str]
     edge_types: Collection[str]
     producer: str
+    # edge_type -> the classes it belongs to. Optional and empty by default, so a producer that
+    # declares nothing behaves exactly as it did before (graphyos #68). An edge type absent from
+    # this mapping is DEFAULT_RELATION_CLASS.
+    relations: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def classes_of(self, edge_type: str) -> tuple[str, ...]:
+        """The classes declared for an edge type, or the default for one nobody declared."""
+        return tuple(self.relations.get(edge_type, (DEFAULT_RELATION_CLASS,)))
+
+    def types_in(self, relation_class: str) -> frozenset:
+        """Every edge type this producer places in a class — the door's question."""
+        return frozenset(t for t in self.edge_types if relation_class in self.classes_of(t))
 
     def __post_init__(self) -> None:
         if isinstance(self.node_types, str) or isinstance(self.edge_types, str):
@@ -76,6 +116,36 @@ class Vocabulary:
             raise IRError("Vocabulary.producer must be a non-empty string")
         object.__setattr__(self, "node_types", nt)
         object.__setattr__(self, "edge_types", et)
+        # The declaration is checked against this producer's own edge types: a class for a type it
+        # cannot mint is a typo that would otherwise sit in a PROVENANCE forever, declaring meaning
+        # for an edge that never arrives.
+        try:
+            rel = {str(k): tuple(v) if not isinstance(v, str) else (v,)
+                   for k, v in dict(self.relations).items()}
+        except (TypeError, ValueError) as exc:
+            raise IRError(
+                "Vocabulary.relations must be a mapping of edge_type -> a collection of "
+                "relation classes"
+            ) from exc
+        unknown_type = sorted(k for k in rel if k not in et)
+        if unknown_type:
+            raise IRError(
+                f"Vocabulary.relations declares {unknown_type} which producer "
+                f"{self.producer!r} does not mint — its edge types are {sorted(et)}"
+            )
+        bad = sorted({c for cs in rel.values() for c in cs} - RELATION_CLASSES)
+        if bad:
+            raise IRError(
+                f"Vocabulary.relations uses unknown relation class(es) {bad}; the classes are "
+                f"{sorted(RELATION_CLASSES)}"
+            )
+        empty = sorted(k for k, cs in rel.items() if not cs)
+        if empty:
+            raise IRError(
+                f"Vocabulary.relations declares {empty} with no class at all — say "
+                f"{DEFAULT_RELATION_CLASS!r} to mean 'neither door walks it', never an empty list"
+            )
+        object.__setattr__(self, "relations", rel)
 
 
 def _type_name(v: Any) -> str:
@@ -371,8 +441,21 @@ def validate_graph(nodes: Any, edges: Any, vocabulary: Vocabulary) -> int:
     return validated
 
 
+# Today's door behaviour, written down rather than hardcoded in doors.py. `calls` is the only type
+# both doors walk; `contains` is real containment and was never in either door, which is exactly
+# STRUCTURAL. A store built from these declarations answers byte-identically to the module
+# constants it replaces — that equivalence is the floor's test, not a claim (graphyos #68).
+PYTHON_AST_RELATIONS = {
+    "calls": (DEPENDS, REACHES),
+    "inherits": (DEPENDS,),
+    "imports": (DEPENDS,),
+    "decorates": (DEPENDS,),
+    "contains": (STRUCTURAL,),
+}
+
 PYTHON_AST_VOCABULARY = Vocabulary(
     node_types=NODE_TYPES,
     edge_types=EDGE_TYPES,
     producer="python_ast",
+    relations=PYTHON_AST_RELATIONS,
 )

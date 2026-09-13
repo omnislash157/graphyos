@@ -23,12 +23,15 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from graphy.adapters._receipt import Receipt
-from graphy.ir import EDGE_TYPES, NODE_TYPES, Vocabulary
+from graphy.ir import PYTHON_AST_RELATIONS, EDGE_TYPES, NODE_TYPES, Vocabulary
 
 __all__ = ["build_ir", "mint_records", "walk_files", "is_package_dir", "TYPESCRIPT_AST_VOCABULARY", "NODE_STANDARD",
            "ProducerUnavailable", "slug_of_specifier"]
 
-TYPESCRIPT_AST_VOCABULARY = Vocabulary(node_types=NODE_TYPES, edge_types=EDGE_TYPES, producer="typescript_ast")
+# The same nine words, so the same meanings: a consumer must not be able to tell the language
+# from the door it opens (graphyos #68).
+TYPESCRIPT_AST_VOCABULARY = Vocabulary(node_types=NODE_TYPES, edge_types=EDGE_TYPES,
+                                       producer="typescript_ast", relations=PYTHON_AST_RELATIONS)
 
 # Node's built-in modules: the ecosystem's standard library, the producer's to name.
 NODE_STANDARD = frozenset({

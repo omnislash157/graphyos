@@ -101,7 +101,7 @@
       </g>
       <g class="node" data-id="DOORS">
         <rect x="334" y="68" width="140" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="404" y="93.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (40→ ·→36)</text>
+        <text x="404" y="93.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (44→ ·→36)</text>
       </g>
       <g class="node" data-id="EDGE">
         <rect x="502" y="96" width="133" height="42" class="card" rx="3" stroke-width="1"/>
@@ -113,10 +113,10 @@
       </g>
       <g class="node" data-id="PRODUCE">
         <rect x="677" y="96" width="154" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="754" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (16→ ·→55)</text>
+        <text x="754" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (16→ ·→56)</text>
       </g>
       <g class="node" data-id="SEAM">
         <rect x="873" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="939.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (24→ ·→89)</text>
+        <text x="939.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (24→ ·→92)</text>
       </g>
 </svg>

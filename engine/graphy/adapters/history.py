@@ -57,15 +57,24 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from graphy.ir import Vocabulary, validate_graph
+from graphy.ir import LEXICAL, STRUCTURAL, Vocabulary, validate_graph
 
 __all__ = ["HISTORY_VOCABULARY", "HistoryError", "bind", "build_ir", "code_index", "literals_of", "mint", "module_id_of",
            "read_aliases", "read_exchanges", "symbol_index", "verify"]
 
+# The record's own vocabulary, classified (graphyos #68). Nothing here is DEPENDS or REACHES and
+# that is the point: a commit that touched a file is not a dependent of it, and a session that
+# named a symbol does not break when it changes. `touches` is the single largest edge type in a
+# real first-tenant roster at 129,044 — admitting it to blast would bury every honest dependent
+# under every commit that ever brushed the file. `mentions` stays LEXICAL here and reaches a door
+# only through SEED_RELATIONS, which admits it from the seed alone and never a hop further.
 HISTORY_VOCABULARY = Vocabulary(
     node_types=("commit", "session", "section", "issue", "receipt", "exchange"),
     edge_types=("authored", "records", "names", "pins", "touches", "follows", "contains", "mentions"),
     producer="history",
+    relations={"contains": (STRUCTURAL,), "authored": (STRUCTURAL,),
+               "records": (LEXICAL,), "names": (LEXICAL,), "pins": (LEXICAL,),
+               "touches": (LEXICAL,), "follows": (LEXICAL,), "mentions": (LEXICAL,)},
 )
 
 SCHEME = "history"
