@@ -5441,7 +5441,7 @@ python3 -c "from graphy.adapters import python_ast as p; n,_,_ = p.mint_records(
 | against the old line | both tests fail with the normalisation removed |
 | the floor | 595 passed, 3 skipped (593 before) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
-| the bound | this fixes the shards graphy writes and normalises what any producer hands the IR. A foreign emitter writing `nodes.json` directly still writes its own bytes; the IR corrects them on the way in, so the store and every walk agree, and the shard's own bytes remain that emitter's to fix |
+| **CORRECTED by the adversarial review, §114** | the `ir.Node.from_mapping` half of this fix DID NOT RUN on the load path — `from_mapping` is called only from `validate_graph`, which discards the Node it builds, so a foreign shard's backslashes reached the compiled store untouched and this rung covered 14.3% of a real roster, not the 85.7% it claimed. The choke point is `native_json_graph_ir._resolve_shard`, where every shard is admitted as a raw dict |
 
 ## 108 · THE MULTI-LANE REBUILD IS PUBLIC — `eat` was first-class for one repo and one import ring and there was nothing for many lanes and mixed producers, so a tenant with its own emitters assembled the sequence out of `cli._clear_substrate`, `cartograph.repo_cursor` and `graphy._portable_flock`; `graphy.rebuild` runs clear → smash → history → init → converge → build → check with placed lanes kept across the clear, and a placed lane's schemes finally come from the ids it carries (2026-09-13 · graphyos issue 71)
 
@@ -5710,3 +5710,50 @@ cd engine && ../.venv/bin/python -m pytest -q tests/test_pillars.py
 | `recon` | drops its own census reader and calls this one — the third duplicate consolidated into a door in three rungs (§111 took the loop, §112 took the escalation, this takes the census) |
 | the floor | 613 passed, 3 skipped (610 before) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+
+## 114 · THE ADVERSARIAL REVIEW OF THE DAY'S TWELVE RUNGS — one confirmed blocker, and it is a claim in §107 that was true of the code and false of the code path (2026-09-13 · the review of 40154ff..HEAD)
+
+**The pass.** Nineteen commits, 37 files, 2,807 insertions across `engine/`, twelve rungs and the
+0.2.4 cut. The battery re-run by the reviewer rather than read from the builder's report:
+`REVIEW OK: 9 check(s) · 0 finding(s)` with `severance 0` over 27 changed files; the gate
+`GRAPHY_STANDALONE_OK`; the floor 613 passed; the `durable` mark green; 148 `test_RED_` controls.
+Every new public symbol blasted against a store rebuilt for the review — `pillars.shape` 6
+dependents, `doors.blast_relations` 17, `federated_store.fold_relations` 19, `smash.shard_schemes`
+3 — no caller outside its diff.
+
+**THE BLOCKER, class ① (THE PROXY IS NOT THE THING) and SCOPE.** §107 claimed the separator fix was
+placed "at the typed record, where 85.7% of a real tenant's file fields pass through". The
+normalisation was real and the reasoning about where it belonged was right. **The code path was
+wrong.** `ir.Node.from_mapping` is called from exactly one place — `validate_graph`, which builds a
+Node to validate it and **throws it away**. The store's load path runs through
+`native_json_graph_ir._resolve_shard` on raw dicts and never constructs one.
+
+Proven rather than argued, with a shard written by hand carrying `foreign\sub\mod.py`:
+
+```text
+before:  file field IN THE COMPILED STORE: 'foreign\sub\mod.py'   normalised? False
+after:   file field IN THE COMPILED STORE: 'foreign/sub/mod.py'    normalised? True
+```
+
+So the rung covered the two producers that normalise at their own walk — **14.3%** of the first
+client's file-bearing nodes — and not the 85.7% minted by emitters this engine does not own, which
+was the entire argument for putting it where it went. The fix moves to `_resolve_shard`, the one
+place every shard is admitted, whoever wrote it. §107's bound row is corrected in place rather than
+left to read as it did.
+
+**Why no door caught it, and where it is routed.** No check in the battery asks *is the code path
+this claim names the code path that runs*, and no regex can. It is BLOCK TWO ① with a new specimen,
+and the concrete guard is a floor test asserting the fact **at the surface that matters** — what
+`store.record()` returns — rather than at the layer the fix happened to touch. That test is red
+against the old line and is the test the first fix needed and did not have.
+
+| check | result |
+|---|---|
+| the battery, re-run | `REVIEW OK: 9 check(s) · 0 finding(s)`, `severance 0` across 27 changed files |
+| the gate and the floor, re-run | `GRAPHY_STANDALONE_OK`; 614 passed, 3 skipped after the fix |
+| every new public symbol's callers | walked and pasted; none outside its own diff |
+| a door on a stale store | refuses by name — `BLAST UNANSWERABLE: … names no node in this store`, exit 1. Class ② holds: not a silent zero |
+| the blocker | CONFIRMED with a repro, fixed at `_resolve_shard`, regression test red on the old line |
+| disposition | `NEW · this card · BLOCK TWO ①, specimen added` + a floor test at the store surface |
+| the artifacts | arm regions and `docs/pillars.svg` re-rendered against store `a5d3511dca363bb5` |
+| **verdict** | **DONE BLOCK: GREEN · VERDICT: SHIP**, after the blocker was fixed in the same session |

@@ -346,3 +346,43 @@ def test_GREEN_the_producer_writes_a_posix_path_before_the_ir_ever_sees_it(tmp_p
     assert files, "the fixture minted no file-bearing node"
     assert not any("\\" in f for f in files), files
     assert "deep/sub/mod.py" in files
+
+
+def test_GREEN_a_foreign_shard_s_path_field_is_posix_by_the_time_the_STORE_reads_it(tmp_path):
+    """The test the first #88 fix needed and did not have.
+
+    That fix normalised in `ir.Node.from_mapping`, which LOOKS like the typed boundary every shard
+    passes through. It is not: `from_mapping` is called only from `validate_graph`, which discards
+    the Node it builds. The store's load path runs on raw dicts through
+    `native_json_graph_ir._resolve_shard` and never constructs one — so a foreign shard's
+    backslashes reached the compiled store untouched and the fix covered only the two producers
+    that normalise at their own walk. 14.3% of a real roster's file-bearing nodes, not the 85.7%
+    it claimed.
+
+    So this asserts the fact at the surface that matters — what the STORE returns — rather than at
+    the layer the fix happened to touch. An adversarial review found it by asking whether the code
+    path a claim names is the code path that runs."""
+    import json as _json
+    from graphy.tenant import Tenant
+    import graphy.federated_store as fs
+
+    data = tmp_path / "data"
+    (data / "foreign_graph").mkdir(parents=True)
+    nid = "foreign://func/foreign.mod.f"
+    (data / "foreign_graph" / "nodes.json").write_text(_json.dumps({nid: {
+        "kind": "node", "node_type": "func", "id": nid, "dotted": "foreign.mod.f",
+        "file": "foreign\\sub\\mod.py", "line": 1}}), encoding="utf-8")
+    (data / "foreign_graph" / "edges.json").write_text("[]", encoding="utf-8")
+    (data / "foreign_graph" / "PROVENANCE.json").write_text(
+        _json.dumps({"counts": {"node_count": 1, "edge_count": 0}}), encoding="utf-8")
+    (data / ".federation_scheme_index.json").write_text(
+        _json.dumps({"_meta": {}, "foreign": {"own": ["foreign"], "out": []}}), encoding="utf-8")
+    keys = tmp_path / "registry.json"
+    keys.write_text(_json.dumps({"_meta": {}, "registered_joins": {"literal_joins": {}}}), encoding="utf-8")
+    tenant = Tenant(root=tmp_path, data_home=data, adapters=(),
+                    build_lanes={"foreign_graph": (None, "static-dep")}, join_keys=keys,
+                    cursor="sha256:" + "0" * 64, policy="refuse", journal=tmp_path / "journal")
+    fs.compile_store(["foreign"], fs.store_path_for(["foreign"], tenant=tenant), tenant=tenant,
+                     tenant_id="x")
+    store = fs.open_for(["foreign"], tenant=tenant, tenant_id="x")
+    assert store.record(nid)["file"] == "foreign/sub/mod.py"

@@ -307,6 +307,20 @@ def _resolve_shard(raw: dict[str, Any]) -> ResolvedShard:
     node_residuals: list[Any] = []
     for n in nodes_list:
         if isinstance(n, dict) and isinstance(n.get("id"), str):
+            # The path field is posix for EVERY shard, whoever minted it, normalised where the
+            # record is admitted (graphyos #88).
+            #
+            # This is the choke point and the earlier fix was not: normalising in
+            # `ir.Node.from_mapping` looked like the typed boundary, but `from_mapping` is called
+            # only from `validate_graph`, which DISCARDS the Node it builds. The store's load path
+            # runs through here on raw dicts and never constructs one — so a foreign shard's
+            # backslashes reached the compiled store untouched, and the fix covered only the two
+            # producers that normalise at their own walk. On a first client's roster that is 14.3%
+            # of the file-bearing nodes, not the 85.7% the fix claimed. Found by an adversarial
+            # review asking whether the code path a claim names is the code path that runs.
+            f = n.get("file")
+            if isinstance(f, str) and "\\" in f:
+                n = {**n, "file": f.replace("\\", "/")}
             valid_nodes.append(n)
         else:
             node_residuals.append(n)
