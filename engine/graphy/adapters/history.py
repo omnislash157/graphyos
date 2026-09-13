@@ -92,7 +92,7 @@ _EXCHANGES = re.compile(r"— (\d+) exchanges")
 # (`graphy/showcase.py`); a bare word is never a literal — `showcase` alone binds nothing
 _DOTTED = re.compile(r"(?<![\w./-])[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+(?![\w/])")   # a sentence's dot may follow
 _PATHLIT = re.compile(r"(?<![\w./-])[A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)+(?![\w./-])")
-CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".svelte", ".vue")
 _VIA_RANK = {"dotted": 0, "file": 1, "alias": 2}
 
 

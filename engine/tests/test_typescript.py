@@ -146,3 +146,84 @@ def test_GREEN_the_node_modules_slug_map_is_read_once_and_answers_every_scheme(t
     assert ".bin" not in smash.node_dirs_of(nm).values() and all(d.is_dir() for d in smash.node_dirs_of(nm).values())
     files = list(ts.walk_files(nm / "dist-only"))
     assert [f.name for f in files] == ["index.js", "util.js"]
+
+
+def _component_corpus(tmp_path: Path) -> Path:
+    """A SvelteKit-shaped package: a store module, a Svelte component with a module script, a
+    commented-out script and a TypeScript generics attribute, a route page beside its +page.ts, and
+    a Vue single-file component (graphyos #85)."""
+    src = tmp_path / "svapp" / "src"
+    (src / "lib" / "components").mkdir(parents=True)
+    (src / "routes").mkdir(parents=True)
+    (src / "lib" / "stores.ts").write_text(
+        "export function loadItems() { return fetch('/items'); }\nexport function saveItem(x: number) { return x; }\n")
+    (src / "lib" / "components" / "Carousel.svelte").write_text(
+        "<script lang=\"ts\" module>\n  export const shared = 1;\n</script>\n\n"
+        "<!-- <script>import nope from './nope';</script> -->\n"
+        "<script lang=\"ts\" generics=\"T extends { id: number }\">\n"
+        "  import { onMount } from 'svelte';\n  import { loadItems, saveItem } from '../stores';\n"
+        "  let activeIndex = $state(0);\n\n  onMount(() => { loadItems(); });\n\n"
+        "  function select(i: number) {\n    activeIndex = i;\n    saveItem(i);\n  }\n</script>\n\n"
+        "<div on:click={() => select(1)}>{activeIndex}</div>\n<style>.x { color: red }</style>\n")
+    (src / "routes" / "+page.ts").write_text("export function load() { return {}; }\n")
+    (src / "routes" / "+page.svelte").write_text(
+        "<script>\n  import Carousel from '../lib/components/Carousel.svelte';\n</script>\n<Carousel />\n")
+    (src / "lib" / "Widget.vue").write_text(
+        "<template><div @click=\"go\">x</div></template>\n<script setup lang=\"ts\">\n"
+        "import { loadItems } from './stores';\nfunction go() { loadItems(); }\n</script>\n")
+    return src
+
+
+def test_GREEN_single_file_components_are_read_at_their_own_lines(tmp_path):
+    """`.svelte` and `.vue` were never opened: the suffix list held only .ts and .js, so three
+    quarters of the first client's SvelteKit frontend was invisible (graphyos #85)."""
+    src = _component_corpus(tmp_path)
+    nodes, edges, _ = ts.mint_records(src, "svapp")
+    ids = set(nodes)
+    assert "svapp://module/svapp.lib.components.Carousel" in ids
+    assert "svapp://module/svapp.lib.Widget" in ids
+    # +page.svelte beside +page.ts: both modules stand
+    assert {"svapp://module/svapp.routes.+page", "svapp://module/svapp.routes.+page_svelte"} <= ids
+    sel = nodes["svapp://func/svapp.lib.components.Carousel.select"]
+    assert (sel["line"], sel["file"]) == (13, "src/lib/components/Carousel.svelte")
+    assert nodes["svapp://func/svapp.lib.Widget.go"]["line"] == 4
+    calls = {(e["src"], e["dst_repr"], e["line"]) for e in edges if e["edge_type"] == "calls"}
+    car = "svapp://module/svapp.lib.components.Carousel"
+    assert (car, "$state(...)", 9) in calls                       # the rune's declaration, at its line
+    assert (car, "loadItems(...)", 11) in calls                   # inside onMount's arrow: the component's own call
+    assert ("svapp://func/svapp.lib.components.Carousel.select", "saveItem(...)", 15) in calls
+    specs = {e.get("dst") for e in edges if e["edge_type"] == "imports"}
+    assert "svapp://module/svapp.lib.components.Carousel" in specs    # './Carousel.svelte' resolves to the component
+    assert not any("nope" in str(e.get("dst")) for e in edges), "a script inside an HTML comment is markup"
+
+
+def test_GREEN_component_names_never_merge_and_markup_scripts_and_plain_top_levels_mint_nothing(tmp_path):
+    """Foo.svelte beside Foo.vue are two modules; a `<script>` inside a template expression is markup;
+    a plain .ts file's top-level calls are not the module's (only a component's are) (graphyos #85)."""
+    src = tmp_path / "app" / "src"
+    src.mkdir(parents=True)
+    (src / "Foo.svelte").write_text("<script>function fromSvelte() {}</script>\n{@html '<script>evil()</script>'}\n")
+    (src / "Foo.vue").write_text("<script setup>\nfunction fromVue() {}\n</script>\n")
+    (src / "boot.ts").write_text("init();\nexport function run() {}\n")
+    nodes, edges, _ = ts.mint_records(src, "app")
+    assert {"app://func/app.Foo_svelte.fromSvelte", "app://func/app.Foo_vue.fromVue"} <= set(nodes)
+    calls = {(e["src"], e["dst_repr"]) for e in edges if e["edge_type"] == "calls"}
+    assert not any(r == "evil(...)" for _, r in calls), "a script in a template expression is markup"
+    assert not any(s == "app://module/app.boot" for s, _ in calls), "a plain module's top level mints no calls"
+
+
+def test_GREEN_blast_on_a_store_function_returns_the_components_that_call_it(tmp_path):
+    from graphy import cli
+    src = _component_corpus(tmp_path)
+    repo = src.parent
+    (repo / "package.json").write_text(json.dumps({"name": "svapp", "version": "0.0.1"}))
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cli.main(["blast", "loadItems", "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "svapp"])
+    out = buf.getvalue()
+    assert rc == 0, out
+    assert "svapp://module/svapp.lib.components.Carousel" in out
+    assert "svapp://func/svapp.lib.Widget.go" in out
+    assert "svapp://module/svapp.routes.+page_svelte" in out

@@ -48,7 +48,15 @@ _DEFAULT_EXCLUDES = _CHECKOUT_EXCLUDES
 _TS_SUFFIXES = (".ts", ".tsx", ".mts", ".cts")
 _JS_SUFFIXES = (".js", ".jsx", ".mjs", ".cjs")
 _SOURCE_SUFFIXES = _TS_SUFFIXES + _JS_SUFFIXES
-TEST_FILE = re.compile(r"(^|/)(__tests__|tests?|test-utils?)/|\.(test|spec)\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$")
+# A single-file component is a module whose script blocks are TypeScript or JavaScript: the blocks
+# are walked by the same pass, the markup around them is blanked byte for byte so every line and
+# offset is the file's own. The template is markup, not a program, and is not read (graphyos #85).
+_COMPONENT_SUFFIXES = (".svelte", ".vue")
+_READ_SUFFIXES = _SOURCE_SUFFIXES + _COMPONENT_SUFFIXES
+TEST_FILE = re.compile(r"(^|/)(__tests__|tests?|test-utils?)/|\.(test|spec)\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|svelte|vue)$")
+_SCRIPT_BLOCK = re.compile(
+    rb"<!--.*?-->|(?m:^)[ \t]*<script\b((?:\"[^\"]*\"|'[^']*'|[^'\">])*)>(.*?)</script\s*>", re.S | re.I)
+_TS_LANG = re.compile(rb"""\blang\s*=\s*["']?(ts|typescript)\b""", re.I)
 _SLUG_RE = re.compile(r"^[a-z0-9_]+$")
 
 
@@ -85,7 +93,22 @@ def slug_of_specifier(spec: str) -> str | None:
 
 
 def is_package_dir(path: Path) -> bool:
-    return path.is_dir() and next((f for f in path.rglob("*") if f.suffix in _SOURCE_SUFFIXES), None) is not None
+    return path.is_dir() and next((f for f in path.rglob("*") if f.suffix in _READ_SUFFIXES), None) is not None
+
+
+def component_script(src: bytes) -> tuple[bytes, bool]:
+    """A single-file component's script blocks in place: every byte outside a ``<script>`` body
+    becomes a space (newlines kept), so the parse sees one program at the file's own lines and
+    offsets. A ``<script>`` inside an HTML comment, or one that does not open its line
+    (``{@html '<script>'}``), is markup. Returns (bytes, is_typescript)."""
+    out = bytearray(b if b == 0x0A else 0x20 for b in src)
+    is_ts = False
+    for m in _SCRIPT_BLOCK.finditer(src):
+        if m.group(2) is None:
+            continue                                            # a comment
+        out[m.start(2):m.end(2)] = m.group(2)
+        is_ts = is_ts or bool(_TS_LANG.search(m.group(1)))
+    return bytes(out), is_ts
 
 
 _CHECKOUT_NOISE = ("examples", "example", "benchmarks", "benchmark", "docs", "doc", "scripts", "fixtures", "__mocks__")
@@ -97,7 +120,7 @@ def excludes_for(root: Path) -> tuple[str, ...]:
     tests are read but marked. A shipped package (what node_modules holds) is read from what it
     ships, ``dist/`` and ``lib/`` included, because that is the package."""
     src = root / "src"
-    if src.is_dir() and any(f.suffix in _SOURCE_SUFFIXES for f in src.rglob("*") if f.is_file()):
+    if src.is_dir() and any(f.suffix in _READ_SUFFIXES for f in src.rglob("*") if f.is_file()):
         return _CHECKOUT_EXCLUDES + _CHECKOUT_NOISE
     if (root / ".git").exists():
         return _CHECKOUT_EXCLUDES + _CHECKOUT_NOISE
@@ -108,7 +131,7 @@ def walk_files(root: Path, exclude: tuple[str, ...] | None = None) -> Iterator[P
     excluded = set(excludes_for(root) if exclude is None else exclude)
     depth = len(root.parts)                  # rglob yields under root: the prefix is cut by parts, never relative_to
     for f in sorted(root.rglob("*")):
-        if not f.is_file() or f.suffix not in _SOURCE_SUFFIXES or f.name.endswith((".d.ts", ".d.mts", ".d.cts", ".min.js")):
+        if not f.is_file() or f.suffix not in _READ_SUFFIXES or f.name.endswith((".d.ts", ".d.mts", ".d.cts", ".min.js")):
             continue
         if excluded.intersection(f.parts[depth:]):
             continue
@@ -123,12 +146,12 @@ def _dotted_for(file: Path, root: Path, package: str) -> str:
     rel = file.relative_to(root)
     parts = list(rel.parts)
     stem = parts[-1]
-    for suf in _SOURCE_SUFFIXES:
+    for suf in _READ_SUFFIXES:
         if stem.endswith(suf):
             stem = stem[:-len(suf)]
             break
     parts[-1] = stem
-    if parts[-1] == "index":
+    if parts[-1] == "index" and file.suffix not in _COMPONENT_SUFFIXES:
         parts = parts[:-1]
     parts = [p.replace("-", "_").replace(".", "_") for p in parts]
     return ".".join([package] + parts) if parts else package
@@ -170,14 +193,18 @@ def _expr_repr(node, src: bytes) -> str | None:
     return None
 
 
-def _calls_in(body, src: bytes) -> Iterator[tuple[str, int]]:
+def _calls_in(body, src: bytes, anonymous: bool = False) -> Iterator[tuple[str, int]]:
     """Every call and ``new`` inside a body, not descending into nested function or class
-    definitions (those are their own nodes)."""
+    definitions (those are their own nodes). ``anonymous`` descends into function expressions and
+    arrows, for a component's top level, where ``onMount(() => load())`` is the component's own call."""
+    skip = {"function_declaration", "class_declaration", "abstract_class_declaration",
+            "method_definition", "generator_function_declaration"}
+    if not anonymous:
+        skip |= {"function_expression", "arrow_function"}
     stack = list(body.named_children)
     while stack:
         n = stack.pop()
-        if n.type in ("function_declaration", "class_declaration", "abstract_class_declaration",
-                      "method_definition", "function_expression", "arrow_function", "generator_function_declaration"):
+        if n.type in skip:
             continue
         if n.type in ("call_expression", "new_expression"):
             fn = n.child_by_field_name("function") if n.type == "call_expression" else n.child_by_field_name("constructor")
@@ -373,7 +400,7 @@ def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes
 
 
 def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: bytes,
-                 resolve_import) -> Iterator[dict]:
+                 resolve_import, component: bool = False) -> Iterator[dict]:
     for raw in tree.root_node.named_children:
         stmt = _unwrap_export(raw)
         t = stmt.type
@@ -471,6 +498,11 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
         elif t in ("lexical_declaration", "variable_declaration"):
             for name_node, fn in _func_of_lexical(stmt):
                 funcs.append((_text(name_node, src), fn, stmt))
+        if component and not funcs and t not in ("function_declaration", "generator_function_declaration"):
+            # A component's top level runs per instance: its calls are the component's own, the way a
+            # function body's are the function's — `onMount(() => load())` included.
+            for call, line in _calls_in(_Wrap([stmt]), src, anonymous=True):
+                yield {"kind": "edge", "edge_type": "calls", "src": module_id, "dst_repr": call, "line": line}
         for name, fn, anchor in funcs:
             dotted = f"{module_dotted}.{name}"
             fid = _node_id("func", dotted)
@@ -542,8 +574,14 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
     dotted_of: dict[Path, str] = {}
     rels: dict[Path, str] = {}
     for f in files:
-        d = _dotted_for(f, root, package)
-        dotted_of[f] = d
+        dotted_of[f] = _dotted_for(f, root, package)
+    claims: dict[str, int] = {}
+    for d in dotted_of.values():
+        claims[d] = claims.get(d, 0) + 1
+    for f in files:
+        d = dotted_of[f]
+        if f.suffix in _COMPONENT_SUFFIXES and claims[d] > 1:           # and Foo.svelte beside Foo.vue
+            d = dotted_of[f] = f"{d}_{f.suffix[1:]}"             # +page.svelte beside +page.ts: both modules stand
         modules[str(f.resolve())] = _node_id("module", d)
         rels[f] = str(f.relative_to(root)).replace("\\", "/")
     listing = hashlib.sha256("\n".join(sorted(rels.values())).encode("utf-8")).hexdigest()
@@ -561,7 +599,13 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
         sha = hashlib.sha256(src).hexdigest()
         cached = reuse(pin, rel, sha) if reuse is not None else None
         if cached is None:
-            tree = (ts if f.suffix in (".ts", ".mts", ".cts") else tsx).parse(src)   # JSX-safe for everything else
+            component = f.suffix in _COMPONENT_SUFFIXES
+            if component:
+                code, is_ts = component_script(src)
+                tree = (ts if is_ts else tsx).parse(code)
+            else:
+                code = src
+                tree = (ts if f.suffix in (".ts", ".mts", ".cts") else tsx).parse(src)   # JSX-safe for everything else
             module_dotted = dotted_of[f]
             module_id = modules[str(f.resolve())]
             file_rel = str(f.relative_to(root.parent)).replace("\\", "/")   # posix on every host (graphyos #88)
@@ -569,8 +613,8 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
             mod_rec = {"kind": "node", "node_type": "module", "id": module_id, "dotted": module_dotted, "file": file_rel,
                        "loc": src.count(b"\n") + 1, "docstring": ""}
             records = [mod_rec] + list(_walk_module(
-                tree, module_id, module_dotted, file_rel, src,
-                lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules)))
+                tree, module_id, module_dotted, file_rel, code,
+                lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules), component))
             n_recs, e_recs = [], []
             for rec in records:
                 if rec["kind"] == "node":

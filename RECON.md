@@ -5932,3 +5932,37 @@ the package can check anything, so no check inside `graphy/` can see a shadow.
 | the floor tests | the root layout added to `test_RED_eat_settles_the_package_before_it_provisions_anything`; `test_the_several_packages_refusal_names_the_src_directory_as_the_ring`; `test_a_mixed_root_and_src_layout_is_told_one_directory_cannot_hold_both`; the advised argv asserted in `test_RED_eat_refuses_to_delete_a_lane_it_did_not_mint_and_force_is_the_deliberate_path` — all four red with `cli.py` stashed |
 | the floor · the gate | `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
 | the adversarial review | a cold subagent told the card. **VERDICT: REVISE**, two blockers. The README's `--force` sentence led to the guard's `graphy eat . --force`, which a monorepo refuses → the advice is the full argv, above. A mixed root and `src/` layout was promised siblings one directory cannot hold → grouped by directory, above. The dropped flag: acceptable, an alias. `showcase` over a monorepo passes on a refusal naming flags it does not take, and a repo package with a stdlib name is skipped silently: both predate this diff, filed as graphyos #100 and #101. The CLI arm region re-rendered for `_eat_again`; SEAM's 86→87 stays on #90 |
+
+## 121 · A COMPONENT IS A MODULE — `typescript_ast` read `.ts` and `.js` and never opened a `.svelte` file, so 73.6% of the first client's SvelteKit frontend was invisible and `blast` on a store function its components call read 0; a `.svelte` or `.vue` file is now a module whose script blocks the same tree-sitter pass walks at the file's own lines, and a component's top-level calls are its own (2026-09-13 · graphyos issue 85)
+
+**The defect.** `walk_files` filtered on `.ts .tsx .mts .cts .js .jsx .mjs .cjs`. A component was never
+read, so it was never a candidate for any edge, right or wrong.
+
+**The change** (`graphy/adapters/typescript_ast.py`).
+
+- `.svelte` and `.vue` are read. `component_script` turns every byte outside a `<script>` body into
+  a space and keeps the newlines, so one parse sees every script block at its own line and offset. A
+  `<script>` inside an HTML comment is markup. `lang="ts"` picks the TypeScript grammar, anything
+  else TSX. The template is markup and is not read.
+- A component is a module named by its file (`components/Carousel.svelte` → `….components.Carousel`,
+  never folded as `index`). When a source file already holds that name (`+page.svelte` beside
+  `+page.ts`), the component takes `_svelte` / `_vue`.
+- A component's top-level statements run per instance, so their calls are `calls` edges from the
+  component module, including the calls inside an anonymous arrow (`onMount(() => load())`).
+- No new vocabulary. A rune declaration (`let x = $state(0)`) is the call `$state(...)` at its line.
+  An assignment to it is not an edge in the nine words.
+- Names are counted across every file read: a component whose name another file also claims takes
+  its suffix, so `Foo.svelte` beside `Foo.vue` are `Foo_svelte` and `Foo_vue`. A component's id
+  moves when such a sibling appears, and the journal shows it born and died.
+- Only a `<script>` that opens its line is a block: `{@html '<script>…</script>'}` in a template is markup.
+
+| check | result |
+|---|---|
+| the fixture, the surface | a SvelteKit-shaped `svapp` (a store, `Carousel.svelte` with a module script, a commented script and a generics attribute, `+page.svelte` beside `+page.ts`, `Widget.vue`), `graphy eat . --no-provision` then `graphy blast loadItems` → `dependents=3`: `svapp.lib.Widget.go` and `svapp.lib.components.Carousel` at hop 1 by `calls`, `svapp.routes.+page_svelte` at hop 2 by `imports`. The old adapter never opened either component |
+| a real SvelteKit app | `sveltejs/realworld`, shallow clone, `graphy eat . --no-provision`: before, `parsed 16 of 16 files`, 35 nodes / 89 edges; after, `parsed 40 of 40 files`, 59 nodes / 137 edges, 0.16 s. Its imports go through `$lib` (`$lib/api.js` 9 times): `RESOLVE … 83 label(s) -> 6 edge(s) … unresolved 67`. Aliased imports are filed as graphyos #102 |
+| no change where there are no components | `PYTHON=../.venv/bin/python bash tenants/hono/rebuild.sh` → `hono 1174 nodes / 4596 edges` and `tenants/express/rebuild.sh` → `express 69 nodes / 398 edges`, the same with the adapter stashed. Both tenants' arm drift is the same before and after |
+| the floor tests | `test_GREEN_single_file_components_are_read_at_their_own_lines` · `test_GREEN_blast_on_a_store_function_returns_the_components_that_call_it` (red on the old adapter) · `test_GREEN_component_names_never_merge_and_markup_scripts_and_plain_top_levels_mint_nothing` |
+| the floor · the gate | `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
+| the adversarial review | a cold subagent told the card. **VERDICT: REVISE.** Done lines 1, 3 and 4 GREEN, re-run: CRLF and multibyte markup keep lines; hono hashes identical; the receipt pin moves with the file listing. Line 2 RED and **the hold is correct**: `activeIndex` has no node type and an assignment has no edge type, so the ruling is two words (a state node, a write edge; the specimen's `mutates_state` is itself outside the nine), and the issue's "no new vocabulary" contradicts its own specimen. Blockers: CHANGELOG drift → regenerated; `Foo.svelte` beside `Foo.vue` merged into one module → names counted across every file, floor test. `{@html '<script>'}` read as code → a block must open its line, floor test. Vue's Options API (`export default { methods: {…} }`) mints no calls, because the pass never descends into object-literal methods → named here, not new. A mixed `const a = () => x(), b = y()` at a component's top level drops `y()` → ELIMINATED, minor |
+| the arm region | PRODUCE re-rendered for `component_script`; SEAM's 86→87 stays on #90 |
+| done line 2 | **MARCH HOLD** — the operator's ruling on the nine words: a state node type and a write edge type for a rune's declaration and its assignments, or the rune stays the tenant's emitter's |
