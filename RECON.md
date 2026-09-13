@@ -5665,3 +5665,48 @@ cd engine && ../.venv/bin/python -m pytest -q tests/test_pillars.py
 | `recon` agrees | the same 7 lanes, 2 shaped, 5 by census, through the shared implementation |
 | the floor | 610 passed, 3 skipped (607 before) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+
+## 113 · A LANE THAT IS NOT A CALL GRAPH GETS AN ANSWER — every orientation door was a code door, so `pillars` refused on all 18 of a tenant's producer-minted lanes; the refusal was correct and useless, because the engine had already written what each lane holds, and it now falls back to that census rather than answering empty-handed (2026-09-13 · graphyos issue 76)
+
+**The number, from the first client.** `pillars` on `pg_schema` refused — *a table does not call
+another table* — while the shard's own receipt held `column 12,469 · index 504 · table 311 · view
+173`, joined by `contains 25,440 · indexes_on 504 · references 42 · protects 39`. Read out of the
+provenance by hand, that one line is a better briefing for an agent than anything `pillars` could
+produce for the lane. The same held for every one of their 18 producer lanes.
+
+**No new computation.** `pillars.census(data_home, corpus)` reads the receipt minted beside every
+shard; `render_census` orders by count and names the producer, so a reader knows **whose vocabulary
+they are looking at** when the type names are not this engine's. The declared relation class rides
+along (§104), so the line says which edges a door will actually walk:
+
+```text
+CENSUS: history — 874 node(s) · 1,993 edge(s), minted by history
+  node types: exchange 460 · commit 143 · section 111 · issue 73 · session 45 · receipt 42
+  edge types: contains 460 [structural] · touches 430 [lexical] · mentions 397 [lexical] · …
+```
+
+**The distinction the floor forced, which is the real content of this rung.** The first fallback
+caught every `PillarsError`, and the existing floor went red on `--arms 1`: a caller asking for one
+arm is a **typo**, not a lane without a shape, and answering it with a census silently rewards the
+mistake with a different door's output. `PillarsArgumentError` now separates the two — the CLI
+refuses on it, and `shape` re-raises it instead of retrying at a deeper cut, because an impossible
+argument is impossible at every depth. Without that second change the subclass was swallowed by the
+escalation loop and a typo still produced a census three lines later.
+
+```bash
+python3 -m graphy pillars --tenant tenants/graphy/tenant.json --tenant-id graphy --corpus history
+python3 -m graphy pillars --tenant … --arms 1          # still a refusal, exit 1
+cd engine && ../.venv/bin/python -m pytest -q tests/test_pillars.py
+```
+
+| check | result |
+|---|---|
+| a non-code lane, live | `PILLARS: no pillar shape for 'history' — …` then `PILLARS GAVE THE CENSUS INSTEAD: this lane has structure, it is not a call graph`, the census, exit **0** — the door answered |
+| whose vocabulary | `minted by sql_census` in the head line; a lane this engine never produced says so |
+| the declared class | `indexes_on 504 [depends] · contains 25,440 [structural]` — the census tells a reader which edges the doors walk |
+| a corpus with no shard | refuses by name: *no readable shard receipt at …* — "this lane does not exist" never becomes "this lane is empty" |
+| a receipt with no type census | says so rather than rendering an empty block |
+| a caller error | `--arms 1` refuses, exit 1, and is **not** retried at a deeper cut |
+| `recon` | drops its own census reader and calls this one — the third duplicate consolidated into a door in three rungs (§111 took the loop, §112 took the escalation, this takes the census) |
+| the floor | 613 passed, 3 skipped (610 before) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |

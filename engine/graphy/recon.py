@@ -68,17 +68,12 @@ def default_out(tenant) -> Path:
 
 
 def _census(tenant, corpus: str) -> dict:
-    """A lane's own counts, from the receipt it already carries."""
-    p = Path(tenant.data_home) / f"{corpus}_graph" / "PROVENANCE.json"
+    """A lane's own counts. The reader lives in `pillars` with the fallback that uses it
+    (graphyos #76); this lane had it first and now calls the door rather than keeping a copy."""
     try:
-        prov = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return pillars_lane.census(tenant.data_home, corpus)
+    except pillars_lane.PillarsError:
         return {}
-    counts = prov.get("counts") or {}
-    return {"nodes": counts.get("node_count"), "edges": counts.get("edge_count"),
-            "node_types": counts.get("node_types") or {}, "edge_types": counts.get("edge_types") or {},
-            "producer": (prov.get("producer") or {}).get("adapter") or (prov.get("vocabulary") or {}).get("producer"),
-            "relations": (prov.get("vocabulary") or {}).get("relations") or {}}
 
 
 def _shape(store, corpus: str, depths=DEPTHS):

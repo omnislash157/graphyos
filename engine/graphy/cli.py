@@ -679,9 +679,26 @@ def _cmd_pillars(args: argparse.Namespace) -> int:
         graph, proposal, at_depth = pillars_lane.shape(
             store, corpus, depth=args.depth, max_depth=args.max_depth,
             arms=args.arms, floor=args.floor, owned=args.owned, client=args.client, rest=args.rest)
-    except pillars_lane.PillarsError as exc:
+    except pillars_lane.PillarsArgumentError as exc:
+        # A caller error is never answered with a different door's output: asking for one arm is a
+        # typo, not a lane without a shape, and the census would silently reward it (graphyos #76).
         print(f"PILLARS UNANSWERABLE: {exc}", file=sys.stderr)
         return 1
+    except pillars_lane.PillarsError as exc:
+        # A lane with no orchestrator is not a lane with nothing in it. The refusal is correct — a
+        # table does not call another table — and on its own it is useless, because the engine
+        # already wrote down what the lane holds. Falling back to that census is a better answer
+        # than an empty-handed refusal, and it says which one it gave (graphyos #76).
+        try:
+            c = pillars_lane.census(tenant.data_home, corpus)
+        except pillars_lane.PillarsError:
+            print(f"PILLARS UNANSWERABLE: {exc}", file=sys.stderr)
+            return 1
+        print(f"PILLARS: no pillar shape for {corpus!r} — {exc}")
+        print(f"PILLARS GAVE THE CENSUS INSTEAD: this lane has structure, it is not a call graph")
+        print(pillars_lane.render_census(c))
+        print(f"DOOR: pillars generation={store.generation()}")
+        return 0
     if args.depth is None and at_depth != pillars_lane.DEFAULT_DEPTH:
         print(f"PILLARS: cut escalated to depth {at_depth} — the default {pillars_lane.DEFAULT_DEPTH} "
               f"yielded no orchestrator for this corpus")

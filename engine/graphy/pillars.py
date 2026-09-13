@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-__all__ = ["PillarsError", "ModuleGraph", "Proposal", "module_graph", "propose", "shape", "render",
+__all__ = ["PillarsError", "PillarsArgumentError", "ModuleGraph", "Proposal", "module_graph", "propose", "shape", "census", "render_census", "render",
            "to_partition", "diff", "render_diff"]
 
 RELATIONS = frozenset({"imports", "calls", "inherits", "decorates"})
@@ -59,6 +59,14 @@ DEFAULT_REST = "EDGE"
 
 class PillarsError(RuntimeError):
     pass
+
+
+class PillarsArgumentError(PillarsError):
+    """The CALLER passed something impossible — not a corpus that has no shape.
+
+    The distinction is load-bearing since the census fallback landed: "this lane is not a call
+    graph" is answered with its census, and "you asked for one arm" must not be, or a typo is
+    silently rewarded with a different door's answer (graphyos #76)."""
 
 
 @dataclass
@@ -181,13 +189,13 @@ def propose(g: ModuleGraph, arms: int | None = None, floor: int = DEFAULT_FLOOR,
             owned: float = DEFAULT_OWNED, client: float = DEFAULT_CLIENT,
             rest: str = DEFAULT_REST) -> Proposal:
     if arms is not None and arms < 2:
-        raise PillarsError(f"--arms must be at least 2 (the crowns and the floor), got {arms}")
+        raise PillarsArgumentError(f"--arms must be at least 2 (the crowns and the floor), got {arms}")
     if not isinstance(floor, int) or isinstance(floor, bool) or floor < 0:
-        raise PillarsError(f"floor must be a count of edges, 0 or more, got {floor!r}")
+        raise PillarsArgumentError(f"floor must be a count of edges, 0 or more, got {floor!r}")
     if not 0.5 < owned <= 1:
-        raise PillarsError(f"owned must be a fraction in (0.5, 1], got {owned}")
+        raise PillarsArgumentError(f"owned must be a fraction in (0.5, 1], got {owned}")
     if not 0 < client <= 1:
-        raise PillarsError(f"client must be a fraction in (0, 1], got {client}")
+        raise PillarsArgumentError(f"client must be a fraction in (0, 1], got {client}")
     total = g.total
     fan_in = {u: g.fan_in(u) for u in g.size}
     fan_out = {u: g.fan_out(u) for u in g.size}
@@ -335,6 +343,66 @@ def propose(g: ModuleGraph, arms: int | None = None, floor: int = DEFAULT_FLOOR,
                     floor_arm=floor_arm, arms={a: arm_units[a] for a in order}, rulings=ordered, total=total)
 
 
+def census(data_home, corpus: str) -> dict:
+    """What a lane holds, read from the receipt it already carries — no recomputation.
+
+    Every orientation door in this engine is a code door: `pillars` ranks orchestrators by call
+    direction, `descend` follows `calls`, `blast` follows the dependency family. A shard that is not
+    code has no door that answers "what is in here", and the engine invites exactly those shards
+    through the `static-dep` lane kind.
+
+    The refusal `pillars` gives such a lane is CORRECT — a table does not call another table — and
+    useless, because the lane is richly structured and the engine already wrote the structure down.
+    A first tenant's `pg_schema` holds `column 12,469 · index 504 · table 311 · view 173` joined by
+    `contains · indexes_on · references · protects`, and reading that one line out of the provenance
+    by hand was a better briefing than anything `pillars` could produce for it (graphyos #76).
+    """
+    import json as _json
+    from pathlib import Path as _P
+
+    path = _P(data_home) / f"{corpus}_graph" / "PROVENANCE.json"
+    try:
+        prov = _json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise PillarsError(
+            f"corpus {corpus!r} has no readable shard receipt at {path} ({type(exc).__name__}) — "
+            f"there is no census to give and no pillar shape to fall back from"
+        ) from exc
+    counts = prov.get("counts") or {}
+    vocab = prov.get("vocabulary") or {}
+    return {
+        "corpus": corpus,
+        "nodes": counts.get("node_count"),
+        "edges": counts.get("edge_count"),
+        "node_types": counts.get("node_types") or {},
+        "edge_types": counts.get("edge_types") or {},
+        # Whose vocabulary a reader is looking at. A lane minted by a producer this engine never
+        # wrote means its type names are that producer's, not this one's.
+        "producer": (prov.get("producer") or {}).get("adapter") or vocab.get("producer"),
+        "relations": vocab.get("relations") or {},
+    }
+
+
+def render_census(c: dict) -> str:
+    """``CENSUS: pg_schema — 13,513 node(s) · 26,025 edge(s), minted by sql_census`` and its types."""
+    producer = f", minted by {c['producer']}" if c.get("producer") else ""
+    head = (f"CENSUS: {c['corpus']} — {(c['nodes'] or 0):,} node(s) · {(c['edges'] or 0):,} edge(s)"
+            f"{producer}")
+    lines = [head]
+    if c["node_types"]:
+        lines.append("  node types: " + " · ".join(
+            f"{k} {v:,}" for k, v in sorted(c["node_types"].items(), key=lambda kv: (-kv[1], kv[0]))))
+    if c["edge_types"]:
+        rel = c.get("relations") or {}
+        lines.append("  edge types: " + " · ".join(
+            f"{k} {v:,}" + (f" [{'/'.join(rel[k])}]" if rel.get(k) else "")
+            for k, v in sorted(c["edge_types"].items(), key=lambda kv: (-kv[1], kv[0]))))
+    if not c["node_types"] and not c["edge_types"]:
+        lines.append("  the receipt carries no type census — the shard was minted before producers "
+                     "wrote one, or by a producer that writes none")
+    return "\n".join(lines)
+
+
 def shape(store, corpus: str, *, depth: int | None = None, max_depth: int = DEFAULT_MAX_DEPTH,
           **kw) -> tuple[ModuleGraph, Proposal, int]:
     """The module graph, its proposal and the depth that answered — escalating the cut when asked.
@@ -351,12 +419,17 @@ def shape(store, corpus: str, *, depth: int | None = None, max_depth: int = DEFA
         g = module_graph(store, corpus, depth=depth)
         return g, propose(g, **kw), depth
     if max_depth < DEFAULT_DEPTH:
-        raise PillarsError(f"max_depth {max_depth} is shallower than the default cut {DEFAULT_DEPTH}")
+        raise PillarsArgumentError(f"max_depth {max_depth} is shallower than the default cut {DEFAULT_DEPTH}")
     last: PillarsError | None = None
     for d in range(DEFAULT_DEPTH, max_depth + 1):
         try:
             g = module_graph(store, corpus, depth=d)
             return g, propose(g, **kw), d
+        except PillarsArgumentError:
+            # A caller error does not get retried at a deeper cut and does not become "no shape at
+            # any depth": the argument is wrong at every depth, and swallowing it here turned a typo
+            # into a census three lines later.
+            raise
         except PillarsError as exc:
             last = exc
     # The pinned refusal says "cut deeper (--depth)". After an escalation that advice is already

@@ -296,3 +296,46 @@ def test_RED_a_corpus_with_no_orchestrator_at_any_depth_refuses_and_says_how_dee
         pillars.shape(store, "pkg", max_depth=3)
     with pytest.raises(pillars.PillarsError, match="shallower than the default"):
         pillars.shape(store, "pkg", max_depth=1)
+
+
+def _shard(d: Path, *, counts: dict, producer: str | None = None, relations: dict | None = None) -> None:
+    d.mkdir(parents=True, exist_ok=True)
+    prov = {"counts": counts}
+    if producer:
+        prov["vocabulary"] = {"producer": producer, "relations": relations or {}}
+    (d / "PROVENANCE.json").write_text(json.dumps(prov), encoding="utf-8")
+
+
+def test_GREEN_the_census_door_answers_for_a_lane_that_is_not_a_call_graph(tmp_path):
+    """Every orientation door in this engine is a code door, and the engine invites shards that are
+    not code. `pillars` refuses on them CORRECTLY — a table does not call another table — and
+    uselessly, because the lane is richly structured and the engine already wrote the structure down
+    in the receipt it mints beside every shard (graphyos #76)."""
+    home = tmp_path / "substrate"
+    _shard(home / "pg_schema_graph",
+           counts={"node_count": 13513, "edge_count": 26025,
+                   "node_types": {"column": 12469, "index": 504, "table": 311, "view": 173},
+                   "edge_types": {"contains": 25440, "indexes_on": 504, "references": 42}},
+           producer="sql_census", relations={"indexes_on": ["depends"], "contains": ["structural"]})
+    c = pillars.census(home, "pg_schema")
+    assert c["nodes"] == 13513 and c["edges"] == 26025
+    assert c["producer"] == "sql_census"                       # whose vocabulary this is
+    line = pillars.render_census(c)
+    assert "CENSUS: pg_schema — 13,513 node(s) · 26,025 edge(s), minted by sql_census" in line
+    assert "column 12,469" in line and "table 311" in line     # ordered by count
+    assert line.index("column") < line.index("index") < line.index("table")
+    # the declared class rides along, so a reader sees which edges a door will walk (graphyos #68)
+    assert "indexes_on 504 [depends]" in line and "contains 25,440 [structural]" in line
+
+
+def test_RED_a_corpus_with_no_shard_refuses_by_name_rather_than_returning_an_empty_census(tmp_path):
+    """The fallback must not turn "this lane does not exist" into "this lane is empty"."""
+    with pytest.raises(pillars.PillarsError, match="no readable shard receipt"):
+        pillars.census(tmp_path / "substrate", "nobody")
+
+
+def test_GREEN_a_receipt_with_no_type_census_says_so_rather_than_rendering_nothing(tmp_path):
+    home = tmp_path / "substrate"
+    _shard(home / "old_graph", counts={"node_count": 5, "edge_count": 2})
+    line = pillars.render_census(pillars.census(home, "old"))
+    assert "the receipt carries no type census" in line
