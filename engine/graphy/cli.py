@@ -598,6 +598,47 @@ def _cmd_door(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_recon(args: argparse.Namespace) -> int:
+    """The briefing: every corpus in the tenant, pillars where there is a shape and the census where
+    there is not, in one markdown file a cold agent can be handed (graphyos #74)."""
+    from graphy import federated_store as fstore
+    from graphy import recon as recon_lane
+    if not args.tenant or not args.tenant_id:
+        print("RECON REFUSED: --tenant and --tenant-id are required — graphy resolves identity "
+              "only through a declared Tenant", file=sys.stderr)
+        return 2
+    try:
+        tenant = _load_tenant(args.tenant)
+    except TenantError as exc:
+        print(f"RECON REFUSED: {exc}", file=sys.stderr)
+        return 2
+    roster = _roster(tenant)
+    if not roster:
+        print("RECON REFUSED: the tenant declares no build_lanes — there is nothing to brief on",
+              file=sys.stderr)
+        return 2
+    try:
+        store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id,
+                                on_stale=args.on_stale)
+    except (fstore.StoreError, OSError) as exc:
+        print(_flatten(f"RECON REFUSED: {exc} — build the store with `graphy build`"), file=sys.stderr)
+        return 2
+    try:
+        data = recon_lane.recon(store, tenant, args.tenant_id)
+    except recon_lane.ReconError as exc:
+        print(f"RECON REFUSED: {exc}", file=sys.stderr)
+        return 2
+    out = Path(args.out).expanduser().resolve() if args.out else recon_lane.default_out(tenant)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(recon_lane.render(data, descriptor=str(Path(args.tenant).resolve()),
+                                     tenant_id=args.tenant_id), encoding="utf-8", newline="\n")
+    shaped = sum(1 for s in data["sections"] if s["shape"])
+    flat = len(data["sections"]) - shaped
+    print(f"RECON OK: {len(data['corpora'])} corpus/corpora — {shaped} with a pillar shape, "
+          f"{flat} by census · store {data['generation']} -> {out} ({out.stat().st_size:,} B)")
+    return 0
+
+
 def _cmd_pillars(args: argparse.Namespace) -> int:
     from graphy import fanout
     from graphy import federated_store as fstore
@@ -1811,6 +1852,7 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
         f"    {g} draw {tenant} --pillars --partition {home / 'partition.json'} --lr",
         f"    {g} draw {tenant} --corpus {package} --lr --min-weight 2 --emit html --interactive -o {home / 'map.html'}",
         "  ASK IT",
+        f"    {g} recon {tenant}                   # ← START HERE: the whole codebase's shape, one file",
         f"    {g} blast <symbol> {tenant}          # if this changes, what breaks",
         f"    {g} descend <symbol> {tenant}        # what it reaches, across packages",
         f"    {g} walk {tenant} --seed {seed} --target {target}",
@@ -2177,6 +2219,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p_pil.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
     p_pil.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
     p_pil.add_argument("--corpus", default=None, help="which corpus to cut (required when the tenant holds more than one)")
+    p_recon = sub.add_parser(
+        "recon", help="the briefing: every corpus in the tenant as pillars where there is a shape "
+                      "and a census where there is not, in one markdown file for a cold agent")
+    p_recon.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
+    p_recon.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
+    p_recon.add_argument("--out", default=None,
+                         help="where the briefing lands (default: RECON.md beside the substrate, "
+                              "which an eaten repo already gitignores)")
+    p_recon.add_argument("--on-stale", default="warn", help="warn (default) or refuse when the store is stale")
+    p_recon.set_defaults(handler=_cmd_recon)
+
     p_pil.add_argument("--depth", type=int, default=pillars_lane.DEFAULT_DEPTH,
                        help=f"dotted segments that make a unit (default {pillars_lane.DEFAULT_DEPTH}: the package's first-level children)")
     p_pil.add_argument("--arms", type=int, default=None,

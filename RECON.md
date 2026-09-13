@@ -5569,3 +5569,54 @@ cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py -k "edges_only o
 | the cost | 34 ms over this repo's 7 lanes and 25,509 edges, read from the shards because the store's edge table carries no owner column to attribute a dangling edge to a lane |
 | the floor | 604 passed, 3 skipped (602 before) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+
+## 111 · `graphy recon` — THE COUNTERPART TO `eat` — the engine answered questions and shipped none, so a store sat compiled while its orientation was re-derived by reading source; one verb now walks every corpus, runs `pillars` with the depth escalated 2→3→4, falls back to the lane's own census where there is no pillar shape, and writes the briefing you hand an agent (2026-09-13 · graphyos issue 74)
+
+**The number, from the first client.** Their MCP server was up in every session for months and
+`pillars` had never been run once. The orientation it produces in one command was being re-derived
+by reading source — at far greater cost and worse accuracy. `eat` got them a store and the product
+then stopped and waited for them to already know that `pillars` is the orientation verb, that its
+depth needs escalating when it refuses, that `blast` is the pre-edit check. None of that is
+discoverable from having installed it, so an engine that works perfectly sat idle.
+
+```text
+graphy eat .        # I have a graph
+graphy recon        # I have a briefing
+```
+
+**It invents nothing.** Every number is a count off compiled edges, it orchestrates verbs that
+already exist, and it reuses `pillars.render` rather than re-implementing the crowns and the
+cross-arm matrix. Where there is no pillar shape it says so in **`pillars`' own words** at the
+deepest cut tried, because "no orchestrator at depth 4 — every unit is consumed more than it
+consumes" tells a reader something and "no pillar shape" tells them nothing.
+
+**Two bugs this lane had on its first run against this repo, both found by running it here.**
+It required two arms to call something a shape, which rejected `duckdb`'s honest answer of *one*
+pillar — a real and common answer for a small package. And it reported its own generic sentence
+instead of the reason `pillars` had already produced. Neither would have shown up in a fixture;
+both showed up in the first ten seconds of pointing it at the engine's own tenant.
+
+**What it does NOT carry, and that is the point.** The first client's hand-built stand-in ends its
+reading key with *"`blast` and `descend` walk the engine's four dependency relations only. A
+house-minted relation answers zero — reach those with `walk` or `estate --sql`."* That paragraph was
+documentation routing agents AROUND the hardcoded frozenset, and §104 deleted the need for it. This
+header says the opposite and it is now true: every relation a producer declared is walked, and a
+door names the relations it declined.
+
+```bash
+python3 -m graphy recon --tenant tenants/graphy/tenant.json --tenant-id graphy
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py -k recon
+```
+
+| check | result |
+|---|---|
+| this repo, all seven lanes, no `--corpus` | `RECON OK: 7 corpus/corpora — 2 with a pillar shape, 5 by census · store 36174aa7e47c6276 -> …/RECON.md (13,695 B)` |
+| the shapes | `graphy` 3 arms over 439 cross-unit edges at depth 2; `duckdb` 1 arm over 21 at depth 2 |
+| the reasons, where there is none | `tests`: *the store owns no module-bearing node for corpus 'tests'*; `typing_extensions`: *no cross-unit edge at depth 4 — the corpus is one unit* — verified against the module graph, which is 1 unit and 0 cross-unit edges at every depth |
+| the escalation is real | `typing_extensions` is tried at 2, 3 and 4 before the census answers |
+| the artifact | a how-to-read header with the five roles and the cross-arm line, the store generation, per-corpus sections, a per-lane node and edge type census carrying **what each relation was declared as** (§104), and a staleness footer that says `graphy check` is what tells you and this file will not |
+| where it lands | `<data_home>/RECON.md` by default — inside the `.graphy` an eaten repo already gitignores; `--out` overrides |
+| the bytes | written `newline="\n"`, asserted on the bytes, so the briefing is LF on every host (the defect graphyos #93 carries for the hooks) |
+| `eat` now says so | `recon` is the first line of its ASK IT block: `← START HERE: the whole codebase's shape, one file` |
+| the floor | 607 passed, 3 skipped (604 before) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |

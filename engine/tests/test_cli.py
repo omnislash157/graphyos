@@ -1064,3 +1064,68 @@ def test_GREEN_check_is_red_only_for_a_lane_that_declared_its_endpoints_resolve(
             assert "CHECK NOTE" in out and "edges-only" in out
             assert "resolve to no node in this roster" in out
             assert "declares `endpoints: resolved`" not in err
+
+
+def test_GREEN_recon_briefs_every_corpus_and_says_why_where_there_is_no_pillar_shape(tmp_path, capsys):
+    """`eat` gets a stranger a graph and then the product stopped, waiting for them to already know
+    that `pillars` is the orientation verb and that its depth needs escalating. Measured on the
+    first tenant: the MCP server was up for months and `pillars` had never been run once — the
+    orientation it produces in one command was being re-derived by reading source (graphyos #74).
+
+    The briefing covers EVERY corpus with no --corpus required, and a corpus with no pillar shape
+    says why in the words `pillars` itself used rather than being left out or filled in with prose."""
+    from graphy import recon as recon_lane
+    import graphy.federated_store as fs
+
+    tenant = _bridge_tenant(tmp_path, resolved=False)     # two lanes, neither with a module hierarchy
+    (tenant.data_home / ".federation_scheme_index.json").write_text(json.dumps({
+        "_meta": {}, "code": {"own": ["code"], "out": []}, "bridge": {"own": ["bridge"], "out": ["code"]},
+    }), encoding="utf-8")
+    roster = ["code", "bridge"]
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="t")
+    store = fs.open_for(roster, tenant=tenant, tenant_id="t")
+
+    data = recon_lane.recon(store, tenant, "t")
+    assert [s["corpus"] for s in data["sections"]] == ["bridge", "code"]     # every corpus, none dropped
+    assert data["generation"] == store.generation()
+    for s in data["sections"]:
+        assert s["shape"] is None and s["why"], s["corpus"]                  # and each says WHY
+
+    page = recon_lane.render(data, descriptor="/x/tenant.json", tenant_id="t")
+    assert "# RECON — t:" in page
+    assert "## How to read this" in page and "crown" in page and "cross-arm" in page
+    assert "## bridge" in page and "## code" in page
+    assert "**No pillar shape.**" in page
+    assert "## Staleness" in page and store.generation() in page
+    assert "graphy blast <symbol> --tenant /x/tenant.json --tenant-id t" in page
+    # the edge-type census carries what each relation was DECLARED as (graphyos #68)
+    assert "| edge type | count | declared |" in page
+
+
+def test_GREEN_recon_writes_beside_the_substrate_and_names_what_it_found(tmp_path, capsys):
+    """The verb end to end: no --corpus, no --out, a file beside the substrate the eaten repo
+    already gitignores, and a receipt line naming shaped against census."""
+    tenant = _bridge_tenant(tmp_path, resolved=False)
+    (tenant.data_home / ".federation_scheme_index.json").write_text(json.dumps({
+        "_meta": {}, "code": {"own": ["code"], "out": []}, "bridge": {"own": ["bridge"], "out": ["code"]},
+    }), encoding="utf-8")
+    import graphy.federated_store as fs
+    roster = ["code", "bridge"]
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="t")
+    desc = tmp_path / "tenant.json"
+    desc.write_text(json.dumps({
+        "root": str(tmp_path), "data_home": str(tenant.data_home), "adapters": [],
+        "build_lanes": {"code_graph": [None, "static-dep"], "bridge_graph": [None, "static-dep"]},
+        "join_keys": str(tenant.join_keys), "cursor": tenant.cursor, "policy": "refuse",
+        "journal": str(tenant.journal)}), encoding="utf-8")
+    assert cli.main(["recon", "--tenant", str(desc), "--tenant-id", "t"]) == 0
+    out = capsys.readouterr().out
+    assert "RECON OK: 2 corpus/corpora" in out and "by census" in out
+    landed = tenant.data_home / "RECON.md"
+    assert landed.is_file() and "# RECON — t:" in landed.read_text(encoding="utf-8")
+    assert b"\r\n" not in landed.read_bytes()     # LF on every host, asserted on the BYTES (graphyos #93)
+
+
+def test_RED_recon_refuses_without_a_tenant_and_names_the_reason(tmp_path, capsys):
+    assert cli.main(["recon", "--tenant-id", "t"]) == 2
+    assert "RECON REFUSED: --tenant and --tenant-id are required" in capsys.readouterr().err
