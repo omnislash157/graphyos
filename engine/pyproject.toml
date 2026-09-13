@@ -12,13 +12,16 @@ license = { file = "LICENSE" }
 dependencies = []
 
 [project.scripts]
-graphy = "graphy.cli:main"
-graphyos = "graphy.cli:main"   # the distribution's own name, so `uvx graphyos mcp --repo .` runs (the MCP registry's runtimeHint)
+graphy = "_graphy_launch:main"      # beside the package, so a shadowing `graphy/` is refused by name (graphyos #83)
+graphyos = "_graphy_launch:main"   # the distribution's own name, so `uvx graphyos mcp --repo .` runs (the MCP registry's runtimeHint)
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 estate = ["duckdb>=1.0"]
 typescript = ["tree-sitter>=0.23", "tree-sitter-typescript>=0.23"]
+
+[tool.setuptools]
+py-modules = ["_graphy_launch"]
 
 [tool.setuptools.packages.find]
 include = ["graphy*"]

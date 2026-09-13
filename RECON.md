@@ -5885,3 +5885,25 @@ the install that ate the repo.
 | the floor test | `test_next_steps_prints_a_project_mcp_json_that_runs_the_graphy_that_ate` (a decoy `graphy` on PATH, the venv inside and outside the repo, with and without the console script) — red with the source stashed |
 | the floor · the gate | `cd engine && ../.venv/bin/python -m pytest -q` green · `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
 | the adversarial review | a cold subagent told the card. **VERDICT: REVISE**, one blocker: a backticked graphy.exe in this section, which `review.py` reads as a dotted symbol, turned the gate red after it had passed. Disposition: fixed in the prose, gate re-run green. The code: all three done lines GREEN, and it confirmed the test goes red on the old code. Showcase text and page lacked the start-in-the-root line → fixed here. A script beside the interpreter without the executable bit → ELIMINATED, unlikely |
+
+## 119 · A SHADOWING GRAPHY IS REFUSED BY NAME — a client repo's empty `graphy/__init__.py` ahead on `PYTHONPATH` killed the console script with `No module named 'graphy.cli'`, and a directory left holding only `__pycache__` loads as an empty namespace package in silence; the console scripts now enter through `_graphy_launch`, beside the package, which reads the spec of the name `graphy` before importing it and refuses naming the directory that won and the engine it hid (2026-09-13 · graphyos issue 83)
+
+**The defect.** `[project.scripts]` named `graphy.cli:main`. The shim's import runs before a line of
+the package can check anything, so no check inside `graphy/` can see a shadow.
+
+**The change.**
+
+- `_graphy_launch.py` is a top-level module (`[tool.setuptools] py-modules`) beside `graphy/`.
+  `shadowing(spec)` reads `importlib.util.find_spec("graphy")`: no spec, a namespace spec, or an
+  origin that is not its own sibling `graphy/__init__.py` is a refusal naming both paths. `main()`
+  prints it on stderr and exits 2, else runs `graphy.cli.main`.
+- `graphy` and `graphyos` both enter through it. `python -m graphy` does not: the name it runs is
+  the one that shadows.
+
+| check | result |
+|---|---|
+| the defect, reproduced | a scratch venv with this engine as a wheel, `PYTHONPATH=<dir holding an empty graphy/__init__.py>` → `ModuleNotFoundError: No module named 'graphy.cli'`. The editable `.venv` with a `__pycache__`-only `graphy/` on `PYTHONPATH` → `--help` ran with the package's `__file__` None |
+| the real run | the same three shapes after the change: wheel + empty package → `graphy: REFUSED — the import name 'graphy' resolves to <dir>/graphy, which shadows the engine installed at <venv>/site-packages/graphy`, exit 2; editable + `__pycache__`-only → the namespace refusal, exit 2; editable + empty package → refused, exit 2. Clean `graphy --help` and `graphyos --help` from both installs run |
+| the floor test | `tests/test_launch.py`: an empty `graphy/` first on `PYTHONPATH` → exit 2, both paths named, no `No module named`; the engine alone launches; a namespace spec and the intended spec; both `[project.scripts]` entries name `_graphy_launch:main` — red with the entries reverted |
+| the floor · the gate | `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
+| the adversarial review | a cold subagent told the card. **VERDICT: REVISE**, one blocker: the floor called the launcher directly, so reverting `[project.scripts]` to the old entry stayed green. Disposition: the wiring test above, shown red on the reverted entries. The reviewer's own run: a wheel and strict · compat · lenient editable installs, an empty shadow refused in all four, clean launches in all four, no false refusal; a namespace directory shadows only the lenient editable finder, where the refusal fires, and loses to a regular package everywhere else. `out of the working directory` in the refusal → dropped, a console script's path starts at its own `bin/`. A `.pyc`-only distribution → ELIMINATED, unlikely |
