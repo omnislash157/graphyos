@@ -1281,10 +1281,10 @@ def _cmd_history(args: argparse.Namespace) -> int:
     the timeline door (graphyos #60)."""
     from graphy.adapters import history as history_lane
     from graphy.ir import IRError
-    mint_flags = [f for f in ("repo", "out", "code", "aliases", "verify") if getattr(args, f)]
+    mint_flags = [f for f in ("repo", "out", "code", "names", "aliases", "verify") if getattr(args, f)]
     story_flags = [f for f in ("terms", "partner", "symbol", "tenant", "tenant_id") if getattr(args, f)]
     if mint_flags and story_flags:
-        print(f"HISTORY REFUSED: one mode per call — the mint takes --repo/--out/--code/--aliases/--verify, the timeline a "
+        print(f"HISTORY REFUSED: one mode per call — the mint takes --repo/--out/--code/--names/--aliases/--verify, the timeline a "
               f"term with --with/--tenant/--tenant-id or --symbol; this call mixed {', '.join(mint_flags)} with "
               f"{', '.join(story_flags)}", file=sys.stderr)
         return 2
@@ -1305,7 +1305,7 @@ def _cmd_history(args: argparse.Namespace) -> int:
             print(f"HISTORY {'OK' if fresh else 'STALE'}: {Path(args.out).resolve()} {why}")
             return 0 if fresh else 1
         prov = history_lane.mint(args.repo, args.out, sessions=args.sessions, recon=args.recon, code=args.code,
-                                 aliases=args.aliases)
+                                 aliases=args.aliases, names=args.names)
     except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
         print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -1336,10 +1336,28 @@ SESSIONS_REL = Path(".claude") / "recovery" / "sessions"
 ALIASES_NAME = "aliases.json"
 
 
+def _ring_code(sub: Path, package: str) -> list[Path]:
+    """The names the archive's literals bind to: the package's shard and every shard its ring minted
+    beside it. A monorepo's sessions name every sibling package, and binding against the root alone
+    lost four in five of the first client's mentions (graphyos #81). Names only — a ring shard's files
+    are relative to its own package, so hono and zod both carry `src/index.ts`, and a commit's touches
+    stay on the package's shard. A ring shard not on disk is not a name; no readable ring.json leaves
+    the package's shard alone."""
+    from graphy import smash as smash_lane
+    shards = [sub / f"{package}_graph"]
+    try:
+        ring = json.loads((sub / smash_lane.RING_NAME).read_text(encoding="utf-8"))
+        slugs = sorted({m["slug"] for m in ring.get("minted", {}).values() if isinstance(m, dict) and m.get("slug")})
+    except (OSError, ValueError):
+        slugs = []
+    shards += [sub / f"{s}_graph" for s in slugs if (sub / f"{s}_graph" / "nodes.json").is_file()]
+    return list(dict.fromkeys(shards))
+
+
 def eat_history(repo: Path, sub: Path, home: Path, package: str, *, log=print) -> bool:
     """The repo's own record minted beside the code shard by `eat` and re-minted by `shell install`
     (graphyos #66): commits from the checkout, the sessions archive the hooks fill when it exists, the
-    package's shard as the code the literals bind to, ``<home>/aliases.json`` the hand weld when present.
+    package's shard the code a commit touches and every ring shard the names a literal binds to, ``<home>/aliases.json`` the hand weld when present.
     Nothing of the repo's runs — the producer reads git and files. A directory that is not a git
     checkout is skipped by name; a mint that refuses is named and the eat stands on the code alone.
     Returns whether the shard landed."""
@@ -1355,7 +1373,7 @@ def eat_history(repo: Path, sub: Path, home: Path, package: str, *, log=print) -
     aliases = home / ALIASES_NAME
     try:
         prov = history_lane.mint(repo, out, sessions=sessions if sessions.is_dir() else None,
-                                 code=[sub / f"{package}_graph"], aliases=aliases if aliases.is_file() else None)
+                                 code=[sub / f"{package}_graph"], names=_ring_code(sub, package), aliases=aliases if aliases.is_file() else None)
     except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
         shutil.rmtree(out, ignore_errors=True)
         log(f"HISTORY SKIPPED: {exc} — the code shard stands alone")
@@ -2070,6 +2088,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_hist.add_argument("--code", action="append", default=None,
                         help="a code shard whose module ids a commit's changed files map onto (repeatable); "
                              "absent, the shard carries no touches and says so")
+    p_hist.add_argument("--names", action="append", default=None,
+                        help="a shard whose names a session's literals bind onto beside --code, but whose files are never "
+                             "this repo's — the import ring (repeatable); `eat` hands it every ring shard")
     p_hist.add_argument("--aliases", default=None,
                         help="the override registry, a JSON object of exact literal → code node id: the hand weld for a "
                              "literal the wormhole cannot bind (`bloodhound` → graphy://module/graphy.lightning.bloodhound); "

@@ -5829,3 +5829,35 @@ anywhere was the count of zero.
 | the gate and the battery | `GRAPHY_STANDALONE_OK`; `python3 review.py --diff HEAD` → `REVIEW OK: 9 check(s) · 0 finding(s)` |
 | the adversarial review | a cold subagent told the card probed the regex (the attribution never enters the id; malformed separators still miss), ran old and new regex over the real archive (identical ids, all 51 read, the verify digest unmoved), checked an old receipt with no `session_files` (no line, no KeyError), and put the old regex back by monkeypatch to turn the floor test red. **VERDICT: REVISE**, and the code was not what it blocked: this section's first draft quoted the box's absolute checkout path (`SCRUB RED: RECON.md: private token`) while its gate row claimed green |
 | disposition | the private path → NOT NEW · `scrub.py` fired as designed; the row now cites `<abs>` and the gate re-ran → `GRAPHY_STANDALONE_OK` · the gate row written before the gate ran → corrected by re-running first · the timeline doors (`hunt` · `history --symbol`) still pass no census and stay silent on a miss archive → ELIMINATED · outside the done block, which names the mint path · the tenant's history lane stale → ELIMINATED · stale before the diff; re-minted by the rebuild before close |
+
+## 117 · THE ARCHIVE BINDS TO THE WHOLE RING — `eat_history` handed the history lane the root package's shard alone, so in a monorepo every session that named a sibling package bound nothing: the first client measured 548 mentions against the root and 2,667 against the ring, four in five of the weld lost; a literal now binds onto every shard the ring minted, while a commit still touches only the repo's own (2026-09-13 · graphyos issue 81)
+
+**The defect.** `cli.eat_history` called `history.mint(…, code=[sub / f"{package}_graph"])`. The
+ring had already minted every sibling and dependency beside it, and `ring.json` names each one,
+but the literals bound only to the root package's names.
+
+**The change.**
+
+- `history.mint` (and `graphy history`) takes `names`/`--names`: shards whose names a literal binds
+  onto beside `--code`, which never enter the file→module map a commit's `touches` read.
+  The receipt carries them as `corpus.names` and `verify` reads them back.
+- `cli._ring_code(sub, package)` returns the package's shard plus every on-disk shard `ring.json`'s
+  `minted` names. `eat_history` passes the package's shard as `code` and that list as `names`.
+- Why the split: the first draft passed the whole ring as `code`. The review ran it on hono, whose
+  shard and zod's both record `src/index.ts`, and `code_index` refused (`--code shards disagree on
+  'src/index.ts'`). The history lane was skipped under a green `EAT OK`. A dependency's file is
+  never the repo's, so a touch onto it would be a join by guess anyway.
+- The cost, which is lawful: a root literal that a ring shard also names now names two nodes and binds
+  nothing. The review counted 79 of 1,511 root literals on the fastapi ring (`cli.main` is also
+  idna's), 2 of 193 on express, and 0 on sqlalchemy and graphy.
+- Latent, and outside the done block: `rebuild.rebuild` with several minted lanes reads the last
+  smash's `ring.json`. No caller in this repo passes it `history=True`.
+
+| check | result |
+|---|---|
+| hono, a real eat | a scratch git copy of the hono checkout with a one-exchange archive naming `v3.ZodError.ZodInvalidTypeIssue` and `aws_lambda.handler.sanitizeHeaderValue`, `graphy eat --package hono --producer typescript_ast --site-packages <hono_ring/node_modules>`. The fix gives `HISTORY OK … 2 mention(s)` (onto zod and hono), 310 touches, `CHECK OK`, 1.6 s. HEAD gives 1 mention (hono only) and the same 310 touches. The first draft gave `HISTORY SKIPPED` |
+| graphy, a real eat | this repo's engine as a scratch checkout with the real archive, `--package graphy --site-packages <.venv site-packages>`, `RING: 5 shard(s)`. HEAD gives 357 mentions onto 1 shard; the fix gives 358 (one onto `typing_extensions`), 1.3 s. A clean A/B/A repeats both numbers. This archive talks about graphy itself, so the gain is small; the client's monorepo delta is the issue's evidence |
+| the floor tests | `test_GREEN_eat_binds_the_archive_to_every_ring_shard_not_the_root_alone` (a git repo where `solo` imports a sibling `sib`: an exchange naming `sib.c.g` becomes a mention onto `sib://func/sib.c.g`, and `corpus.code` is `solo_graph` alone; red with the source stashed) · `test_GREEN_a_names_shard_binds_a_mention_and_never_a_touch_even_where_its_files_collide` (a names shard recording the root's own file: as `code` it refuses, as `names` it binds its mention, every touch stays on the root, `verify` is fresh) |
+| the floor | `cd engine && python3 -m pytest -q` green |
+| the gate | `bash standalone_check.sh` → `GRAPHY_STANDALONE_OK` |
+| the adversarial review | a cold subagent told the card. **VERDICT: REVISE** on the first draft: the hono refusal above, found by a real eat, and the touch-by-guess of a dependency's file. Disposition: NEW → fixed here by the names/code split, with its floor test. The ambiguity cost → ELIMINATED, named above. `rebuild.rebuild`'s last-ring read → ELIMINATED, latent, named above |

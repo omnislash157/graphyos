@@ -501,7 +501,7 @@ def _digest(parts: list[str]) -> str:
 
 
 def _inputs(repo: Path, sessions: Path | None, recon: str, code: list[Path],
-            aliases: Path | None = None, census: dict | None = None) -> tuple[list, list, list, list, dict, dict, dict, dict, str]:
+            aliases: Path | None = None, census: dict | None = None, names: list[Path] | None = None) -> tuple[list, list, list, list, dict, dict, dict, dict, str]:
     """Everything the shard is built from, and the digest of it — the same bytes twice give the same digest,
     so `verify` can name drift in inputs git does not track (the sessions archive, the receipts, the registry)."""
     commits = read_commits(repo)
@@ -509,7 +509,9 @@ def _inputs(repo: Path, sessions: Path | None, recon: str, code: list[Path],
     sections = read_sections(repo / recon)
     receipts = read_receipts(repo)
     index = code_index(code)
-    symbols = symbol_index(code)
+    # a shard handed as names only binds a literal and never maps a repo file: a dependency's `src/index.ts`
+    # is not the repo's (graphyos #81)
+    symbols = symbol_index(code + [n for n in (names or []) if n not in code])
     alias_map = read_aliases(aliases)
     exchanges: dict[str, list[dict]] = {}
     bodies: list[str] = []
@@ -526,10 +528,12 @@ def _inputs(repo: Path, sessions: Path | None, recon: str, code: list[Path],
 
 
 def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = None, recon: str = "RECON.md",
-         code: list[str | Path] | None = None, aliases: str | Path | None = None, mint_command: str | None = None) -> dict:
+         code: list[str | Path] | None = None, aliases: str | Path | None = None, mint_command: str | None = None,
+         names: list[str | Path] | None = None) -> dict:
     """Mint the shard at ``out`` (nodes.json · edges.json · PROVENANCE.json, the smash shape) and return
     the PROVENANCE. ``sessions`` absent: no session and no exchange, said in the receipt; ``code`` absent: no
-    touches and no mentions, said; ``aliases`` absent: no weld, said."""
+    touches and no mentions, said; ``aliases`` absent: no weld, said. ``names``: shards a literal binds onto
+    beside ``code`` whose files are never the repo's — the import ring a mention may name, never a touch."""
     from graphy import smash as smash_lane
     repo = Path(repo).resolve()
     if not (repo / ".git").exists():
@@ -537,9 +541,10 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
     out = Path(out).resolve()
     sess_dir = Path(sessions).resolve() if sessions else None
     shards = [Path(c).resolve() for c in (code or [])]
+    named = [n for n in dict.fromkeys(Path(c).resolve() for c in (names or [])) if n not in shards]
     alias_path = Path(aliases).resolve() if aliases else None
     scan: dict = {}
-    commits, sess, sections, receipts, index, symbols, alias_map, exchanges, digest = _inputs(repo, sess_dir, recon, shards, alias_path, scan)
+    commits, sess, sections, receipts, index, symbols, alias_map, exchanges, digest = _inputs(repo, sess_dir, recon, shards, alias_path, scan, named)
     nodes, edges, tally = build_ir(commits, sess, sections, receipts, recon_file=recon, index=index,
                                    exchanges=exchanges, symbols=symbols, aliases=alias_map)
     out.mkdir(parents=True, exist_ok=True)
@@ -551,6 +556,7 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
                         + (f" --sessions {smash_lane.portable(sess_dir)}" if sess_dir else "")
                         + (f" --recon {recon}" if recon != "RECON.md" else "")
                         + "".join(f" --code {smash_lane.portable(c)}" for c in shards)
+                        + "".join(f" --names {smash_lane.portable(c)}" for c in named)
                         + (f" --aliases {smash_lane.portable(alias_path)}" if alias_path else ""))
     notes = []
     notes.append("a commit is authored by the session whose capture window holds its author time" if sess_dir
@@ -558,7 +564,8 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
     notes.append(f"touches: the module ids of {len(shards)} code shard(s)" if shards
                  else "touches: none — no --code shard given, so no file maps to a module id")
     if sess_dir and shards:
-        notes.append(f"mentions: {tally['bound']} of {tally['literals']} literal(s) bind a node by the roster's names, "
+        notes.append((f"mentions bind onto {len(shards) + len(named)} shard(s)'s names; " if named else "")
+                     + f"mentions: {tally['bound']} of {tally['literals']} literal(s) bind a node by the roster's names, "
                      f"{tally['ambiguous']} name two or more and bind nothing"
                      + (f", {len(alias_map)} alias(es) welded {tally['aliased']} edge(s)" if alias_map
                         else "; aliases: none — no --aliases registry given"))
@@ -575,6 +582,7 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
                    "files": len(commits) + len(sess) + len(sections) + len(receipts), "sha256": digest,
                    "git_head": head, "sessions": smash_lane.portable(sess_dir) if sess_dir else None,
                    "recon": recon, "code": [smash_lane.portable(c) for c in shards],
+                   "names": [smash_lane.portable(c) for c in named],
                    "aliases": smash_lane.portable(alias_path) if alias_path else None},
         "counts": (_c := smash_lane._counts(nodes, edges)),
         # The record's own relations, declared beside its census like any other shard (graphyos #68).
@@ -625,8 +633,9 @@ def verify(shard: str | Path, *, repo: str | Path, sessions: str | Path | None =
     if sess_dir is None and corpus.get("sessions"):
         sess_dir = _place(corpus["sessions"], "sessions")
     code = [_place(c, "code shard") for c in corpus.get("code") or []]
+    names = [_place(c, "names shard") for c in corpus.get("names") or []]
     alias_path = _place(corpus["aliases"], "aliases registry") if corpus.get("aliases") else None
-    *_, digest = _inputs(repo, sess_dir, corpus.get("recon") or "RECON.md", code, alias_path)
+    *_, digest = _inputs(repo, sess_dir, corpus.get("recon") or "RECON.md", code, alias_path, names=names)
     if digest == corpus.get("sha256"):
         return True, f"fresh: the inputs digest {digest[:16]} is the shard's"
     return False, (f"stale: the inputs digest {digest[:16]} is not the shard's {str(corpus.get('sha256'))[:16]} — "

@@ -877,6 +877,31 @@ def _solo_git_repo(tmp_path: Path) -> Path:
     return repo
 
 
+def test_GREEN_eat_binds_the_archive_to_every_ring_shard_not_the_root_alone(tmp_path, capsys):
+    """A monorepo: the root package imports a sibling the ring mints beside it, and an exchange naming
+    the sibling's symbol is a mention onto the sibling's node — binding the root shard alone dropped
+    it (graphyos #81)."""
+    import subprocess
+    repo = _solo_git_repo(tmp_path)
+    (repo / "sib").mkdir()
+    (repo / "sib" / "__init__.py").write_text("")
+    (repo / "sib" / "c.py").write_text("def g():\n    return 2\n")
+    (repo / "solo" / "b.py").write_text("from sib.c import g\n\ndef f():\n    return g()\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "sib"], cwd=repo, check=True)
+    _session_file(repo / ".claude" / "recovery" / "sessions", 1, "--- [1] USER\n\nwhy does sib.c.g return 2\n\n--- [1] ASSISTANT\n\nsee solo.b.f\n")
+    assert cli.main(["eat", str(repo), "--package", "solo", "--site-packages", str(repo)]) == 0
+    capsys.readouterr()
+    sub = repo / ".graphy" / "substrate"
+    assert (sub / "sib_graph" / "nodes.json").is_file(), "the ring never minted the sibling"
+    prov = json.loads((sub / "history_graph" / "PROVENANCE.json").read_text())
+    assert [Path(c).name for c in prov["corpus"]["code"]] == ["solo_graph"], "a commit touches the repo's own shard only"
+    assert any(c.endswith("sib_graph") for c in prov["corpus"]["names"])
+    edges = json.loads((sub / "history_graph" / "edges.json").read_text())
+    dsts = {e["dst"] for e in edges if e["edge_type"] == "mentions"}
+    assert "sib://func/sib.c.g" in dsts and "solo://func/solo.b.f" in dsts, dsts
+
+
 def test_GREEN_eat_mints_the_history_shard_beside_the_code_and_the_walk_reaches_the_exchange(tmp_path, capsys):
     """`graphy eat` over a git checkout with a sessions archive: HISTORY OK, the lane declared, every
     exchange a node welded to the symbol it names, so `explain` lists the exchange and `history --symbol`

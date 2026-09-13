@@ -323,6 +323,36 @@ def test_RED_two_code_shards_naming_one_file_refuse(tmp_path):
         history.code_index([a, b])
 
 
+def test_GREEN_a_names_shard_binds_a_mention_and_never_a_touch_even_where_its_files_collide(tmp_path, monkeypatch):
+    """graphyos #81: `eat` hands the history lane every ring shard, and a TypeScript ring's shards all carry
+    `src/index.ts` — as --code that refuses and the lane is skipped. A --names shard adds its names to what a
+    literal binds and never enters the file map, so a commit touches only the repo's own shard."""
+    repo = _repo(tmp_path)
+    dep = tmp_path / "dep_graph"
+    dep.mkdir()
+    (dep / "nodes.json").write_text(json.dumps({
+        "dep://module/dep.index": {"kind": "node", "node_type": "module", "id": "dep://module/dep.index", "dotted": "dep.index",
+                                   "file": "graphy/showcase.py"},     # the root's own file, the way src/index.ts collides
+        "dep://func/dep.zod.parse": {"kind": "node", "node_type": "func", "id": "dep://func/dep.zod.parse", "dotted": "dep.zod.parse",
+                                     "file": "graphy/showcase.py", "line": 1}}))
+    (dep / "edges.json").write_text("[]")
+    (tmp_path / "sessions" / "00004__x__cccc3333.md").write_text(
+        "# CONVERSATION FULL SESSION — 1 exchanges, verbatim and in order\n\nsession: cccc3333-0000-0000-0000-000000000003\n"
+        "captured_at: 2026-09-05T16:00:00+00:00\n\n--- [1] USER\n\nwhy does zod.parse throw\n")
+    code = _code_shard(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(history.HistoryError, match="disagree on 'graphy/showcase.py'"):
+        history.mint(repo, tmp_path / "refused", sessions=tmp_path / "sessions", code=[code, dep])
+    out = tmp_path / "history_graph"
+    prov = history.mint(repo, out, sessions=tmp_path / "sessions", code=[code], names=[dep])
+    edges = json.loads((out / "edges.json").read_text())
+    assert ("history://exchange/cccc3333-0000-0000-0000-000000000003/1/user", "dep://func/dep.zod.parse") in _mentions(edges)
+    touched = {e["dst"] for e in edges if e["edge_type"] == "touches"}
+    assert touched and all(d.startswith(("graphy://", "tests://")) for d in touched), touched
+    assert prov["corpus"]["names"] == ["dep_graph"] and "--names dep_graph" in prov["mint_command"]
+    assert history.verify(out, repo=repo)[0], "verify reads the names shards back from the receipt"
+
+
 def test_GREEN_without_sessions_or_code_the_shard_says_so(tmp_path):
     repo = _repo(tmp_path)
     prov = history.mint(repo, tmp_path / "h")
