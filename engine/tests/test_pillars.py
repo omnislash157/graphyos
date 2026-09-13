@@ -232,3 +232,67 @@ def test_an_arm_named_from_a_non_dotted_crown_is_a_section_file_name():
     import re
     for u in ("pkg.```", "pkg.my file", "pkg.-", "pkg.x.y z"):
         assert re.fullmatch(r"[A-Za-z0-9_]+", pillars._arm_name(u, []))
+
+
+def _nested() -> _Store:
+    """A package that nests one level deeper than the default cut: `pkg.tools.<thing>` rather than
+    `pkg.<thing>`. At depth 2 every unit collapses into `pkg.tools` and there is nothing to orchestrate;
+    at depth 3 the shape is there. This is an ordinary Python layout, not a contrived one."""
+    names = ["pkg.tools.hub", "pkg.tools.worker", "pkg.tools.base", "pkg.tools.other"]
+    records = dict([_mod("pkg")] + [_mod(n) for n in names]
+                   + [_fn(f"{n}.f") for n in names])
+    edges = []
+    for i in range(6):                                   # hub orchestrates worker
+        edges.append((f"pkg://func/pkg.tools.hub.f", f"pkg://func/pkg.tools.worker.f", "calls"))
+    for src in ("pkg.tools.hub", "pkg.tools.worker", "pkg.tools.other"):
+        for i in range(4):                               # everyone leans on base: the floor
+            edges.append((f"pkg://func/{src}.f", "pkg://func/pkg.tools.base.f", "calls"))
+    for i in range(3):
+        edges.append(("pkg://func/pkg.tools.other.f", "pkg://func/pkg.tools.worker.f", "calls"))
+    return _Store(records, edges)
+
+
+def test_GREEN_the_cut_escalates_until_a_shape_answers_and_names_the_depth(monkeypatch):
+    """`pillars` cut at a fixed depth and refused when that depth yielded no orchestrator — naming
+    the remedy, "cut deeper (--depth)", and then making the caller do it by hand. Whether depth 2 is
+    right is a property of how deeply a repo nests its packages, which is exactly the thing the
+    engine can see and the caller should not have to guess.
+
+    On a first tenant's 13 code corpora, 4 answered at the default and 9 answered once the cut was
+    allowed to deepen — every one of them an ordinary `pkg.tools.thing` layout (graphyos #75)."""
+    store = _nested()
+    # pinned to the default: no shape, and the refusal is the one it always gave
+    with pytest.raises(pillars.PillarsError, match="at depth 2"):
+        pillars.shape(store, "pkg", depth=2)
+    # unpinned: it deepens and answers, and says which depth did it
+    g, p, at = pillars.shape(store, "pkg")
+    assert at == 3 and len(p.arms) >= 1 and g.depth == 3
+    assert p.total > 0
+
+
+def test_GREEN_a_flat_package_still_answers_at_the_default_without_deepening():
+    """The escalation must not change the answer for a corpus the default already fits."""
+    pinned_g, pinned_p, _ = pillars.shape(_synthetic(), "pkg", depth=pillars.DEFAULT_DEPTH)
+    g, p, at = pillars.shape(_synthetic(), "pkg")
+    assert at == pillars.DEFAULT_DEPTH
+    assert list(p.arms) == list(pinned_p.arms)
+    assert p.total == pinned_p.total and g.depth == pinned_g.depth
+
+
+def test_RED_a_corpus_with_no_orchestrator_at_any_depth_refuses_and_says_how_deep_it_tried():
+    """The escalation does not paper over a corpus that genuinely has no pillar shape — and the
+    refusal stops giving advice it has already spent. "cut deeper (--depth)" is what the PINNED
+    refusal says; after four attempts that sentence would be telling a caller to do the thing the
+    door just did."""
+    records = dict([_mod("pkg"), _mod("pkg.only"), _fn("pkg.only.f"), _fn("pkg.only.g")])
+    store = _Store(records, [("pkg://func/pkg.only.f", "pkg://func/pkg.only.g", "calls")])
+    with pytest.raises(pillars.PillarsError) as exc:
+        pillars.shape(store, "pkg")
+    msg = str(exc.value)
+    assert "at any depth from 2 to 4" in msg
+    assert "--max-depth" in msg and "cut deeper (--depth)" not in msg
+    # and the bound is honoured
+    with pytest.raises(pillars.PillarsError, match="from 2 to 3"):
+        pillars.shape(store, "pkg", max_depth=3)
+    with pytest.raises(pillars.PillarsError, match="shallower than the default"):
+        pillars.shape(store, "pkg", max_depth=1)

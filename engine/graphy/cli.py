@@ -673,12 +673,18 @@ def _cmd_pillars(args: argparse.Namespace) -> int:
         print(_flatten(f"PILLARS REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
         return 2
     try:
-        graph = pillars_lane.module_graph(store, corpus, depth=args.depth)
-        proposal = pillars_lane.propose(graph, arms=args.arms, floor=args.floor, owned=args.owned,
-                                       client=args.client, rest=args.rest)
+        # An explicit --depth pins the cut and disables the escalation, so today's behaviour stays
+        # reachable; without one the door deepens to --max-depth rather than telling a caller to do
+        # by hand what it just worked out for them (graphyos #75).
+        graph, proposal, at_depth = pillars_lane.shape(
+            store, corpus, depth=args.depth, max_depth=args.max_depth,
+            arms=args.arms, floor=args.floor, owned=args.owned, client=args.client, rest=args.rest)
     except pillars_lane.PillarsError as exc:
         print(f"PILLARS UNANSWERABLE: {exc}", file=sys.stderr)
         return 1
+    if args.depth is None and at_depth != pillars_lane.DEFAULT_DEPTH:
+        print(f"PILLARS: cut escalated to depth {at_depth} — the default {pillars_lane.DEFAULT_DEPTH} "
+              f"yielded no orchestrator for this corpus")
     print(pillars_lane.render(proposal, graph))
     if args.write:
         doc = pillars_lane.to_partition(proposal)
@@ -2230,8 +2236,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_recon.add_argument("--on-stale", default="warn", help="warn (default) or refuse when the store is stale")
     p_recon.set_defaults(handler=_cmd_recon)
 
-    p_pil.add_argument("--depth", type=int, default=pillars_lane.DEFAULT_DEPTH,
-                       help=f"dotted segments that make a unit (default {pillars_lane.DEFAULT_DEPTH}: the package's first-level children)")
+    p_pil.add_argument("--max-depth", type=int, default=pillars_lane.DEFAULT_MAX_DEPTH,
+                       help="how deep the cut may escalate when no --depth is pinned (default 4)")
+    p_pil.add_argument("--depth", type=int, default=None,
+                       help=f"pin the cut at exactly this many dotted segments and DISABLE the "
+                            f"escalation (unpinned: start at {pillars_lane.DEFAULT_DEPTH} and deepen "
+                            f"to --max-depth until a shape answers)")
     p_pil.add_argument("--arms", type=int, default=None,
                        help="how many arms to propose (crowns + the floor); default: every orchestrator with at least half the leader's fan-out, plus the floor")
     p_pil.add_argument("--floor", type=int, default=pillars_lane.DEFAULT_FLOOR,

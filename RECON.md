@@ -5620,3 +5620,48 @@ cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py -k recon
 | `eat` now says so | `recon` is the first line of its ASK IT block: `← START HERE: the whole codebase's shape, one file` |
 | the floor | 607 passed, 3 skipped (604 before) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+
+## 112 · THE CUT ESCALATES — `pillars` refused at a fixed depth, named the remedy ("cut deeper") and then made the caller do it by hand; it now deepens to a bound, says which depth answered, and a corpus with no shape at any depth refuses with advice it has not already spent (2026-09-13 · graphyos issue 75)
+
+**The number, from the first client.** 13 code corpora. At the default depth **4 answered**; allowing
+the cut to deepen 2→3→4, **9 answered**. Every one of the five that changed is an ordinary nested
+Python package — `pkg.tools.thing` rather than `pkg.thing` — so any repo that nests one level deeper
+than the default assumes was being told it has no architecture. The remaining four have no
+orchestrator at any depth and still refuse; the escalation papers over nothing.
+
+**Whose knowledge it is.** How deeply a repo nests its packages is a property of the repo, visible
+to the engine and invisible to a caller who has not read it yet. A refusal that names the fix and
+then demands the caller apply it is asking them to know the thing they came to ask about.
+
+**Where it lives.** `pillars.shape(store, corpus, depth=None, max_depth=4)`. An explicit `--depth`
+pins the cut and disables the escalation, so today's behaviour stays reachable and the pinned
+refusal is unchanged. `recon` (§111) had grown its own copy of this loop one rung earlier and now
+calls this one — two implementations of "how deep should the cut be" is one too many, and the door
+is where a caller of `pillars` expects to find it.
+
+**The refusal stops giving spent advice.** The pinned message ends "cut deeper (--depth) or it is one
+pillar". After an escalation has tried four depths, that sentence tells the caller to do the thing
+the door just did — which is how a refusal stops being read. The escalated form replaces it:
+
+```text
+PILLARS UNANSWERABLE: corpus 'typing_extensions' has no orchestrator at any depth from 2 to 4 —
+every unit is consumed more than it consumes. Either it is one pillar, or raise the bound with
+--max-depth
+```
+
+```bash
+python3 -m graphy pillars --tenant tenants/graphy/tenant.json --tenant-id graphy --corpus duckdb
+python3 -m graphy pillars --tenant … --corpus typing_extensions --depth 2     # pinned, refuses as before
+cd engine && ../.venv/bin/python -m pytest -q tests/test_pillars.py
+```
+
+| check | result |
+|---|---|
+| a package nesting one level deeper | pinned at 2: `no orchestrator at depth 2`; unpinned: answers **at depth 3**, and the CLI prints `PILLARS: cut escalated to depth 3 — the default 2 yielded no orchestrator for this corpus` |
+| a flat package | still answers at the default, and the escalated result is **identical** to the pinned one — arms, totals and graph depth asserted equal, so nothing moved for a corpus the default already fits |
+| no shape at any depth | refuses naming the range tried, offers `--max-depth`, and does **not** repeat "cut deeper (--depth)" |
+| the bound is honoured | `--max-depth 3` says "from 2 to 3"; a bound shallower than the default refuses by name |
+| this repo, live | `typing_extensions` escalates 2→3→4 and then refuses honestly — its module graph is 1 unit and 0 cross-unit edges at every depth |
+| `recon` agrees | the same 7 lanes, 2 shaped, 5 by census, through the shared implementation |
+| the floor | 610 passed, 3 skipped (607 before) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |

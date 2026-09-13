@@ -87,25 +87,13 @@ def _shape(store, corpus: str, depths=DEPTHS):
     A corpus with no cross-unit structure is not a failure and is not argued with: a data lane
     minted by a foreign producer has nodes and edges and no module hierarchy, and saying so is the
     honest answer (graphyos #39)."""
-    why = "the store owns no module-bearing node for this corpus"
-    for depth in depths:
-        try:
-            g = pillars_lane.module_graph(store, corpus, depth=depth)
-        except pillars_lane.PillarsError as exc:
-            why = str(exc)
-            continue
-        if not g.size or g.total == 0:
-            why = (f"no cross-unit edge at depth {depth} — the corpus is one unit, or its producer "
-                   f"mints records rather than a module hierarchy")
-            continue
-        try:
-            # ONE arm is a shape. Requiring two rejected a corpus whose honest answer is "this is
-            # one pillar", which is a real and common answer for a small package — and it was the
-            # first thing this lane got wrong on its own repo.
-            return g, pillars_lane.propose(g), depth
-        except pillars_lane.PillarsError as exc:
-            why = str(exc)
-    return why
+    try:
+        # The escalation lives in `pillars.shape` (graphyos #75), not here. This lane had its own
+        # copy of the loop for one rung; two implementations of "how deep should the cut be" is one
+        # too many, and the door is where a caller of `pillars` expects to find it.
+        return pillars_lane.shape(store, corpus, max_depth=max(depths))
+    except pillars_lane.PillarsError as exc:
+        return str(exc)
 
 
 def recon(store, tenant, tenant_id: str, *, corpora=None, depths=DEPTHS) -> dict:

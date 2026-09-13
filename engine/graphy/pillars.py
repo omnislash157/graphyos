@@ -40,11 +40,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-__all__ = ["PillarsError", "ModuleGraph", "Proposal", "module_graph", "propose", "render",
+__all__ = ["PillarsError", "ModuleGraph", "Proposal", "module_graph", "propose", "shape", "render",
            "to_partition", "diff", "render_diff"]
 
 RELATIONS = frozenset({"imports", "calls", "inherits", "decorates"})
 DEFAULT_DEPTH = 2
+# The bound on the escalation. Whether a given depth is the right cut is a property of how deeply a
+# repo nests its packages — `pkg.tools.thing` rather than `pkg.thing` — which is exactly the thing
+# the engine can see and the caller should not have to guess. On a first tenant's 13 code corpora,
+# 4 answered at the default and 9 answered when the cut was allowed to deepen; the other 4 have no
+# orchestrator at any depth and still refuse (graphyos #75).
+DEFAULT_MAX_DEPTH = 4
 DEFAULT_FLOOR = 5
 DEFAULT_OWNED = 2 / 3
 DEFAULT_CLIENT = 1 / 3
@@ -327,6 +333,39 @@ def propose(g: ModuleGraph, arms: int | None = None, floor: int = DEFAULT_FLOOR,
         order.index(rulings[u].arm) if rulings[u].arm in crowns else len(order), -traffic[u], u))]
     return Proposal(corpus=g.corpus, depth=g.depth, floor=floor, owned=owned, client=client, rest=rest, crowns=crowns,
                     floor_arm=floor_arm, arms={a: arm_units[a] for a in order}, rulings=ordered, total=total)
+
+
+def shape(store, corpus: str, *, depth: int | None = None, max_depth: int = DEFAULT_MAX_DEPTH,
+          **kw) -> tuple[ModuleGraph, Proposal, int]:
+    """The module graph, its proposal and the depth that answered — escalating the cut when asked.
+
+    ``depth`` pins it: one attempt at exactly that cut, refusing as it always did. ``depth=None``
+    starts at ``DEFAULT_DEPTH`` and deepens to ``max_depth``, returning the first cut that produces
+    a shape, because the old refusal named the remedy — "cut deeper (--depth) or it is one pillar" —
+    and then made the caller do it by hand.
+
+    A corpus with no orchestrator at ANY depth still refuses, and the refusal says how deep it tried,
+    so a genuine "this has no pillar shape" means something it did not mean before (graphyos #75).
+    """
+    if depth is not None:
+        g = module_graph(store, corpus, depth=depth)
+        return g, propose(g, **kw), depth
+    if max_depth < DEFAULT_DEPTH:
+        raise PillarsError(f"max_depth {max_depth} is shallower than the default cut {DEFAULT_DEPTH}")
+    last: PillarsError | None = None
+    for d in range(DEFAULT_DEPTH, max_depth + 1):
+        try:
+            g = module_graph(store, corpus, depth=d)
+            return g, propose(g, **kw), d
+        except PillarsError as exc:
+            last = exc
+    # The pinned refusal says "cut deeper (--depth)". After an escalation that advice is already
+    # spent, so it is replaced rather than appended to — telling a caller to do the thing the door
+    # just did four times is how a refusal stops being read.
+    detail = str(last).split(" — ", 1)[-1].split("; cut deeper")[0]
+    raise PillarsError(
+        f"corpus {corpus!r} has no orchestrator at any depth from {DEFAULT_DEPTH} to {max_depth} — "
+        f"{detail}. Either it is one pillar, or raise the bound with --max-depth")
 
 
 def to_partition(p: Proposal, note: str | None = None) -> dict[str, Any]:
