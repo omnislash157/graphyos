@@ -386,3 +386,55 @@ def test_GREEN_the_counting_proxy_forwards_what_the_doors_read_off_a_store(tmp_p
     b = doors.blast(counted, TABLE, max_depth=3)
     assert [r.node for r in b.reached.values() if r.hop > 0] == [READER]
     assert counted.reads > 0                                   # still counting
+
+
+def test_GREEN_the_tests_line_states_the_mechanism_and_claims_a_wheel_only_where_one_is_proven(tmp_path):
+    """`explain` printed ONE hardcoded sentence for every seed no test reached: "the ring is minted
+    from wheels, which carry no test suite". It is a guess about WHY, it was unconditional, and it is
+    only true for a ring shard minted from a wheel. It fired on a stranger's own untested function —
+    telling them their code came from a wheel — and on a Postgres table in a foreign lane, where
+    there is no wheel and no ring anywhere near the seed.
+
+    A door that never guesses an edge must not guess a cause. The DOCS line one row above is the
+    model: it names the mechanism that found nothing rather than inventing a reason (graphyos #72).
+
+    The three seeds the done check names, in one test."""
+    # 1 · a stranger's own untested function: the mechanism, and NO wheel claim
+    store, tenant, _ = _store(tmp_path / "own")
+    e = doors.explain(store, "widgets://func/widgets.prim", max_depth=2, tenant=tenant)
+    assert e.tests == []
+    assert e.tests_note.startswith("none reach it within depth 2 against the ")
+    assert "calls" in e.tests_note and "wheel" not in e.tests_note
+    assert "  TESTS: none reach it within depth 2 against the " in doors.render_explain(e)
+
+    # 2 · a foreign producer's node: same, and still no wheel
+    census = _census_store(tmp_path / "foreign", declare={"reads_table": ["depends"]})
+    e2 = doors.explain(census, TABLE, max_depth=2, tenant=None)
+    assert "wheel" not in e2.tests_note and "depth 2" in e2.tests_note
+
+    # 3 · a lane whose provenance PROVES it came from an installed distribution
+    site = tmp_path / "venv" / "site-packages"
+    (site / "widgets").mkdir(parents=True)
+    (Path(tenant.data_home) / "ring.json").write_text(
+        json.dumps({"root": "widgets", "site_packages": str(site), "minted": {}}), encoding="utf-8")
+    (Path(tenant.data_home) / "widgets_graph" / "PROVENANCE.json").write_text(json.dumps({
+        "corpus": {"scheme": "widgets", "kind": "package", "path": str(site / "widgets"),
+                   "distribution": "widgets", "version": "2.1.0"}}), encoding="utf-8")
+    e3 = doors.explain(store, "widgets://func/widgets.prim", max_depth=2, tenant=tenant)
+    assert "minted from the installed widgets 2.1.0" in e3.tests_note
+    assert "a wheel carries no test suite" in e3.tests_note
+
+    # …and the claim dies the moment the corpus is not under that site-packages
+    (Path(tenant.data_home) / "widgets_graph" / "PROVENANCE.json").write_text(json.dumps({
+        "corpus": {"scheme": "widgets", "kind": "package", "path": str(tmp_path / "elsewhere"),
+                   "distribution": "widgets", "version": "2.1.0"}}), encoding="utf-8")
+    assert "wheel" not in doors.explain(store, "widgets://func/widgets.prim",
+                                        max_depth=2, tenant=tenant).tests_note
+
+
+def test_GREEN_the_tests_line_names_the_family_the_declared_vocabulary_widened(tmp_path):
+    """The mechanism sentence is not boilerplate: it names the relations this store actually walks,
+    so a tenant that declared `reads_table` sees it in the reason no test was found."""
+    store = _census_store(tmp_path, declare={"reads_table": ["depends"]})
+    e = doors.explain(store, TABLE, max_depth=3, tenant=None)
+    assert "reads_table" in e.tests_note, e.tests_note

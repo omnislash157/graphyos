@@ -17,6 +17,8 @@ refuse and name both, because a name match is never a fact.
 """
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field
 
 from graphy.cross_substrate import AGAINST, BOTH, WITH, WIRE_BUCKET, explanations_from_store
@@ -250,6 +252,35 @@ class Explanation:
     tests: list[Reach]
     journal: dict | None
     journal_note: str
+    tests_note: str = ""          # why TESTS is empty, from the mechanism and never a guess (graphyos #69, #72)
+
+
+def minted_from_distribution(tenant, owner: str) -> str | None:
+    """The distribution a lane was minted from, when its provenance says so — else None.
+
+    A ring lane's corpus sits inside the site-packages the ring was resolved from, and `ring.json`
+    records that directory. A repo eaten in place does not, even when its package happens to be
+    installed. So "this came from a wheel" is read off two receipts that already exist, and a lane
+    that cannot prove it simply does not claim it (graphyos #72)."""
+    if tenant is None:
+        return None
+    try:
+        from pathlib import Path as _P
+        home = _P(tenant.data_home)
+        prov = json.loads((home / f"{owner}_graph" / "PROVENANCE.json").read_text(encoding="utf-8"))
+        corpus = prov.get("corpus") or {}
+        path = corpus.get("path")
+        dist = corpus.get("distribution")
+        if not path or not dist:
+            return None
+        site = json.loads((home / "ring.json").read_text(encoding="utf-8")).get("site_packages")
+        if not site:
+            return None
+        _P(path).resolve().relative_to(_P(site).resolve())        # raises when it is not under it
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    version = corpus.get("version")
+    return f"{dist} {version}" if version else str(dist)
 
 
 def explain(store, seed: str, max_depth: int = 3, tenant=None) -> Explanation:
@@ -278,7 +309,16 @@ def explain(store, seed: str, max_depth: int = 3, tenant=None) -> Explanation:
             else:
                 page = pages[0] if pages else header
                 note = f"{len(pages)} page(s), {torn} torn"
-    return Explanation(seed, owner, record, docs, tests, page, note)
+    # The mechanism, never a cause. This line used to read "the ring is minted from wheels, which
+    # carry no test suite" for EVERY seed no test reached — a stranger's own untested function, a
+    # Postgres table in a foreign lane, anything. A door that never guesses an edge must not guess a
+    # reason; the DOCS line one row above is the model, naming what it looked through (graphyos #72).
+    walked = " · ".join(sorted(blast_relations(store))) or "no admitted relation"
+    tests_note = f"none reach it within depth {max_depth} against the {walked} family"
+    dist = minted_from_distribution(tenant, owner)
+    if dist is not None:
+        tests_note += f" — {owner} is minted from the installed {dist}, and a wheel carries no test suite"
+    return Explanation(seed, owner, record, docs, tests, page, note, tests_note)
 
 
 # ── rendering ───────────────────────────────────────────────────────────────────────────────
@@ -362,7 +402,8 @@ def render_explain(e: Explanation, limit: int = 12) -> str:
         if len(e.tests) > limit:
             lines.append(f"    … {len(e.tests) - limit} more (--limit)")
     else:
-        lines.append("  TESTS: none reach it within the depth — the ring is minted from wheels, which carry no test suite")
+        lines.append(f"  TESTS: {e.tests_note}" if e.tests_note else
+                     "  TESTS: none reach it within the depth")
     if e.journal:
         j = e.journal
         lines.append(f"  HISTORY: {e.owner}_graph journal — {e.journal_note}; first page "

@@ -5492,3 +5492,42 @@ python3 -c "import graphy, sys; import graphy.cli; print(len([m for m in sys.mod
 | the floor | 600 passed, 3 skipped (595 before: five rebuild tests) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
 | the hold | the first tenant's rebuild dropping all three private imports is theirs to run; this box proved the entry point, not their 32-lane roster through it. No CLI verb was added — the caller is a Python script, which is what a tenant with foreign producers has |
+
+## 109 · A DOOR DOES NOT GUESS A CAUSE — `explain` printed one hardcoded sentence for every seed no test reached, telling a stranger their own untested function came from a wheel and a Postgres table the same; the line now states the mechanism it walked, and the wheel clause survives only where two receipts already on disk prove it (2026-09-13 · graphyos issue 72)
+
+**The number, from the first client.** `doors.py:291` had no condition on it:
+
+```python
+lines.append("  TESTS: none reach it within the depth — the ring is minted from wheels, which carry no test suite")
+```
+
+It fired on a `pg_schema` table in a foreign lane, where there is no wheel and no ring anywhere near
+the seed, and it fires on a stranger's own code the moment they eat their repo and ask about a
+function they have not tested. A door whose whole contract is that no model decided an edge was
+inventing a reason. The `DOCS:` line one row above is the model — it names the mechanism that found
+nothing rather than supplying a cause.
+
+**The change.** The line reads
+`none reach it within depth N against the calls · decorates · imports · inherits family`, and the
+family is the store's own declared one (§104), so a tenant that declared `reads_table` sees it in the
+reason no test was found. `minted_from_distribution` decides the wheel clause from two receipts that
+already exist: the shard's `PROVENANCE.corpus.path` and `ring.json`'s `site_packages`. A corpus
+resolving under that directory came from an installed distribution and the clause names it with its
+version; a corpus anywhere else does not claim it. A repo eaten in place does not qualify even when
+its package happens to be installed, which is exactly the case that was being told it came from a
+wheel.
+
+```bash
+python3 -m graphy explain typing_extensions --tenant tenants/graphy/tenant.json --tenant-id graphy | grep TESTS
+cd engine && ../.venv/bin/python -m pytest -q tests/test_doors.py -k tests_line
+```
+
+| check | result |
+|---|---|
+| a ring lane, on the live tenant | `TESTS: none reach it within depth 3 against the calls · decorates · imports · inherits family — typing_extensions is minted from the installed typing_extensions 4.16.0, and a wheel carries no test suite` |
+| a stranger's own untested function | the mechanism sentence, and **no wheel claim** |
+| a foreign producer's node | the same, with no tenant and therefore no receipt to read |
+| the claim dies when the receipt does | the same lane with its corpus path moved outside the recorded site-packages stops claiming a distribution — asserted, not assumed |
+| the family is the declared one | a store declaring `reads_table` names it in the sentence |
+| the floor | 602 passed, 3 skipped (600 before) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
