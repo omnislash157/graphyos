@@ -85,7 +85,7 @@ _RECON_IN_BODY = re.compile(r"RECON §(\d+)")
 _DATE_IN_TITLE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 _CLAUDE_SESSION = re.compile(r"^Claude-Session: (\S+)$", re.M)
 _RECEIPT = re.compile(r"^recon\.before(\d+)\.json$")
-_SESSION_HEADER = re.compile(r"^session: ([0-9a-f-]{8,})$", re.M)
+_SESSION_HEADER = re.compile(r"^session: ([0-9a-f-]{8,})(?: · .*)?$", re.M)   # a writer may attribute after the id (graphyos #80)
 _CAPTURED = re.compile(r"^captured_at: (\S+)$", re.M)
 _EXCHANGES = re.compile(r"— (\d+) exchanges")
 # a literal is a dotted identifier (`showcase._clone`, `graphy.cli`, `showcase.py`) or a path with a slash
@@ -284,8 +284,12 @@ def read_commits(repo: Path) -> list[dict]:
     return out
 
 
-def read_sessions(sessions: Path | None) -> list[dict]:
-    """The archive's files in sequence: id · captured_at · exchanges · the file's name."""
+def read_sessions(sessions: Path | None, census: dict | None = None) -> list[dict]:
+    """The archive's files in sequence: id · captured_at · exchanges · the file's name. ``census``, when given,
+    is filled with what the scan saw — files · with a session header · with captured_at · read — so a skipped
+    file is counted where the receipt can say it, never a bare zero (graphyos #80)."""
+    if census is not None:
+        census.update(files=0, header=0, captured=0, read=0)
     if sessions is None:
         return []
     if not sessions.is_dir():
@@ -294,6 +298,11 @@ def read_sessions(sessions: Path | None) -> list[dict]:
     for p in sorted(sessions.glob("*.md")):
         head = p.read_text(encoding="utf-8", errors="ignore")[:4000]
         sid, cap = _SESSION_HEADER.search(head), _CAPTURED.search(head)
+        if census is not None:
+            census["files"] += 1
+            census["header"] += bool(sid)
+            census["captured"] += bool(cap)
+            census["read"] += bool(sid and cap)
         if not sid or not cap:
             continue                                     # not a captured session: the header is the contract
         ex = _EXCHANGES.search(head)
@@ -492,11 +501,11 @@ def _digest(parts: list[str]) -> str:
 
 
 def _inputs(repo: Path, sessions: Path | None, recon: str, code: list[Path],
-            aliases: Path | None = None) -> tuple[list, list, list, list, dict, dict, dict, dict, str]:
+            aliases: Path | None = None, census: dict | None = None) -> tuple[list, list, list, list, dict, dict, dict, dict, str]:
     """Everything the shard is built from, and the digest of it — the same bytes twice give the same digest,
     so `verify` can name drift in inputs git does not track (the sessions archive, the receipts, the registry)."""
     commits = read_commits(repo)
-    sess = read_sessions(sessions)
+    sess = read_sessions(sessions, census)
     sections = read_sections(repo / recon)
     receipts = read_receipts(repo)
     index = code_index(code)
@@ -529,7 +538,8 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
     sess_dir = Path(sessions).resolve() if sessions else None
     shards = [Path(c).resolve() for c in (code or [])]
     alias_path = Path(aliases).resolve() if aliases else None
-    commits, sess, sections, receipts, index, symbols, alias_map, exchanges, digest = _inputs(repo, sess_dir, recon, shards, alias_path)
+    scan: dict = {}
+    commits, sess, sections, receipts, index, symbols, alias_map, exchanges, digest = _inputs(repo, sess_dir, recon, shards, alias_path, scan)
     nodes, edges, tally = build_ir(commits, sess, sections, receipts, recon_file=recon, index=index,
                                    exchanges=exchanges, symbols=symbols, aliases=alias_map)
     out.mkdir(parents=True, exist_ok=True)
@@ -581,6 +591,8 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
                     "exchanges": tally["exchanges"], "mentions": tally["mentions"], "literals": tally["literals"],
                     "bound": tally["bound"], "ambiguous": tally["ambiguous"], "aliases": len(alias_map),
                     "aliased": tally["aliased"],
+                    # what the archive scan saw, so zero sessions over a full archive says why (graphyos #80)
+                    "session_files": scan["files"], "session_headers": scan["header"], "session_captured": scan["captured"],
                     "note": "; ".join(notes)},
     }
     smash_lane._write_json(out / smash_lane.PROVENANCE_NAME, prov)

@@ -373,3 +373,28 @@ def test_GREEN_the_verb_mints_this_repo_onto_the_tenants_own_code_shards(tmp_pat
     assert dsts and dsts <= own, sorted(dsts - own)[:5]
     mentioned = {e["dst"] for e in edges if e["edge_type"] == "mentions"}
     assert mentioned <= own, sorted(mentioned - own)[:5]
+
+
+def test_RED_an_archive_whose_headers_all_miss_names_what_it_skipped(tmp_path):
+    """graphyos #80: 400 files, 0 sessions, and no word on why. The scan's census rides the receipt and the
+    report prints it; a trailing attribution after the id is a header, not a miss."""
+    from graphy.cli import _history_report
+    repo = _repo(tmp_path)
+    miss = tmp_path / "miss"
+    miss.mkdir()
+    for i in range(3):
+        (miss / f"0000{i}.md").write_text(f"# CONVERSATION FULL SESSION — 1 exchanges\n\nsession: aaaa111{i}-0000 · pane %99\n"
+                                         f"captured_by: SessionEnd\n\n--- [1] USER\n\nhi\n")
+    prov = history.mint(repo, tmp_path / "h", sessions=miss)
+    h = prov["history"]
+    assert (h["sessions"], h["session_files"], h["session_headers"], h["session_captured"]) == (0, 3, 3, 0)
+    lines = _history_report(prov, tmp_path / "h")
+    assert lines[0].startswith("HISTORY: 3 file(s) · 3 with a session header · 0 with captured_at — 3 skipped"), lines
+    assert lines[-1].startswith("HISTORY OK: ") and " 0 session(s) " in lines[-1]
+    census: dict = {}
+    (miss / "00000.md").write_text("session: aaaa1110-0000 · pane %99 (ledger-attributed)\ncaptured_at: 2026-09-05T11:00:00+00:00\n")
+    assert [s["id"] for s in history.read_sessions(miss, census)] == ["aaaa1110-0000"]
+    assert census == {"files": 3, "header": 3, "captured": 1, "read": 1}
+    full = history.mint(repo, tmp_path / "h2", sessions=tmp_path / "sessions")
+    assert not any("skipped" in ln for ln in _history_report({**full, "history": {**full["history"], "session_files": 3}},
+                                                               tmp_path / "h2")), "every file read: no scan line"

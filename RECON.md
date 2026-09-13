@@ -5796,3 +5796,36 @@ has two halves:
 | found on the way | the arm regions' `dependents=` counts `history` owners, so a session that discusses a crown turns `arms --verify` red. The same surface as graphyos issue 90, commented there rather than filed twice |
 | the adversarial review | a cold subagent told the card re-ran the floor, the gate and the battery, and blasted `compile_store` (two engine callers plus 67 tests; the argv callers in `rebuild` · `refresh` · `eat` · `shell install` read only the exit code, which is still 2). It checked the new pre-check against `raw_shard`'s requirements and got a real `PermissionError` to print with its frame. **DONE BLOCK: JUDGED (each "Done when" bullet repro'd) · VERDICT: SHIP**, no blockers |
 | disposition | the required file list was written in two places, so the check now derives it from `native_json_graph_ir.SHARD_INPUTS`: ELIMINATED, fixed in this commit · the same defect in the other verbs' catches: a new rung, graphyos issue 95, not a widening · the history lane went stale on this section's own edit: re-minted before commit |
+
+## 116 · A ZERO SAYS WHY — `eat` printed `HISTORY OK: … 0 session(s)` over a 400-file archive and nothing else, because two header regexes missed on every file and a miss was a silent `continue`; the scan now counts what it saw, the receipt carries it, and a skipped file is named in the line CI and a human read (2026-09-13 · graphyos issue 80)
+
+**The defect.** `read_sessions` read a file only when its head matched both `^session: <id>$` and
+`^captured_at: <iso>$`. The first client's writer put pane attribution after the id
+(`session: <id> · pane %99 (ledger-attributed)`) and wrote `captured_by` with no `captured_at`.
+Both regexes missed on all 400 files, each was skipped with a bare `continue`, and the only signal
+anywhere was the count of zero.
+
+**The change.**
+
+- `_SESSION_HEADER` accepts an optional ` · …` after the id. The id capture is still the hex-and-dash
+  run only, so the attribution never becomes part of the id.
+- `read_sessions(sessions, census=None)` fills `files · header · captured · read` as it scans. Its
+  timeline callers pass nothing and are unchanged.
+- `mint` stores the census in `PROVENANCE.history` as `session_files · session_headers ·
+  session_captured`. `_history_report`, the one report both `graphy history` and `eat` print,
+  leads with a scan line whenever the archive held more files than it read:
+  `HISTORY: 40 file(s) · 40 with a session header · 0 with captured_at — 40 skipped: a session is read
+  only when its header carries both session: <id> and captured_at: <iso>`. An archive that is fully
+  read prints no extra line. A receipt from before this section has no `session_files` and prints
+  none.
+- The verify digest is built from what was read, so an existing archive's shard stays fresh.
+
+| check | result |
+|---|---|
+| the client's shape | 40 of this repo's own sessions rewritten with the attribution suffix and `captured_by` → `python3 -m graphy history --repo … --sessions <that>` prints the scan line above, 0.10 s |
+| the real archive | `python3 -m graphy history --repo <abs> --out <scratch> --sessions <abs>/.claude/recovery/sessions` → 51 files, `51 session(s)`, no scan line, 0.22 s |
+| the floor test against the unfixed tree | `test_RED_an_archive_whose_headers_all_miss_names_what_it_skipped` red with the source stashed |
+| the floor | `cd engine && python3 -m pytest -q` green |
+| the gate and the battery | `GRAPHY_STANDALONE_OK`; `python3 review.py --diff HEAD` → `REVIEW OK: 9 check(s) · 0 finding(s)` |
+| the adversarial review | a cold subagent told the card probed the regex (the attribution never enters the id; malformed separators still miss), ran old and new regex over the real archive (identical ids, all 51 read, the verify digest unmoved), checked an old receipt with no `session_files` (no line, no KeyError), and put the old regex back by monkeypatch to turn the floor test red. **VERDICT: REVISE**, and the code was not what it blocked: this section's first draft quoted the box's absolute checkout path (`SCRUB RED: RECON.md: private token`) while its gate row claimed green |
+| disposition | the private path → NOT NEW · `scrub.py` fired as designed; the row now cites `<abs>` and the gate re-ran → `GRAPHY_STANDALONE_OK` · the gate row written before the gate ran → corrected by re-running first · the timeline doors (`hunt` · `history --symbol`) still pass no census and stay silent on a miss archive → ELIMINATED · outside the done block, which names the mint path · the tenant's history lane stale → ELIMINATED · stale before the diff; re-minted by the rebuild before close |

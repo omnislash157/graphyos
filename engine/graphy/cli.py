@@ -1318,7 +1318,13 @@ def _history_report(prov: dict, out: Path) -> list[str]:
     """The two lines a history mint prints, from its PROVENANCE — the same words from `graphy history`
     and from `graphy eat` (graphyos #66)."""
     h = prov["history"]
-    return [f"HISTORY: {h['authored']} commit(s) authored by a session's window, {h['unauthored']} in no window · "
+    scan = []
+    if (prov.get("corpus") or {}).get("sessions") and h.get("session_files", 0) > h["sessions"]:
+        skipped = h["session_files"] - h["sessions"]
+        scan = [f"HISTORY: {h['session_files']} file(s) · {h['session_headers']} with a session header · "
+                f"{h['session_captured']} with captured_at — {skipped} skipped: a session is read only when its header "
+                f"carries both `session: <id>` and `captured_at: <iso>`"]
+    return scan + [f"HISTORY: {h['authored']} commit(s) authored by a session's window, {h['unauthored']} in no window · "
             f"{h['touches']} touches onto code module ids · {h['note']}",
             f"HISTORY OK: {h['commits']} commit(s) · {h['sessions']} session(s) · {h['sections']} section(s) · "
             f"{h['issues']} issue(s) · {h['receipts']} receipt(s) · {h['exchanges']} exchange(s) · {h['mentions']} mention(s) "
