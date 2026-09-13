@@ -851,6 +851,59 @@ def _torn_line(jfile: Path) -> tuple[str, str] | None:
     return None
 
 
+def _endpoint_audit(tenant) -> list[dict]:
+    """Per lane: what it carries, what it points at, and how much of that resolves nowhere.
+
+    A shard with an empty ``nodes.json`` and a populated ``edges.json`` compiled and passed `check`
+    with no finding — a pure bridge lane, useful and entirely unguarded, so the day a sibling stopped
+    minting an id the bridge dropped that edge in silence. The same silence covered dangling
+    endpoints generally: on a first client's 32-lane tenant, 6,673 edges pointed at no node anywhere
+    and `check` was green.
+
+    The count is deliberately NOT a finding on its own. For a code lane most dangling endpoints are
+    third-party and stdlib call targets the tenant chose not to mint, so a red on the number would be
+    red for every healthy roster. **The silence is the defect.** A lane says
+    ``"endpoints": "resolved"`` in its PROVENANCE when it means its edges must land, and only then is
+    a dangling endpoint an error (graphyos #73).
+    """
+    home = Path(tenant.data_home)
+    lanes: list[dict] = []
+    ids: set[str] = set()
+    raw: dict[str, list] = {}
+    for graph_class in sorted(tenant.build_lanes):
+        from graphy import journal as journal_lane
+        _base, slug = journal_lane._names(graph_class)
+        d = home / f"{slug}_graph"
+        try:
+            nodes = json.loads((d / "nodes.json").read_text(encoding="utf-8"))
+            edges = json.loads((d / "edges.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue                      # an unreadable shard is already a COULD-NOT-TELL above
+        ids |= set(nodes)
+        raw[slug] = edges
+        declared = None
+        try:
+            prov = json.loads((d / "PROVENANCE.json").read_text(encoding="utf-8"))
+            declared = prov.get("endpoints")
+        except (OSError, ValueError):
+            pass
+        lanes.append({"slug": slug, "nodes": len(nodes), "edges": len(edges),
+                      "edge_types": sorted({e.get("edge_type", "?") for e in edges}),
+                      "endpoints": declared})
+    for lane in lanes:
+        dangling: list[tuple[str, str, str]] = []
+        for e in raw[lane["slug"]]:
+            for end in ("src", "dst"):
+                v = e.get(end)
+                # Only a RESOLVED endpoint is checked: a `dst_repr` with no `dst` is a text label
+                # converge has not bound yet, which is a different state and not a dangling edge.
+                if isinstance(v, str) and "://" in v and v not in ids:
+                    dangling.append((e.get("edge_type", "?"), end, v))
+        lane["dangling"] = len(dangling)
+        lane["first_dangling"] = dangling[0] if dangling else None
+    return lanes
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     from graphy import federated_store as fstore
     from graphy import journal
@@ -991,6 +1044,40 @@ def _cmd_check(args: argparse.Namespace) -> int:
                     "alone and touches no other lane (`graphy eat .` also does it, but re-mints the "
                     "whole ring and is only equivalent for a tenant whose lanes ARE its ring)"))
 
+    # The lane shapes and their endpoints (graphyos #73). A NOTE is a declared shape, not a fault:
+    # it keeps `check` honest about what it saw without turning a healthy roster red.
+    notes: list[str] = []
+    _audit = _endpoint_audit(tenant)
+    for lane in _audit:
+        if lane["nodes"] == 0 and lane["edges"]:
+            notes.append(f"lane {lane['slug']}_graph is edges-only — 0 node(s), {lane['edges']} edge(s) "
+                         f"of type {' · '.join(lane['edge_types'])}. A bridge lane is a shape, not an "
+                         f"accident; declare `\"endpoints\": \"resolved\"` in its PROVENANCE to make a "
+                         f"dangling endpoint an error")
+        if lane["dangling"] and lane["endpoints"] == "resolved":
+            rel, end, node = lane["first_dangling"]
+            findings.append((
+                "RED",
+                f"lane {lane['slug']}_graph declares `endpoints: resolved` and {lane['dangling']} "
+                f"endpoint(s) resolve to no node in this roster, first {rel} {end}={node}",
+                "re-mint the lane that owns that id, or drop the declaration if the lane is a bridge "
+                "whose targets live outside the roster"))
+    # One line for the rest, not one per lane. Every undeclared lane says the same thing for the same
+    # reason, and six paragraphs of it on every check is how a true notice trains a reader to scroll
+    # past the line that matters — the same judgement the doors' NOT WALKED line needed (graphyos #69).
+    loose = [l for l in _audit if l["dangling"] and l["endpoints"] != "resolved"]
+    if loose:
+        by_size = sorted(loose, key=lambda l: -l["dangling"])
+        shown = " · ".join(f"{l['slug']} {l['dangling']}" for l in by_size[:6])
+        more = f" · … {len(by_size) - 6} more" if len(by_size) > 6 else ""
+        rel, end, node = by_size[0]["first_dangling"]
+        notes.append(
+            f"{sum(l['dangling'] for l in loose)} edge endpoint(s) across {len(loose)} lane(s) resolve "
+            f"to no node in this roster — {shown}{more} (first: {rel} {end}={node}). Not an error: no "
+            f"lane here declares `endpoints: resolved`, and a code lane's unminted third-party and "
+            f"stdlib targets land there by design"
+        )
+
     states = {}
     for graph_class in sorted(tenant.build_lanes):
         _base, slug = journal._names(graph_class)
@@ -1009,6 +1096,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
             f"container lane: parquet older than the shard for {stale}",
             "rebuild the store with `graphy build` (duckdb installed) or `graphy container --emit`"))
 
+    for note in notes:
+        print(_flatten(f"CHECK NOTE: {note}"))
     if not findings:
         fresh = sum(1 for st in states.values() if st == "fresh")
         pending = sum(1 for st in states.values() if st == "pending")

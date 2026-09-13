@@ -974,3 +974,93 @@ def test_GREEN_check_recommends_the_lane_safe_verb_before_the_one_that_prunes(tm
     assert remediation.index("shell install") < remediation.index("graphy eat ."), remediation
     assert "touches no other lane" in remediation
     assert "lanes ARE its ring" in remediation        # the caveat, not a bare alternative
+
+
+def _bridge_tenant(tmp_path, *, resolved: bool, break_it: bool = False):
+    """A roster of two lanes: one that carries nodes, and one that carries ONLY edges pointing at
+    them — a pure bridge, which is a real shape and was entirely unguarded (graphyos #73)."""
+    from graphy.tenant import Tenant
+    data = tmp_path / "data"
+    (data / "code_graph").mkdir(parents=True)
+    (data / "bridge_graph").mkdir(parents=True)
+    kept = "code://func/code.mod.f"
+    nodes = {kept: {"kind": "node", "node_type": "func", "id": kept, "dotted": "code.mod.f",
+                    "file": "code/mod.py", "line": 1}}
+    if not break_it:
+        nodes["code://func/code.mod.g"] = {"kind": "node", "node_type": "func",
+                                           "id": "code://func/code.mod.g", "dotted": "code.mod.g",
+                                           "file": "code/mod.py", "line": 5}
+    (data / "code_graph" / "nodes.json").write_text(json.dumps(nodes), encoding="utf-8")
+    (data / "code_graph" / "edges.json").write_text("[]", encoding="utf-8")
+    (data / "code_graph" / "PROVENANCE.json").write_text(json.dumps({"counts": {}}), encoding="utf-8")
+    (data / "bridge_graph" / "nodes.json").write_text("{}", encoding="utf-8")     # edges-only
+    (data / "bridge_graph" / "edges.json").write_text(json.dumps([
+        {"kind": "edge", "edge_type": "reads_table", "src": kept, "dst": "code://func/code.mod.g"},
+    ]), encoding="utf-8")
+    prov = {"counts": {"node_count": 0, "edge_count": 1, "edge_types": {"reads_table": 1}}}
+    if resolved:
+        prov["endpoints"] = "resolved"
+    (data / "bridge_graph" / "PROVENANCE.json").write_text(json.dumps(prov), encoding="utf-8")
+    join_keys = tmp_path / "registry.json"
+    join_keys.write_text(json.dumps({"_meta": {}, "registered_joins": {"literal_joins": {}}}), encoding="utf-8")
+    return Tenant(root=tmp_path, data_home=data, adapters=(),
+                  build_lanes={"code_graph": (None, "static-dep"), "bridge_graph": (None, "static-dep")},
+                  join_keys=join_keys, cursor="sha256:" + "0" * 64, policy="refuse",
+                  journal=tmp_path / "journal")
+
+
+def test_GREEN_an_edges_only_lane_is_a_named_shape_and_a_declared_lane_goes_red_when_it_dangles(tmp_path):
+    """A shard with an empty nodes.json and a populated edges.json compiled and passed `check` with
+    no finding at all — a pure bridge, useful and unguarded, so the day a sibling stopped minting an
+    id the bridge dropped that edge in silence. On a first client's 32-lane tenant 6,673 edges
+    pointed at no node anywhere and `check` was green.
+
+    The count alone is deliberately not an error: for a code lane most dangling endpoints are
+    third-party and stdlib call targets the tenant chose not to mint, so a red on the number would
+    be red for every healthy roster. The SILENCE was the defect. A lane says `endpoints: resolved`
+    when it means its edges must land, and only then is a dangling endpoint an error."""
+    # endpoints all resolve → the bridge is named as a shape, nothing dangles
+    audit = cli._endpoint_audit(_bridge_tenant(tmp_path / "ok", resolved=True))
+    bridge = next(l for l in audit if l["slug"] == "bridge")
+    assert bridge["nodes"] == 0 and bridge["edges"] == 1 and bridge["edge_types"] == ["reads_table"]
+    assert bridge["dangling"] == 0 and bridge["endpoints"] == "resolved"
+
+    # the same lane with its target removed, DECLARED resolved → the endpoint is named
+    audit = cli._endpoint_audit(_bridge_tenant(tmp_path / "red", resolved=True, break_it=True))
+    bridge = next(l for l in audit if l["slug"] == "bridge")
+    assert bridge["dangling"] == 1
+    assert bridge["first_dangling"] == ("reads_table", "dst", "code://func/code.mod.g")
+
+    # …and undeclared, the same break is a shape the check reports rather than an error
+    audit = cli._endpoint_audit(_bridge_tenant(tmp_path / "note", resolved=False, break_it=True))
+    bridge = next(l for l in audit if l["slug"] == "bridge")
+    assert bridge["dangling"] == 1 and bridge["endpoints"] is None
+
+
+def test_GREEN_check_is_red_only_for_a_lane_that_declared_its_endpoints_resolve(tmp_path, capsys):
+    """The verdicts end to end: the declared lane fails the check by name, the undeclared one is a
+    NOTE on stdout and the check still passes."""
+    import graphy.federated_store as fs
+
+    for kind, resolved, want_rc in (("red", True, 1), ("note", False, 0)):
+        tenant = _bridge_tenant(tmp_path / kind, resolved=resolved, break_it=True)
+        (tenant.data_home / ".federation_scheme_index.json").write_text(json.dumps({
+            "_meta": {}, "code": {"own": ["code"], "out": []}, "bridge": {"own": ["bridge"], "out": ["code"]},
+        }), encoding="utf-8")
+        roster = ["code", "bridge"]
+        fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="t")
+        desc = tmp_path / kind / "tenant.json"
+        desc.write_text(json.dumps({
+            "root": str(tmp_path / kind), "data_home": str(tenant.data_home), "adapters": [],
+            "build_lanes": {"code_graph": [None, "static-dep"], "bridge_graph": [None, "static-dep"]},
+            "join_keys": str(tenant.join_keys), "cursor": tenant.cursor, "policy": "refuse",
+            "journal": str(tenant.journal)}), encoding="utf-8")
+        rc = cli.main(["check", "--tenant", str(desc), "--tenant-id", "t"])
+        out, err = capsys.readouterr()
+        if want_rc == 1:
+            assert rc == 1
+            assert "declares `endpoints: resolved`" in err and "code.mod.g" in err
+        else:
+            assert "CHECK NOTE" in out and "edges-only" in out
+            assert "resolve to no node in this roster" in out
+            assert "declares `endpoints: resolved`" not in err

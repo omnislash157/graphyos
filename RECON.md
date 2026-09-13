@@ -5531,3 +5531,41 @@ cd engine && ../.venv/bin/python -m pytest -q tests/test_doors.py -k tests_line
 | the family is the declared one | a store declaring `reads_table` names it in the sentence |
 | the floor | 602 passed, 3 skipped (600 before) |
 | the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
+
+## 110 · AN EDGES-ONLY LANE IS A DECLARED SHAPE, AND A DANGLING ENDPOINT IS ONLY AN ERROR WHERE A LANE SAID IT WOULD BE — `check` was green on a shard holding zero nodes and 259 edges, and on 6,673 edges across a roster pointing at no node anywhere; the count is now reported and the red belongs to a lane that declared `endpoints: resolved` (2026-09-13 · graphyos issue 73)
+
+**The number, from the first client.** `CHECK OK: … container fresh for 32/32 shard(s)` on a tenant
+whose `sql_census` lane carried `"node_count": 0, "edge_count": 259` and whose store held 6,673 edges
+resolving to nothing. A pure bridge lane is a real and useful shape — and it was entirely unguarded,
+so the day a sibling stopped minting an id the bridge would drop that edge in silence.
+
+**Why the count is not the finding.** For a code lane most dangling endpoints are third-party and
+stdlib call targets the tenant deliberately does not mint: this repo's own roster reports 1,087
+across six lanes, every one of them an `imports` into `__future__`, `abc`, `typing` and their
+kind. A red on the number would be red for every healthy roster ever built, which is the fastest way
+to make an audit worthless. **The silence was the defect, not the number.** So the number is a NOTE,
+and a lane that means its edges must land says `"endpoints": "resolved"` in its PROVENANCE — the same
+place §104 put the relation vocabulary, for the same reason: the receipt is already there.
+
+**One line, not one per lane.** Every undeclared lane says the same thing for the same reason, and
+six paragraphs of it on every check is exactly how a true notice trains a reader to scroll past the
+line that matters — the judgement the doors' `NOT WALKED` line needed one rung earlier (§105). The
+loose endpoints collapse into a single sorted line; an edges-only lane keeps its own, because that
+one is rare and means something.
+
+```bash
+python3 -m graphy check --tenant tenants/graphy/tenant.json --tenant-id graphy | grep "CHECK NOTE"
+cd engine && ../.venv/bin/python -m pytest -q tests/test_cli.py -k "edges_only or endpoints_resolve"
+```
+
+| check | result |
+|---|---|
+| this repo's own roster | `CHECK NOTE: 1087 edge endpoint(s) across 6 lane(s) resolve to no node in this roster — graphy 451 · duckdb 297 · tests 288 · typing_extensions 32 · tree_sitter 16 · tree_sitter_typescript 3 (first: imports dst=__future__://module/__future__). Not an error: no lane here declares …` |
+| an edges-only lane | named as a shape with its edge types, and told how to make its endpoints binding |
+| declared `endpoints: resolved`, endpoints land | no finding, no note |
+| declared, one endpoint removed | `CHECK RED: lane bridge_graph declares \`endpoints: resolved\` and 1 endpoint(s) resolve to no node in this roster, first reads_table dst=code://func/code.mod.g`, exit 1 |
+| undeclared, the same break | a NOTE on stdout, exit 0 — the shape reported, the roster not condemned |
+| a text label is not a dangling endpoint | an edge carrying `dst_repr` and no `dst` is unbound, which is converge's business and a different state; only a resolved endpoint is checked |
+| the cost | 34 ms over this repo's 7 lanes and 25,509 edges, read from the shards because the store's edge table carries no owner column to attribute a dangling edge to a lane |
+| the floor | 604 passed, 3 skipped (602 before) |
+| the constraints | `REVIEW OK: 8 check(s)`; the gate `GRAPHY_STANDALONE_OK` |
