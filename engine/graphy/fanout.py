@@ -10,11 +10,6 @@ import stat
 from pathlib import Path
 from typing import Any
 
-try:
-    import msvcrt
-except ImportError:
-    msvcrt = None
-
 from graphy._portable_flock import fcntl
 from graphy.cartograph import resolve_graph
 from graphy.native_json_graph_ir import load_graph_ir
@@ -35,7 +30,6 @@ _RESERVED_FILENAMES = frozenset({
 _EMITTABLE_NAME = re.compile(r"^[A-Za-z0-9._-]+\.md$")
 _PAYLOAD_TMP_SUFFIX = ".part"
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
-_WINDOWS_LOCKING = msvcrt is not None
 
 
 class FanoutError(Exception):
@@ -47,26 +41,12 @@ def _sha256(data: bytes) -> str:
 
 
 def _acquire_publish_lock(lock_f) -> None:
-    if _WINDOWS_LOCKING:
-        while True:
-            lock_f.seek(0)
-            try:
-                msvcrt.locking(lock_f.fileno(), msvcrt.LK_LOCK, 1)
-                return
-            except OSError as exc:
-                if exc.errno != errno.EDEADLK:
-                    raise
-                continue
-    else:
-        fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
+    # one lock on every host — graphy._portable_flock is msvcrt-backed where fcntl is absent (#122)
+    fcntl.flock(lock_f.fileno(), fcntl.LOCK_EX)
 
 
 def _release_publish_lock(lock_f) -> None:
-    if _WINDOWS_LOCKING:
-        lock_f.seek(0)
-        msvcrt.locking(lock_f.fileno(), msvcrt.LK_UNLCK, 1)
-    else:
-        fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
+    fcntl.flock(lock_f.fileno(), fcntl.LOCK_UN)
 
 
 def _endpoint_flaw(record: dict[str, Any], resolved_key: str) -> str | None:

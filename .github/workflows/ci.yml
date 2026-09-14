@@ -37,6 +37,10 @@ jobs:
   # that is permanently red teaches a reader to ignore it. What is claimed here is exactly what is
   # proven here — the store is written, fsynced through a writable descriptor, and renamed — and
   # the README says the platform is otherwise unsupported rather than letting a stranger find out.
+  # The second mark is the lock (graphyos #122): `_portable_flock` was a named no-op without `fcntl`,
+  # so two concurrent journal appends minted one seq here; it is `msvcrt.locking` now, and the three
+  # tests that measured the no-op red on this runner are the proof (the step collects them with the
+  # helper's own tests and the lock tests beside them) — again exactly what is claimed.
   store-windows:
     runs-on: windows-latest
     steps:
@@ -52,6 +56,8 @@ jobs:
         run: python -c "import graphy; print(graphy.__version__)"
       - name: the durable mark — the store survives a rename on this platform
         run: cd engine && pytest -m durable -q
+      - name: the lock mark — a concurrent append blocks on this platform, never a duplicate seq
+        run: cd engine && pytest -q tests/test_portable_flock.py tests/test_journal.py tests/test_mesh_federation.py tests/test_fanout.py -k "concurrent or lock or flock or host or errno or helper"
 
   gate:
     runs-on: ubuntu-latest

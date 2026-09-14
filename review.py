@@ -565,11 +565,22 @@ def _defs(src: str) -> set[str]:
     except SyntaxError:
         return set()
     out: set[str] = set()
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            out.add(node.name)
-            if isinstance(node, ast.ClassDef):
-                out |= {f"{node.name}.{s.name}" for s in node.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    def walk(body) -> None:
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                out.add(node.name)
+                if isinstance(node, ast.ClassDef):
+                    out.update(f"{node.name}.{s.name}" for s in node.body if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef)))
+            elif isinstance(node, (ast.If, ast.Try, ast.With, ast.For, ast.While)):
+                # a def under a module-level try/if/with is still a module attribute a reader can name
+                # (graphyos #122 round 1: `_NoFcntl` under `except ImportError:` deleted, severance said 0)
+                for attr in ("body", "orelse", "finalbody"):
+                    walk(getattr(node, attr, []) or [])
+                for h in getattr(node, "handlers", []) or []:
+                    walk(h.body)
+
+    walk(tree.body)
     return out
 
 
@@ -1498,9 +1509,9 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
             {"scrub.py": (HERE / "scrub.py").read_text(encoding="utf-8"),
              "review_specimens/gh_hook.tsv": "# corpus\n0\t-\tgh issue create --title t --body \"a public sentence\"\n2\t-\tgh issue comment 1 -b {M}\n"}),
         "severance": (
-            {"engine/graphy/a.py": "def f():\n    pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
+            {"engine/graphy/a.py": "try:\n    import fcntl\nexcept ImportError:\n    def f():\n        pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
              "engine/graphy/c.py": "from graphy import a\na.f()\nimport sqlite3\nsqlite3.connect(':memory:').g()\n"},
-            {"engine/graphy/a.py": "def f():\n    pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
+            {"engine/graphy/a.py": "try:\n    import fcntl\nexcept ImportError:\n    def f():\n        pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
              "engine/graphy/c.py": "from graphy import a\na.f()\nimport sqlite3\nsqlite3.connect(':memory:').g()\n"}),
         "visual": (
             {"engine/tenants/t/substrate/atlas/X.html": _PAGE_OK.replace(".node rect { fill: var(--paper); }", ".node rect { fill: #FF0000; }")

@@ -58,6 +58,16 @@ if [ -s "$GT/tenant.json" ] && [ -d "$GT/substrate" ]; then
     ( cd "$STAGE" && env -u PYTHONPATH "$PY" -m graphy draw --tenant "$GT/tenant.json" --tenant-id graphy --corpus graphy --pillars --partition "$GT/partition.json" --lr --min-weight 2 --emit svg -o "$FRESH" >/dev/null )
     cmp -s "$FRESH" "$HERE/docs/pillars.svg" || { echo "pillars svg        DRIFT — docs/pillars.svg is not what the store draws; run engine/tenants/graphy/rebuild.sh"; exit 3; }
     echo "pillars svg        OK"
+    # The arm regions are the walk's other drawing (graphyos #122 round 1: a class moved in the seam and the
+    # gate read green — rebuild.sh verifies, the gate did not). Same door, same refusal, where the store is.
+    # `set -e` kills the script on a failing substitution in a plain assignment; `|| ARMS_RC=$?` keeps the exit
+    ARMS_RC=0
+    ARMS_OUT="$(cd "$STAGE" && env -u PYTHONPATH "$PY" -m graphy arms --tenant "$GT/tenant.json" --tenant-id graphy --corpus graphy --partition "$GT/partition.json" --dir "$GT/arms" --verify 2>&1)" || ARMS_RC=$?
+    case "$ARMS_RC" in
+        0) echo "arm regions        OK" ;;
+        1) echo "arm regions        DRIFT — an arm's generated region is not what the store walks; run engine/tenants/graphy/rebuild.sh"; echo "$ARMS_OUT"; exit 3 ;;
+        *) echo "arm regions        REFUSED — the verify never ran (exit $ARMS_RC), never a clean zero: $(echo "$ARMS_OUT" | tail -1)"; exit 3 ;;
+    esac
 else
     echo "pillars svg        SKIPPED (no graphy tenant on this box — rebuild.sh draws docs/pillars.svg; the byte check runs where the store is)"
 fi

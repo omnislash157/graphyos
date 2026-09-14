@@ -400,19 +400,16 @@ def test_fanout_windows_seat_lock_serializes(tmp_path, monkeypatch):
                                         "id": "gamma://module/gamma",
                                         "dotted": "gamma"}}
     real_write = Path.write_bytes
+    from graphy import _portable_flock
 
-    class _ShimMsvcrt:
-        LK_LOCK = 1
-        LK_UNLCK = 0
+    class _NoLock:
+        """the lock this engine held off POSIX before graphyos #122 — a named no-op"""
+        LOCK_EX = _portable_flock.fcntl.LOCK_EX
+        LOCK_UN = _portable_flock.fcntl.LOCK_UN
 
-        def __init__(self, real: bool):
-            self._real = real
-
-        def locking(self, fd, mode, nbytes):
-            if not self._real:
-                return
-            import fcntl as _f
-            _f.flock(fd, _f.LOCK_EX if mode == self.LK_LOCK else _f.LOCK_UN)
+        @staticmethod
+        def flock(*_a, **_k):
+            return None
 
     def _overlap(tag: str, real_lock: bool):
         graph_a = tmp_path / f"graph_a_{tag}"
@@ -420,8 +417,9 @@ def test_fanout_windows_seat_lock_serializes(tmp_path, monkeypatch):
         _write_shard(graph_a, nodes_a, [])
         _write_shard(graph_b, nodes_b, [])
         out = tmp_path / f"out_{tag}"
-        monkeypatch.setattr(fanout_mod, "msvcrt", _ShimMsvcrt(real_lock))
-        monkeypatch.setattr(fanout_mod, "_WINDOWS_LOCKING", True)
+        # the real lock is whatever this host holds — fcntl on POSIX, msvcrt on Windows —
+        # so the same test proves the seat on both; the control is the pre-#122 no-op
+        monkeypatch.setattr(fanout_mod, "fcntl", _portable_flock.fcntl if real_lock else _NoLock)
         paused = threading.Event()
         release = threading.Event()
 
