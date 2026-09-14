@@ -1281,6 +1281,81 @@ def _bash_posts(command: str, cwd: Path, work: Path) -> str | None:
     return log.read_text(encoding="utf-8", errors="replace")
 
 
+_OUTPUT_LOGGER_METHODS = {"debug", "info", "warning", "warn", "error", "critical", "exception", "log"}
+
+
+def _import_time_statements(body):
+    """Every simple statement that runs when the module is imported: the module body, and the bodies of if · try ·
+    with · for · while · match · class blocks under it, each yielded once — never a def, whose body runs later,
+    after an entry point's `utf8_streams`."""
+    for stmt in body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        blocks = []
+        for value in (getattr(stmt, f) for f in stmt._fields):
+            if isinstance(value, list) and value and all(isinstance(v, ast.stmt) for v in value):
+                blocks.append(value)
+            elif isinstance(value, list) and value and all(isinstance(getattr(v, "body", None), list) for v in value):
+                blocks.extend(v.body for v in value)           # except handlers · match cases
+        if blocks:
+            for block in blocks:
+                yield from _import_time_statements(block)
+        else:
+            yield stmt
+
+
+def _walk_import_time(node):
+    """`ast.walk` that never enters a lambda — the one function body a simple statement can carry."""
+    if isinstance(node, ast.Lambda):
+        return
+    yield node
+    for child in ast.iter_child_nodes(node):
+        yield from _walk_import_time(child)
+
+
+def _writes_output(call: ast.Call) -> str | None:
+    """`print(...)` · `<logger>.<level>(...)` · `logging.<level>(...)` · `sys.stdout|stderr.write(...)` — what it is, or None."""
+    f = call.func
+    if isinstance(f, ast.Name) and f.id == "print":
+        return "print"
+    if isinstance(f, ast.Attribute):
+        if f.attr in _OUTPUT_LOGGER_METHODS:
+            return f"{ast.unparse(f.value)}.{f.attr}"
+        if f.attr == "write" and isinstance(f.value, ast.Attribute) and f.value.attr in ("stdout", "stderr") \
+                and isinstance(f.value.value, ast.Name) and f.value.value.id == "sys":
+            return f"sys.{f.value.attr}.write"
+    return None
+
+
+def check_import_time_glyph(repo: Path) -> list[Finding]:
+    """import-time-glyph: a line printed while a module IMPORTS runs before any entry point's `utf8_streams` has made
+    the streams utf-8, so a glyph in it is the cp1252 crash #123 fixed, one hop earlier. Review round 2 of #123:
+    `lightning/ripgrep.py` warned `ripgrep not found … —` at module level whenever rg was absent — windows-latest's
+    condition — and the em-dash reached a cp1252 stderr before `main`. A print, a logger call or a `sys.std*.write`
+    at import time whose string literals carry a non-ASCII character is a finding; the same call inside a def is not."""
+    root = repo / "engine" / "graphy"
+    files = sorted(root.rglob("*.py")) if root.is_dir() else []
+    if not files:
+        raise CheckError("import-time-glyph found ZERO modules under engine/graphy — the scan is broken")
+    found: list[Finding] = []
+    calls = 0
+    for p in files:
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        for stmt in _import_time_statements(tree.body):
+            for n in _walk_import_time(stmt):
+                if not isinstance(n, ast.Call) or (what := _writes_output(n)) is None:
+                    continue
+                calls += 1
+                glyphs = {ch for a in list(n.args) + [k.value for k in n.keywords] for c in ast.walk(a)
+                          if isinstance(c, ast.Constant) and isinstance(c.value, str) for ch in c.value if ord(ch) > 127}
+                if glyphs:
+                    found.append(Finding("import-time-glyph", f"{_rel(repo, p)}:{n.lineno}",
+                                         f"{what} at import time carries {''.join(sorted(glyphs))!r} — it runs before any "
+                                         f"entry point's utf8_streams; make it lazy (print from the call that needs it)"))
+    NOTES["import-time-glyph"] = f"{len(files)} module(s), {calls} import-time output call(s)"
+    return found
+
+
 def check_specimen_corpus(repo: Path) -> list[Finding]:
     """specimen-corpus: every line of `review_specimens/<door>.tsv` replayed against its door, the exit code it must
     give. A review round's blocker lands as a line here — the battery compounds without a new check per round: #91's
@@ -1364,6 +1439,7 @@ CHECKS = {
     "cursor-exclude-by-tenant": check_cursor_exclude_by_tenant,
     "generation-identity": check_generation_identity,
     "host-interpreter": check_host_interpreter,
+    "import-time-glyph": check_import_time_glyph,
     "specimen-corpus": check_specimen_corpus,
 }
 
@@ -1501,6 +1577,20 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
              "gate.sh": "#!/usr/bin/env bash\n\"$PY\" -m pytest -q x.py\npython3 -m venv v && v/bin/python -m pytest\n$HERE/.venv/bin/python -m pytest\n"
                         "  python3 -m json.tool a\n# python3 -m pytest in a comment\n"
                         "python3 - <<'X'\ncmd = f\"python3 -m graphy pull {n}\"\nX\n"}),
+        "import-time-glyph": (
+            # red: the specimen (a logger.warning under a module-level if) · a print in a try · a class-body print ·
+            # a sys.stderr.write in an else · a logging.error with the glyph in an f-string — five
+            {"engine/graphy/rg.py": "import logging, sys\nlogger = logging.getLogger(__name__)\nRG = None\nif RG is None:\n"
+                                    "    logger.warning('ripgrep not found — the slow fallback')\n"
+                                    "try:\n    import fcntl\nexcept ImportError:\n    print('no fcntl · windows')\n"
+                                    "class K:\n    print('→ built')\n"
+                                    "if RG:\n    pass\nelse:\n    sys.stderr.write('✗ no rg\\n')\n"
+                                    "logging.error(f'{RG} ⚠')\n"},
+            {"engine/graphy/rg.py": "import logging, sys\nlogger = logging.getLogger(__name__)\nRG = None\n"
+                                    "def warn():\n    if RG is None:\n        logger.warning('ripgrep not found — the slow fallback')\n"
+                                    "print('ascii only at import')\nlogger.info('%s', 'plain')\n"
+                                    "class K:\n    def m(self):\n        print('→ built')\n"
+                                    "X = lambda: print('· lazy')\n"}),
         "specimen-corpus": (
             # red: a clean post the corpus wrongly says refuses · a malformed line · a line saying 0 that bash shows posting the marker
             {"scrub.py": (HERE / "scrub.py").read_text(encoding="utf-8"),

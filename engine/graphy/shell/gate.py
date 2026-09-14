@@ -45,6 +45,8 @@ def _cited(home: Path, generation: str, ids: list[str]) -> set[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from graphy._shared import utf8_streams
+    utf8_streams()     # a cp1252 pipe never crashes the gate's walk-to-run line (graphyos #123)
     raw = sys.stdin.read() if not sys.stdin.isatty() else ""
     payload = json.loads(raw) if raw.strip() else {}
     tool, ti = payload.get("tool_name"), payload.get("tool_input") or {}

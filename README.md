@@ -139,9 +139,9 @@ Linux and macOS. **On native Windows it builds** — a 32-lane tenant of 177,188
 edges compiles green there off this wheel, with eighteen producers this engine never wrote — and it
 is not yet supported, which are two different sentences and both are measured. The known gaps, each
 a rung: a minted shard's `file` fields carry the OS separator, so shards are not byte-identical
-across hosts (node ids are clean, so a walk answers the same on both — graphyos #88); and a door that draws
-cannot encode its glyphs on a `cp1252` console unless `PYTHONUTF8=1` is set, which is one setting
-away. The hooks, `shell install` and the MCP pointer are bash, so WSL is still the smoother road.
+across hosts (node ids are clean, so a walk answers the same on both — graphyos #88). A door that draws
+encodes its glyphs on a `cp1252` console or pipe without `PYTHONUTF8=1`: every verb reconfigures its
+own streams to utf-8 before the first line prints (graphyos #123). The hooks, `shell install` and the MCP pointer are bash, so WSL is still the smoother road.
 What is proven on the platform on every push is the store lane — CI's `store-windows` job runs the
 `durable` mark, so the defect that wrote no store at all there can never come back silently
 (graphyos #77) — and the lock: every lock the engine takes (journal, index, fan-out, inventory, registry) is `msvcrt.locking` there, and

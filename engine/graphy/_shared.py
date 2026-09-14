@@ -21,6 +21,47 @@ SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos
 
 DEFAULT_EXCLUDE = ("tests/", "test/", "docs_src/", "docs/", "scripts/", "examples/")
 
+GLYPHS = "│─┌┐└┘├┤┬┴┼╪▶◀▾═→←·—⚠✗…"
+"""The glyphs the engine prints: the drawings' box and arrows, the doors' hops, the receipts' separators."""
+
+
+def utf8_streams(*streams) -> list[str]:
+    """Every stream that cannot encode the engine's glyphs is reconfigured to utf-8 — what
+    ``PYTHONUTF8=1`` would have made it — before the first line prints, so a cp1252 console or pipe
+    on Windows never crashes a door that draws (graphyos #123: `EAT OK` printed, then exit 1, on
+    windows-latest and the first client's box). No streams named means stdout and stderr; every
+    entry point (`cli.main`, the memory doors, the gate, the hooks) calls it first. The encoding is
+    judged, never the error handler: stderr's default is ``backslashreplace``, which never crashes,
+    but a stderr left cp1252 beside a utf-8 stdout puts two encodings into the one pipe the two
+    streams share. The stream's handler is kept. A stream that refuses the encoding is reconfigured
+    to replace what it cannot encode instead; one whose encoding carries the glyphs already (utf-8)
+    is left as it is; one with no ``reconfigure`` (a capture, a wrapper) is left alone. Returns what
+    changed, ``<encoding>->utf-8`` or ``<encoding>->replace`` per stream, for the tests."""
+    import sys
+    if not streams:
+        streams = (sys.stdout, sys.stderr)
+    changed: list[str] = []
+    for stream in streams:
+        encoding = getattr(stream, "encoding", None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if not encoding or reconfigure is None:
+            continue
+        try:
+            GLYPHS.encode(encoding)
+            continue
+        except (UnicodeEncodeError, LookupError):
+            pass
+        try:
+            reconfigure(encoding="utf-8", errors=getattr(stream, "errors", None) or "strict")
+            changed.append(f"{encoding}->utf-8")
+        except Exception:
+            try:
+                reconfigure(errors="replace")
+                changed.append(f"{encoding}->replace")
+            except Exception:
+                pass
+    return changed
+
 
 def nonneg_int(v) -> int:
     import argparse

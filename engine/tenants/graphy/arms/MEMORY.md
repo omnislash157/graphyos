@@ -6,7 +6,7 @@
 `session_tail` turns a transcript into its semantic tail; `reseed` captures and injects it around a clear; `lightning` is the ripgrep-anchored search over the archive. The walk names this the floor no arm consumes — it runs beside the engine, not under the CLI.
 
 <!-- graphy:arm MEMORY generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=87582c852ad66d66 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:0f5d97afe1aaf9d84d7b1491fad347557390fb53e4b7f5ba596a7ab942553b6e -->
+     store=bffeb29661bb2b38 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:dab06584e58f0dbc36212d6d67dcbeb1e1a35d217fee91677d85d305fdad729a -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -31,7 +31,7 @@ Every symbol the partition places in this arm, by module; a class carries its me
 **`graphy.lightning.pseudo_ast.brace`** — functions: `brace_block` · `neutralize`
 **`graphy.lightning.pseudo_ast.svelte`** — functions: `role_from_path` · `split_svelte`
 **`graphy.lightning.reseed_graph`** — classes: `Box` · `Corpus` (1) · `Forest`; functions: `_bar` · `_date_of` · `_norm` · `_resolve` · `_segments` · `_sessions_of` · `_snippet` · `_subseq` · `build` · `cmd_chain` · `cmd_heat` · `cmd_search` · `cmd_topics` · `header` · `main` · `topic_forest`
-**`graphy.lightning.ripgrep`** — functions: `_bounded_filesystem_inventory` · `_git_searchable_files` · `_relative_is_ignored` · `python_matching_files` · `resolve_rg` · `rg_matching_files` · `searchable_files`
+**`graphy.lightning.ripgrep`** — functions: `_bounded_filesystem_inventory` · `_git_searchable_files` · `_relative_is_ignored` · `python_matching_files` · `resolve_rg` · `rg_matching_files` · `searchable_files` · `warn_no_rg`
 **`graphy.lightning.source_kind`** — functions: `_is_doc_file` · `_is_slop_dir` · `_is_test_file` · `classify_sources` · `gitignored_set` · `liveness_verdict`
 **`graphy.reseed`** — functions: `_age` · `_archive` · `_assert_exact_session` · `_atomic_write` · `_diag` · `_disk_fallback` · `_exchange_count` · `_header` · `_newest_archive_sha` · `_project_dir` · `_read_hook_stdin` · `do_capture` · `do_inject` · `main` · `recovery_dir`
 **`graphy.session_tail`** — classes: `TailError`; functions: `_blocks` · `_budget` · `_codex_text` · `_is_real_user` · `_text_of` · `assert_plausible` · `bounded_tail` · `extract_turns` · `harness_of` · `pair_turns` · `project_slug` · `projects_root` · `projects_roots` · `render_full` · `render_json` · `render_markdown` · `render_recent_markdown` · `scan_stats` · `semantic_sha256` · `turn_of`

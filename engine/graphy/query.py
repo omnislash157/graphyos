@@ -7,7 +7,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from typing import NamedTuple, Optional
-from graphy._shared import source_sha
+from graphy._shared import source_sha, utf8_streams
 
 SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
@@ -357,6 +357,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list] = None) -> int:
+    utf8_streams()     # a cp1252 console or pipe never crashes the door (graphyos #123)
     parser = _build_parser()
     args = parser.parse_args(argv)
     params = {

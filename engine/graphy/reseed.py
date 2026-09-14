@@ -249,6 +249,8 @@ def _project_dir(args: argparse.Namespace, payload: dict) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from graphy._shared import utf8_streams
+    utf8_streams()     # a cp1252 pipe never crashes the hook's injection (graphyos #123)
     ap = argparse.ArgumentParser(prog="graphy.reseed", description=__doc__)
     ap.add_argument("--project-dir", default=None, help="overrides CLAUDE_PROJECT_DIR and the hook cwd")
     ap.add_argument("--recovery-dir", default=None, help="overrides <project>/.claude/recovery")

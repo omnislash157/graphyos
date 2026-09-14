@@ -344,6 +344,8 @@ def cmd_chain(c: Corpus, a: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from graphy._shared import utf8_streams
+    utf8_streams()     # a cp1252 console or pipe never crashes the door (graphyos #123)
     ap = argparse.ArgumentParser(
         prog="reseed_graph",
         description="Stateless topic graph over the /clear reseed session corpus — "

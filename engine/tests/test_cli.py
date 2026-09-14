@@ -1268,3 +1268,72 @@ def test_GREEN_recon_writes_beside_the_substrate_and_names_what_it_found(tmp_pat
 def test_RED_recon_refuses_without_a_tenant_and_names_the_reason(tmp_path, capsys):
     assert cli.main(["recon", "--tenant-id", "t"]) == 2
     assert "RECON REFUSED: --tenant and --tenant-id are required" in capsys.readouterr().err
+
+
+# ── graphyos #123: a cp1252 console or pipe never crashes a door that draws ─────────────────────────
+
+
+def test_GREEN_a_cp1252_console_never_crashes_the_stream_becomes_utf8_or_replaces():
+    """The unit: a cp1252 wrapper is reconfigured to utf-8 and the glyphs land as utf-8 bytes; the encoding is
+    judged, not the handler — stderr's default `backslashreplace` never crashed, but left cp1252 it put a second
+    encoding into the pipe stdout shares (the subprocess test below found it) — and the handler is kept; a
+    stream that refuses the encoding is reconfigured to replace; utf-8 and a stream with no reconfigure are
+    left exactly as they are."""
+    import io
+    raw = io.BytesIO()
+    cp = io.TextIOWrapper(raw, encoding="cp1252")
+    assert cli.utf8_streams(cp) == ["cp1252->utf-8"]
+    print(cli.GLYPHS, file=cp)
+    cp.flush()
+    assert raw.getvalue() == (cli.GLYPHS + "\n").encode("utf-8")
+
+    err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="backslashreplace")
+    assert cli.utf8_streams(err) == ["cp1252->utf-8"]
+    assert (err.encoding, err.errors) == ("utf-8", "backslashreplace")
+
+    utf = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
+    assert cli.utf8_streams(utf, io.StringIO(), None) == []
+    assert utf.encoding == "utf-8"
+
+    class Stubborn(io.TextIOWrapper):
+        def reconfigure(self, **kw):
+            if "encoding" in kw:
+                raise io.UnsupportedOperation("no")
+            super().reconfigure(**kw)
+
+    stubborn = Stubborn(io.BytesIO(), encoding="cp1252")
+    assert cli.utf8_streams(stubborn) == ["cp1252->replace"]
+    print("┌─┐", file=stubborn)
+    stubborn.flush()
+    assert stubborn.buffer.getvalue() == b"???\n"
+
+
+def test_GREEN_a_cp1252_console_never_crashes_draw_and_eat_in_a_subprocess(tmp_path):
+    """The surface: a subprocess whose streams are cp1252 (PYTHONIOENCODING, what a Windows pipe gives) eats a
+    repo and draws a symbol's neighbourhood, both rc 0 — on windows-latest `EAT OK` printed and then exit 1
+    (graphyos #123). The bytes that reach the pipe are utf-8, so the box glyphs are the box glyphs."""
+    import os
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "pkg_a").mkdir(parents=True)
+    (repo / "pkg_a" / "__init__.py").write_text("def f():\n    return g()\n\ndef g():\n    return 1\n")
+    env = {**os.environ, "PYTHONPATH": str(Path(cli.__file__).parents[1]), "PYTHONIOENCODING": "cp1252"}
+    env.pop("PYTHONUTF8", None)
+    run = lambda *argv: subprocess.run([sys.executable, "-m", "graphy", *argv], stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT, env=env, cwd=repo, timeout=300)
+    eaten = run("eat", str(repo), "--package", "pkg_a", "--site-packages", str(repo))
+    out = eaten.stdout.decode("utf-8")           # utf-8 bytes, or this raises
+    assert eaten.returncode == 0 and "EAT OK" in out, out
+    assert "→" in out or "←" in out or "·" in out, out    # a glyph travelled, not a '?'
+    drawn = run("draw", "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "pkg_a", "--symbol", "pkg_a.f")
+    page = drawn.stdout.decode("utf-8")
+    assert drawn.returncode == 0 and "┌" in page and "UnicodeEncodeError" not in page, page
+    # the memory doors enter through their own main, not cli.main — the same cover, the same bytes. Under the
+    # runner's condition: no ripgrep (review round 2: the no-rg warning's em-dash reached stderr at IMPORT, before
+    # any main ran), so the fallback's warning must still print, once, in utf-8, from the first search
+    lit = subprocess.run([sys.executable, "-m", "graphy.lightning", "g", "--path", str(repo / "pkg_a")],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=repo, timeout=120,
+                         env={**env, "GRAPHY_RG": str(repo / "no-rg-here")})
+    lit_out = lit.stdout.decode("utf-8")
+    assert lit.returncode == 0 and "UnicodeEncodeError" not in lit_out, lit.stdout
+    assert lit_out.count("slow Python fallback") == 1 and "—" in lit_out, lit_out

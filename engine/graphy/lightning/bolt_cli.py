@@ -62,6 +62,8 @@ def _resolve_search_inputs(parser, args) -> tuple[list[str], str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from graphy._shared import utf8_streams
+    utf8_streams()     # a cp1252 console or pipe never crashes the door (graphyos #123)
     parser = argparse.ArgumentParser(
         prog="graphy.lightning",
         description="lightning: the ANALYSIS half of a two-stage unix pipe. rg DISCOVERS (which "

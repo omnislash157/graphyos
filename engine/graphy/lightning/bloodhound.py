@@ -191,6 +191,8 @@ def run(term: str, root: Path, *, window: int, partner: str | None,
 
 
 def main(argv: list[str] | None = None) -> int:
+    from graphy._shared import utf8_streams
+    utf8_streams()     # a cp1252 console or pipe never crashes the door (graphyos #123)
     ap = argparse.ArgumentParser(
         prog="bloodhound",
         description="Proximity trail + heat map: keyword -> daisy-chained clusters -> heat.")

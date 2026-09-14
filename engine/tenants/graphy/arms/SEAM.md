@@ -6,13 +6,13 @@
 `tenant` is the declared identity everything refuses without; `converge` resolves text labels through scope and counts the wormholes; `federated_store` compiles and reads the sqlite store; `cross_substrate` loads and walks a set of shards; `journal` records born and died; `container` and `index_estate` are the parquet; `cartograph` runs declared build lanes and measures freshness.
 
 <!-- graphy:arm SEAM generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=87582c852ad66d66 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:7f440f4e459cbdd1a5804aad29530cdfa0cf0e8f9b18a7f8110b48b6a3cbf7fa -->
+     store=bffeb29661bb2b38 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:cff85870208f53a382356ea5b67474ad71442f4e7bc1c7120c1706b8c5e6c6f1 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
 
 **`graphy._portable_flock`** — classes: `MsvcrtFlock` (3)
-**`graphy._shared`** — functions: `_ast_edge_salience` · `_shim_adj_for_activate` · `credibility` · `generation_name` · `generation_of` · `lift` · `nonneg_int` · `resolve_excludes` · `salience` · `source_sha`
+**`graphy._shared`** — functions: `_ast_edge_salience` · `_shim_adj_for_activate` · `credibility` · `generation_name` · `generation_of` · `lift` · `nonneg_int` · `resolve_excludes` · `salience` · `source_sha` · `utf8_streams`
 **`graphy.augment_registry`** — functions: `_entry_body` · `_entry_span` · `_load_descriptor` · `_load_predicate` · `_lock_path` · `_registry_path` · `collect_augment_stamps` · `declared_from_stamp` · `descriptor_digest` · `main` · `normalize_descriptor` · `observed_from_index` · `register` · `stamp_from_descriptor` · `verify_registration`
 **`graphy.cartograph`** — functions: `_excluded` · `cartograph` · `cursor_drift` · `cursor_exclude` · `generation_base` · `main` · `repo_cursor` · `repo_head_sha` · `repo_toplevel` · `resolve_graph` · `tenant_exclude` · `working_tree_dirt` · `write_graph`
 **`graphy.container`** — classes: `ContainerError`; functions: `_attrs` · `_duckdb` · `_edge_rows` · `_node_rows` · `_write_parquet` · `_write_receipt` · `defer` · `emit` · `emit_all` · `emit_missing` · `estate` · `have_duckdb` · `node_forms` · `shard_digest` · `summarize` · `verify`

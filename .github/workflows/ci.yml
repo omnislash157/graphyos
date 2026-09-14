@@ -47,6 +47,9 @@ jobs:
   # closes what it opened now; the step runs the tracker over every verb and three of the four tests
   # that measured the violation on this runner (the fourth, test_rebuild's pruned-lane test, gets past
   # its rename here now and then fails on a separator assertion that is #88's, so it is not claimed).
+  # The fourth mark is the console (graphyos #123): a piped `python -m graphy eat` printed `EAT OK`
+  # here and then exited 1 on the first glyph cp1252 cannot encode; every entry point reconfigures its
+  # streams to utf-8 now, and the step runs the subprocess test and the pipe test that was the red.
   store-windows:
     runs-on: windows-latest
     steps:
@@ -66,6 +69,8 @@ jobs:
         run: cd engine && pytest -q tests/test_portable_flock.py tests/test_journal.py tests/test_mesh_federation.py tests/test_fanout.py -k "concurrent or lock or flock or host or errno or helper"
       - name: the handle mark — a verb closes its store, so the rename after it is never refused on this platform
         run: cd engine && pytest -q tests/test_store_lifecycle.py "tests/test_cli.py::test_GREEN_eat_no_provision_runs_nothing_of_the_repo_and_mints_an_empty_ring" "tests/test_federated_store.py::test_GREEN_advertised_warn_command_parses" "tests/test_federated_store.py::test_GREEN_advertised_refuse_command_parses"
+      - name: "a cp1252 pipe never crashes a verb that draws — on the platform the issue names (graphyos #123)"
+        run: cd engine && pytest -q "tests/test_cli.py::test_GREEN_a_cp1252_console_never_crashes_draw_and_eat_in_a_subprocess" "tests/test_provision.py::test_RED_a_failure_line_is_the_last_line_when_both_streams_share_a_pipe"
 
   gate:
     runs-on: ubuntu-latest

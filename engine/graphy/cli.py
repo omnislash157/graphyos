@@ -12,6 +12,7 @@ import sys
 import time
 from pathlib import Path
 
+from graphy._shared import GLYPHS, utf8_streams  # noqa: F401 — GLYPHS is the tests' probe (graphyos #123)
 from graphy.tenant import Tenant, TenantError
 
 # Every verb's module is imported inside its handler, never here: `graphy --help` and every
@@ -2870,6 +2871,7 @@ def main(argv: list[str] | None = None) -> int:
     prof_dir = os.environ.get("GRAPHY_PROFILE_DIR")
     if isinstance(sys.stderr, _StderrAfterStdout):
         return _profiled(argv, prof_dir) if prof_dir else _main(argv)
+    utf8_streams()     # a cp1252 console or pipe never crashes a verb that draws (graphyos #123)
     err = sys.stderr
     sys.stderr = _StderrAfterStdout(err)
     try:

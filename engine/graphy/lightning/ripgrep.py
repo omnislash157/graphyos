@@ -38,11 +38,20 @@ def resolve_rg() -> str | None:
 RG_PATH = resolve_rg()
 GIT_PATH = shutil.which("git")
 
-if RG_PATH is None:
-    logger.warning(
-        "ripgrep not found in the venv or on PATH — Lightning is running on the "
-        "slow Python fallback. Fix: install ripgrep (rg) on PATH, or set GRAPHY_RG to the binary."
-    )
+_WARNED_NO_RG = False
+
+
+def warn_no_rg() -> None:
+    """Once, on the first search that takes the Python fallback — never at import. Review round 2 of
+    graphyos #123: this line's em-dash reached a cp1252 stderr while the package was still importing,
+    before any `main` could make the stream utf-8, on every box with no ripgrep (windows-latest)."""
+    global _WARNED_NO_RG
+    if RG_PATH is None and not _WARNED_NO_RG:
+        _WARNED_NO_RG = True
+        logger.warning(
+            "ripgrep not found in the venv or on PATH — Lightning is running on the "
+            "slow Python fallback. Fix: install ripgrep (rg) on PATH, or set GRAPHY_RG to the binary."
+        )
 
 
 def _relative_is_ignored(path: Path) -> bool:
@@ -211,6 +220,7 @@ def python_matching_files(
     pattern: re.Pattern,
     files: list[Path],
 ) -> list[Path]:
+    warn_no_rg()
     matching = []
     for filepath in files:
         try:
