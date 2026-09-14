@@ -258,26 +258,27 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
     tenant = _load_tenant(str(desc))
     roster = _roster(tenant)
     store = (open_store or (lambda: fstore.open_for(roster, tenant=tenant, tenant_id=package)))()
-    graph = pillars_lane.module_graph(store, package)
-    try:
-        proposal = pillars_lane.propose(graph)
-    except pillars_lane.PillarsError as exc:
-        # one pillar: the whole package is one arm, and the page says so
-        units = sorted(graph.size)
-        proposal = pillars_lane.Proposal(corpus=package, depth=graph.depth, floor=5, owned=2 / 3, client=1 / 3, rest="EDGE",
-                                         crowns={package.upper(): units[0] if units else package}, floor_arm=None,
-                                         arms={package.upper(): units}, rulings=[], total=0)
-        log(f"SHOWCASE: one pillar — {exc}")
-    partition = home / "partition.json"
-    pillars_lane.write_partition(partition, pillars_lane.to_partition(proposal))
-    cut = fanout.load_partition(partition)
-    html, text = compose(store, package=package, desc=desc, home=home, proposal=proposal, cut=cut, ring=ring,
-                         graphy_cmd=graphy_cmd or _graphy_command(), origin=origin)
-    out_dir = Path(out).resolve() if out else home / "showcase"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / PAGE).write_text(html, encoding="utf-8")
-    (out_dir / TEXT).write_text(text, encoding="utf-8")
-    red = S.check_artifact(out_dir / PAGE)
-    return {"repo": str(repo), "package": package, "page": str(out_dir / PAGE), "text": str(out_dir / TEXT),
-            "arms": list(proposal.arms), "ring": len(ring.get("minted", {})) - 1, "check": red,
-            "seconds": round(time.perf_counter() - t0, 1)}
+    with store:
+        graph = pillars_lane.module_graph(store, package)
+        try:
+            proposal = pillars_lane.propose(graph)
+        except pillars_lane.PillarsError as exc:
+            # one pillar: the whole package is one arm, and the page says so
+            units = sorted(graph.size)
+            proposal = pillars_lane.Proposal(corpus=package, depth=graph.depth, floor=5, owned=2 / 3, client=1 / 3, rest="EDGE",
+                                             crowns={package.upper(): units[0] if units else package}, floor_arm=None,
+                                             arms={package.upper(): units}, rulings=[], total=0)
+            log(f"SHOWCASE: one pillar — {exc}")
+        partition = home / "partition.json"
+        pillars_lane.write_partition(partition, pillars_lane.to_partition(proposal))
+        cut = fanout.load_partition(partition)
+        html, text = compose(store, package=package, desc=desc, home=home, proposal=proposal, cut=cut, ring=ring,
+                             graphy_cmd=graphy_cmd or _graphy_command(), origin=origin)
+        out_dir = Path(out).resolve() if out else home / "showcase"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / PAGE).write_text(html, encoding="utf-8")
+        (out_dir / TEXT).write_text(text, encoding="utf-8")
+        red = S.check_artifact(out_dir / PAGE)
+        return {"repo": str(repo), "package": package, "page": str(out_dir / PAGE), "text": str(out_dir / TEXT),
+                "arms": list(proposal.arms), "ring": len(ring.get("minted", {})) - 1, "check": red,
+                "seconds": round(time.perf_counter() - t0, 1)}

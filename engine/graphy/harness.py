@@ -186,127 +186,128 @@ def run(*, repo: str | Path, tenant, tenant_id: str, corpus: str | None = None,
         store = fstore.open_for(roster, tenant=tenant, tenant_id=tenant_id, on_stale=on_stale)
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
         raise HarnessError(f"{exc} — rebuild the store with `graphy build`") from exc
+    with store:
 
-    try:
-        cut, _proposal, part_what = _partition_and_proposal(store, corpus, tenant_dir, log)
-    except FanoutError as exc:
-        raise HarnessError(str(exc)) from exc
-    if cut.groups is None:
-        raise HarnessError("the partition is a depth cut — harness needs named arms")
-
-    # The re-walk block's T= must match `graphy arms` (default tenants/<root name>), so
-    # `arms --verify` after harness stays green. Eat's descriptor lives at <repo>/.graphy.
-    if desc.name == "tenant.json" and desc.parent.name == ".graphy":
-        tenant_dir_label = ".graphy"
-    else:
-        tenant_dir_label = f"tenants/{Path(tenant.root).name}"
-    _inv, group_of, records = arms_lane._inventory(store, corpus, cut)
-    _joins, crowns = arms_lane._joins_and_crowns(store, corpus, group_of, records)
-    del _inv, _joins
-    seeds = {}
-    for name in cut.groups:
-        crown = crowns.get(name)
-        seeds[name] = {
-            "crown": crown or "",
-            "blast": (f"graphy blast {crown} --tenant {desc} --tenant-id {tenant_id}" if crown else ""),
-        }
-
-    try:
-        regions = arms_lane.render_all(store, corpus, cut, tenant_dir=tenant_dir_label,
-                                       tenant_id=tenant_id)
-        done = arms_lane.generate(regions, tenant_dir / "arms", seeds=seeds)
-    except arms_lane.ArmsError as exc:
-        raise HarnessError(str(exc)) from exc
-    log("HARNESS: arms " + " · ".join(f"{n} {w}" for n, w in done)
-        + f" -> {tenant_dir / 'arms'}")
-
-    drawings = tenant_dir / "drawings"
-    drawings.mkdir(parents=True, exist_ok=True)
-    reds: list[str] = []
-    drawn: list[str] = []
-
-    def _write_pic(pic, stem: str) -> None:
-        for emit, ext in (("svg", ".svg"), ("html", ".html")):
-            path = drawings / f"{stem}{ext}"
-            red = draw_lane.emit_checked(pic, path, emit=emit, lr=True)
-            tag = f"{stem}{ext}"
-            if red:
-                reds.append(f"{tag}: " + "; ".join(red))
-                log(f"HARNESS: drawing {tag} CHECK RED " + "; ".join(red))
-            else:
-                drawn.append(tag)
-                log(f"HARNESS: drawing {tag} CHECK GREEN")
-
-    pic_p = draw_lane.pillars(store, corpus, cut)
-    _write_pic(pic_p, "pillars")
-
-    ascii_of: dict[str, str] = {}
-    for name in cut.groups:
         try:
-            pic = draw_lane.arm(store, corpus, cut, name)
-        except draw_lane.DrawError as exc:
-            log(f"HARNESS: drawing {name} skipped ({exc})")
-            ascii_of[name] = f"(no drawing: {exc})"
-            continue
-        ascii_of[name] = cap_ascii(draw_lane.render(pic, emit="ascii", lr=True, color=False))
-        _write_pic(pic, name)
+            cut, _proposal, part_what = _partition_and_proposal(store, corpus, tenant_dir, log)
+        except FanoutError as exc:
+            raise HarnessError(str(exc)) from exc
+        if cut.groups is None:
+            raise HarnessError("the partition is a depth cut — harness needs named arms")
 
-    if reds:
-        raise HarnessError("drawing check red — " + " · ".join(reds))
-
-    at = _now()
-    gen = store.generation()
-    walk_rows: list[tuple[str, str]] = []
-    for name in cut.groups:
-        crown = crowns.get(name)
-        blasted = None
-        if crown and hasattr(store, "neighbours"):
-            try:
-                blasted = doors.blast(store, crown, max_depth=4)
-            except (doors.DoorError, AttributeError, TypeError, KeyError) as exc:
-                log(f"HARNESS: walk {name} skipped ({exc})")
-        receipt = _render_walk_receipt(name, crown, blasted, gen, at)
-        walk_path = tenant_dir / "arms" / f"{name}.walk.txt"
-        walk_path.parent.mkdir(parents=True, exist_ok=True)
-        walk_path.write_text(receipt, encoding="utf-8")
-        n = max(0, len(blasted.reached) - 1) if blasted is not None else 0
-        log(f"HARNESS: walk {name} crown={crown or '—'} dependents={n} → {walk_path}")
-        walk_rows.append((name, crown or "—"))
-
-        arm_md = tenant_dir / "arms" / f"{name}.md"
-        what_draw = arms_lane.write_draw_band(arm_md, name, ascii_of.get(name, "(no drawing)"))
-        what_scaf = arms_lane.ensure_scaffold(arm_md, name, seeds.get(name))
-        log(f"HARNESS: arm {name} draw-band {what_draw} · scaffold {what_scaf}")
-
-    cut_sha = f"sha256:{cut.sha256}" if cut.sha256 else "unpinned"
-    graph_md = tenant_dir / "GRAPH.md"
-    graph_md.write_text(render_graph_md(
-        corpus=corpus, generation=gen, cut_sha=cut_sha, rows=walk_rows,
-        tenant=str(desc), tenant_id=tenant_id, tenant_dir=str(tenant_dir), repo=str(repo),
-    ), encoding="utf-8")
-    log(f"HARNESS: GRAPH.md wrote {graph_md}")
-
-    hub = _rel_to_repo(graph_md, repo)
-    pointers = {}
-    for fname in ("CLAUDE.md", "AGENTS.md"):
-        what = install_pointer(repo / fname, hub)
-        pointers[fname] = what
-        if what == "left-alone":
-            log(f"pointer not installed: existing {fname} left alone")
+        # The re-walk block's T= must match `graphy arms` (default tenants/<root name>), so
+        # `arms --verify` after harness stays green. Eat's descriptor lives at <repo>/.graphy.
+        if desc.name == "tenant.json" and desc.parent.name == ".graphy":
+            tenant_dir_label = ".graphy"
         else:
-            log(f"HARNESS: pointer {fname} {what}")
+            tenant_dir_label = f"tenants/{Path(tenant.root).name}"
+        _inv, group_of, records = arms_lane._inventory(store, corpus, cut)
+        _joins, crowns = arms_lane._joins_and_crowns(store, corpus, group_of, records)
+        del _inv, _joins
+        seeds = {}
+        for name in cut.groups:
+            crown = crowns.get(name)
+            seeds[name] = {
+                "crown": crown or "",
+                "blast": (f"graphy blast {crown} --tenant {desc} --tenant-id {tenant_id}" if crown else ""),
+            }
 
-    log(f"HARNESS OK: {len(list(cut.groups))} arm(s) store={gen} partition={cut_sha[:19]}… "
-        f"→ {tenant_dir} (partition {part_what})")
-    return {
-        "corpus": corpus,
-        "generation": gen,
-        "cut": cut_sha,
-        "tenant_dir": str(tenant_dir),
-        "graph": str(graph_md),
-        "hub": hub,
-        "arms": [n for n, _w in done],
-        "drawn": drawn,
-        "pointers": pointers,
-        "partition": part_what,
-    }
+        try:
+            regions = arms_lane.render_all(store, corpus, cut, tenant_dir=tenant_dir_label,
+                                           tenant_id=tenant_id)
+            done = arms_lane.generate(regions, tenant_dir / "arms", seeds=seeds)
+        except arms_lane.ArmsError as exc:
+            raise HarnessError(str(exc)) from exc
+        log("HARNESS: arms " + " · ".join(f"{n} {w}" for n, w in done)
+            + f" -> {tenant_dir / 'arms'}")
+
+        drawings = tenant_dir / "drawings"
+        drawings.mkdir(parents=True, exist_ok=True)
+        reds: list[str] = []
+        drawn: list[str] = []
+
+        def _write_pic(pic, stem: str) -> None:
+            for emit, ext in (("svg", ".svg"), ("html", ".html")):
+                path = drawings / f"{stem}{ext}"
+                red = draw_lane.emit_checked(pic, path, emit=emit, lr=True)
+                tag = f"{stem}{ext}"
+                if red:
+                    reds.append(f"{tag}: " + "; ".join(red))
+                    log(f"HARNESS: drawing {tag} CHECK RED " + "; ".join(red))
+                else:
+                    drawn.append(tag)
+                    log(f"HARNESS: drawing {tag} CHECK GREEN")
+
+        pic_p = draw_lane.pillars(store, corpus, cut)
+        _write_pic(pic_p, "pillars")
+
+        ascii_of: dict[str, str] = {}
+        for name in cut.groups:
+            try:
+                pic = draw_lane.arm(store, corpus, cut, name)
+            except draw_lane.DrawError as exc:
+                log(f"HARNESS: drawing {name} skipped ({exc})")
+                ascii_of[name] = f"(no drawing: {exc})"
+                continue
+            ascii_of[name] = cap_ascii(draw_lane.render(pic, emit="ascii", lr=True, color=False))
+            _write_pic(pic, name)
+
+        if reds:
+            raise HarnessError("drawing check red — " + " · ".join(reds))
+
+        at = _now()
+        gen = store.generation()
+        walk_rows: list[tuple[str, str]] = []
+        for name in cut.groups:
+            crown = crowns.get(name)
+            blasted = None
+            if crown and hasattr(store, "neighbours"):
+                try:
+                    blasted = doors.blast(store, crown, max_depth=4)
+                except (doors.DoorError, AttributeError, TypeError, KeyError) as exc:
+                    log(f"HARNESS: walk {name} skipped ({exc})")
+            receipt = _render_walk_receipt(name, crown, blasted, gen, at)
+            walk_path = tenant_dir / "arms" / f"{name}.walk.txt"
+            walk_path.parent.mkdir(parents=True, exist_ok=True)
+            walk_path.write_text(receipt, encoding="utf-8")
+            n = max(0, len(blasted.reached) - 1) if blasted is not None else 0
+            log(f"HARNESS: walk {name} crown={crown or '—'} dependents={n} → {walk_path}")
+            walk_rows.append((name, crown or "—"))
+
+            arm_md = tenant_dir / "arms" / f"{name}.md"
+            what_draw = arms_lane.write_draw_band(arm_md, name, ascii_of.get(name, "(no drawing)"))
+            what_scaf = arms_lane.ensure_scaffold(arm_md, name, seeds.get(name))
+            log(f"HARNESS: arm {name} draw-band {what_draw} · scaffold {what_scaf}")
+
+        cut_sha = f"sha256:{cut.sha256}" if cut.sha256 else "unpinned"
+        graph_md = tenant_dir / "GRAPH.md"
+        graph_md.write_text(render_graph_md(
+            corpus=corpus, generation=gen, cut_sha=cut_sha, rows=walk_rows,
+            tenant=str(desc), tenant_id=tenant_id, tenant_dir=str(tenant_dir), repo=str(repo),
+        ), encoding="utf-8")
+        log(f"HARNESS: GRAPH.md wrote {graph_md}")
+
+        hub = _rel_to_repo(graph_md, repo)
+        pointers = {}
+        for fname in ("CLAUDE.md", "AGENTS.md"):
+            what = install_pointer(repo / fname, hub)
+            pointers[fname] = what
+            if what == "left-alone":
+                log(f"pointer not installed: existing {fname} left alone")
+            else:
+                log(f"HARNESS: pointer {fname} {what}")
+
+        log(f"HARNESS OK: {len(list(cut.groups))} arm(s) store={gen} partition={cut_sha[:19]}… "
+            f"→ {tenant_dir} (partition {part_what})")
+        return {
+            "corpus": corpus,
+            "generation": gen,
+            "cut": cut_sha,
+            "tenant_dir": str(tenant_dir),
+            "graph": str(graph_md),
+            "hub": hub,
+            "arms": [n for n, _w in done],
+            "drawn": drawn,
+            "pointers": pointers,
+            "partition": part_what,
+        }

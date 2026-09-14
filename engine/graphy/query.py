@@ -398,24 +398,25 @@ def main(argv: Optional[list] = None) -> int:
                 print("    (or pass --materialize to spread over the mesh directly, "
                       "at full load cost)", file=sys.stderr)
                 return EXIT_NO_STORE
-            sresult = fstore.spread(store, args.seed, params["depth"], params["top"],
-                                    params["decay"], params["min_salience"])
-            if args.explains:
-                sresult["explanations"] = explanations_from_store(
-                    store, args.seed, params["depth"])
-            if args.emit_json:
-                print(json.dumps(sresult, indent=2, sort_keys=False))
-            else:
-                print(f"mesh-set (store {store.generation()}): "
-                      f"{','.join(sorted(substrates))}", file=sys.stderr)
-                _print_buckets(sresult)
+            with store:
+                sresult = fstore.spread(store, args.seed, params["depth"], params["top"],
+                                        params["decay"], params["min_salience"])
                 if args.explains:
-                    _print_explanations(sresult["explanations"])
-            if not sresult["seed_present"]:
-                print(f"seed {args.seed!r} not found in store "
-                      f"(generation {store.generation()})", file=sys.stderr)
-                return EXIT_SEED_NOT_FOUND
-            return EXIT_OK
+                    sresult["explanations"] = explanations_from_store(
+                        store, args.seed, params["depth"])
+                if args.emit_json:
+                    print(json.dumps(sresult, indent=2, sort_keys=False))
+                else:
+                    print(f"mesh-set (store {store.generation()}): "
+                          f"{','.join(sorted(substrates))}", file=sys.stderr)
+                    _print_buckets(sresult)
+                    if args.explains:
+                        _print_explanations(sresult["explanations"])
+                if not sresult["seed_present"]:
+                    print(f"seed {args.seed!r} not found in store "
+                          f"(generation {store.generation()})", file=sys.stderr)
+                    return EXIT_SEED_NOT_FOUND
+                return EXIT_OK
 
         from graphy import federated_store as fstore
         from graphy.cross_substrate import (

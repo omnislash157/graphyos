@@ -85,38 +85,37 @@ def main(argv=None) -> int:
         return 2
     tenant = _load_tenant(str(desc))
     store = fs.open_for(_roster(tenant), tenant=tenant, tenant_id="graphy", on_stale="warn")
-    cut = fanout.load_partition(HERE / "partition.json")
-    changed = changed_lines(args.base, args.head)
-    if not changed:
-        print(f"BLAST_PR: {args.base}..{args.head} touches nothing under engine/graphy/ — no radius")
+    with store:
+        cut = fanout.load_partition(HERE / "partition.json")
+        changed = changed_lines(args.base, args.head)
+        if not changed:
+            print(f"BLAST_PR: {args.base}..{args.head} touches nothing under engine/graphy/ — no radius")
+            return 0
+        hits = symbols_for(store, "graphy", changed)
+        print(f"BLAST RADIUS of {args.base[:10]}..{args.head[:10]} — {sum(len(v) for v in changed.values())} changed line(s) "
+              f"in {len(changed)} file(s) land in {len(hits)} symbol(s); store generation {store.generation()}")
+        total_dep, seen_dep = 0, set()
+        for nid in sorted(hits, key=lambda n: (-len(hits[n]), n)):
+            rec = store.record(nid) or {}
+            arm = cut.group_of(rec.get("module") or "")
+            b = doors.blast(store, nid, args.depth)
+            own = [n for n, r in b.reached.items() if r.hop > 0 and r.owner == "graphy"]
+            other = [n for n, r in b.reached.items() if r.hop > 0 and r.owner not in ("graphy", "history")]
+            said = [n for n, r in b.reached.items() if r.hop > 0 and r.owner == "history"]    # the exchanges that named it (graphyos #64)
+            e = doors.explain(store, nid, args.depth, tenant=tenant)
+            tests = [t.node.split("/", 3)[-1] for t in e.tests][: args.limit]
+            seen_dep.update(own)
+            print(f"\n  {nid}   [{arm}]   lines {', '.join(sorted(hits[nid], key=lambda s: int(s.rsplit(':', 1)[1])))[:80]}")
+            print(f"    depends on it: {len(own)} in graphy" + (f", {len(other)} in the ring" if other else "")
+                  + (f", {len(said)} conversation(s) named it" if said else "") + f" (depth {args.depth})")
+            for n in sorted(own, key=lambda n: b.reached[n].hop)[: args.limit]:
+                print(f"      hop{b.reached[n].hop} {n.split('/', 3)[-1]}")
+            if len(own) > args.limit:
+                print(f"      … {len(own) - args.limit} more")
+            print("    tests that reach it: " + (", ".join(tests) if tests else "none the store carries"))
+        print(f"\n  in all: {len(seen_dep)} symbol(s) of graphy depend on what changed; the arms touched: "
+              + ", ".join(sorted({cut.group_of((store.record(n) or {}).get('module') or '') for n in hits})))
+        print("  (the walk decided every line above; no model did)")
         return 0
-    hits = symbols_for(store, "graphy", changed)
-    print(f"BLAST RADIUS of {args.base[:10]}..{args.head[:10]} — {sum(len(v) for v in changed.values())} changed line(s) "
-          f"in {len(changed)} file(s) land in {len(hits)} symbol(s); store generation {store.generation()}")
-    total_dep, seen_dep = 0, set()
-    for nid in sorted(hits, key=lambda n: (-len(hits[n]), n)):
-        rec = store.record(nid) or {}
-        arm = cut.group_of(rec.get("module") or "")
-        b = doors.blast(store, nid, args.depth)
-        own = [n for n, r in b.reached.items() if r.hop > 0 and r.owner == "graphy"]
-        other = [n for n, r in b.reached.items() if r.hop > 0 and r.owner not in ("graphy", "history")]
-        said = [n for n, r in b.reached.items() if r.hop > 0 and r.owner == "history"]    # the exchanges that named it (graphyos #64)
-        e = doors.explain(store, nid, args.depth, tenant=tenant)
-        tests = [t.node.split("/", 3)[-1] for t in e.tests][: args.limit]
-        seen_dep.update(own)
-        print(f"\n  {nid}   [{arm}]   lines {', '.join(sorted(hits[nid], key=lambda s: int(s.rsplit(':', 1)[1])))[:80]}")
-        print(f"    depends on it: {len(own)} in graphy" + (f", {len(other)} in the ring" if other else "")
-              + (f", {len(said)} conversation(s) named it" if said else "") + f" (depth {args.depth})")
-        for n in sorted(own, key=lambda n: b.reached[n].hop)[: args.limit]:
-            print(f"      hop{b.reached[n].hop} {n.split('/', 3)[-1]}")
-        if len(own) > args.limit:
-            print(f"      … {len(own) - args.limit} more")
-        print("    tests that reach it: " + (", ".join(tests) if tests else "none the store carries"))
-    print(f"\n  in all: {len(seen_dep)} symbol(s) of graphy depend on what changed; the arms touched: "
-          + ", ".join(sorted({cut.group_of((store.record(n) or {}).get('module') or '') for n in hits})))
-    print("  (the walk decided every line above; no model did)")
-    return 0
-
-
 if __name__ == "__main__":
     sys.exit(main())

@@ -65,16 +65,17 @@ def main(argv: list[str] | None = None) -> int:
     if module is None or not traversal.have_duckdb():
         return 0
     store = fstore.open_for(cli._roster(tenant), tenant=tenant, tenant_id=tid, on_stale="warn")
-    ids = _symbols(store, module, text)
-    uncited = [i for i in ids if i not in _cited(traversal.home_for(tenant), store.generation(), ids)]
-    if not uncited:
-        return 0
-    print(f"GATE BLOCKED: {ti['file_path']} edits {len(uncited)} symbol(s) the store knows with no walk cited "
-          f"under generation {store.generation()[:12]}. Walk first, read the path, then edit:", file=sys.stderr)
-    for i in uncited:
-        print(f"  {sys.executable} -m graphy walk --tenant {desc} --tenant-id {tid} --seed {i} --target {tid}://module/{tid}",
-              file=sys.stderr)
-    return 2
+    with store:
+        ids = _symbols(store, module, text)
+        uncited = [i for i in ids if i not in _cited(traversal.home_for(tenant), store.generation(), ids)]
+        if not uncited:
+            return 0
+        print(f"GATE BLOCKED: {ti['file_path']} edits {len(uncited)} symbol(s) the store knows with no walk cited "
+              f"under generation {store.generation()[:12]}. Walk first, read the path, then edit:", file=sys.stderr)
+        for i in uncited:
+            print(f"  {sys.executable} -m graphy walk --tenant {desc} --tenant-id {tid} --seed {i} --target {tid}://module/{tid}",
+                  file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

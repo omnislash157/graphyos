@@ -397,11 +397,12 @@ def test_GREEN_advertised_warn_command_parses(tmp_path, capsys):
     argv = _advertised_argv(err)
     assert argv[argv.index("--tenant-id") + 1] == "adv test id"
     assert argv[argv.index("--out") + 1] == str(db)
+    store.close(); warned.close()               # a held store refuses the replace on Windows (graphyos #124)
     rc = fs.main(argv)
     assert rc == 0
-    fresh = fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="adv test id",
-                        db_path=db)
-    assert fresh.generation() != served
+    with fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="adv test id",
+                     db_path=db) as fresh:
+        assert fresh.generation() != served
 
 
 def test_GREEN_advertised_refuse_command_parses(tmp_path):
@@ -422,11 +423,12 @@ def test_GREEN_advertised_refuse_command_parses(tmp_path):
     argv = _advertised_argv(msg)
     assert argv[argv.index("--tenant-id") + 1] == "adv test id"
     assert argv[argv.index("--out") + 1] == str(db)
+    store.close()                               # the refusal held nothing; this handle is the test's own (graphyos #124)
     rc = fs.main(argv)
     assert rc == 0
-    fresh = fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="adv test id",
-                        db_path=db)
-    assert fresh.generation() != served
+    with fs.open_for(["fastapi", "widgets"], tenant=tenant, tenant_id="adv test id",
+                     db_path=db) as fresh:
+        assert fresh.generation() != served
 
 
 def test_GREEN_open_for_hashes_shard_bytes_and_never_parses_them(tmp_path, monkeypatch):

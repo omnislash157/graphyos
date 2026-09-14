@@ -20,7 +20,7 @@ from pathlib import Path
 from graphy import federated_store as fstore
 from graphy.tenant import Tenant
 
-__all__ = ["BridgeError", "Side", "Hop", "BridgeResult", "open_sides", "verify_joins", "cross",
+__all__ = ["BridgeError", "Side", "Hop", "BridgeResult", "open_sides", "close_sides", "verify_joins", "cross",
            "render"]
 
 JOIN = "join"
@@ -88,21 +88,31 @@ def open_sides(pairs: list[tuple[Tenant, str]], *, on_stale: str = "refuse",
     sides: list[Side] = []
     seen_homes: dict[Path, str] = {}
     seen_ids: set[str] = set()
-    for tenant, tenant_id in pairs:
-        if not tenant_id or not tenant_id.strip():
-            raise BridgeError("every side needs a --tenant-id — graphy resolves identity only through a declared Tenant")
-        if tenant_id in seen_ids:
-            raise BridgeError(f"tenant-id {tenant_id!r} names two sides — each side of a bridge is its own tenant")
-        home = Path(tenant.data_home).resolve()
-        if home in seen_homes:
-            raise BridgeError(f"{tenant_id!r} and {seen_homes[home]!r} share the data_home {home} — "
-                              "a bridge joins two tenants, not one tenant twice")
-        roster = roster_of(tenant) if roster_of else _roster(tenant)
-        store = fstore.open_for(roster, tenant=tenant, tenant_id=tenant_id, on_stale=on_stale)
-        sides.append(Side(tenant_id=tenant_id, tenant=tenant, store=store))
-        seen_homes[home] = tenant_id
-        seen_ids.add(tenant_id)
+    try:
+        for tenant, tenant_id in pairs:
+            if not tenant_id or not tenant_id.strip():
+                raise BridgeError("every side needs a --tenant-id — graphy resolves identity only through a declared Tenant")
+            if tenant_id in seen_ids:
+                raise BridgeError(f"tenant-id {tenant_id!r} names two sides — each side of a bridge is its own tenant")
+            home = Path(tenant.data_home).resolve()
+            if home in seen_homes:
+                raise BridgeError(f"{tenant_id!r} and {seen_homes[home]!r} share the data_home {home} — "
+                                  "a bridge joins two tenants, not one tenant twice")
+            roster = roster_of(tenant) if roster_of else _roster(tenant)
+            store = fstore.open_for(roster, tenant=tenant, tenant_id=tenant_id, on_stale=on_stale)
+            sides.append(Side(tenant_id=tenant_id, tenant=tenant, store=store))
+            seen_homes[home] = tenant_id
+            seen_ids.add(tenant_id)
+    except BaseException:
+        close_sides(sides)                     # a side that refuses leaves no earlier side held (graphyos #124)
+        raise
     return sides
+
+
+def close_sides(sides: list[Side]) -> None:
+    """Release every side's store; the bridge's verb calls it on every path."""
+    for side in sides:
+        side.store.close()
 
 
 def _roster(tenant: Tenant) -> list[str]:

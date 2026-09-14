@@ -93,7 +93,7 @@
       <path d="M 838,117 L 869.5,117 L 869.5,61 L 880,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
       <g class="node" data-id="CLI">
         <rect x="40" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="106.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (148→ ·→13)</text>
+        <text x="106.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (149→ ·→13)</text>
       </g>
       <g class="node" data-id="CUT">
         <rect x="187" y="124" width="126" height="42" class="card" rx="3" stroke-width="1"/>
@@ -101,7 +101,7 @@
       </g>
       <g class="node" data-id="DOORS">
         <rect x="341" y="68" width="140" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="411" y="93.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (55→ ·→40)</text>
+        <text x="411" y="93.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (55→ ·→41)</text>
       </g>
       <g class="node" data-id="EDGE">
         <rect x="509" y="96" width="133" height="42" class="card" rx="3" stroke-width="1"/>

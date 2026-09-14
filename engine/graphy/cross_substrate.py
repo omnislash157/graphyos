@@ -807,22 +807,23 @@ def main(argv=None) -> int:
             print("    (or pass --materialize to walk the mesh directly, at full load cost)",
                   file=sys.stderr)
             return 6
-        if store.membership(args.seed) is None:
-            print(f"seed {args.seed!r} is not in this store (generation "
-                  f"{store.generation()})", file=sys.stderr)
-            return 3
-        res = fstore.path_to(store, args.seed, args.path_to, max_depth=args.depth,
-                             max_nodes=args.max_nodes)
-        hyd = None if args.hydrate == "none" else (
-            lambda nid: hydrate_from_store(store, nid,
-                                           max_bytes=args.hydrate_bytes))
-        _print_path(res, hydrator=hyd, mode=args.hydrate, max_bytes=args.hydrate_bytes)
-        if res.cursor is not None and not res.found:
-            print(f"\n  cursor (resume in generation {store.generation()}):\n"
-                  f"    {res.cursor.encode()}")
-        if res.found:
-            return 0
-        return 5 if res.stopped_by in ("max_depth", "max_nodes") else 1
+        with store:
+            if store.membership(args.seed) is None:
+                print(f"seed {args.seed!r} is not in this store (generation "
+                      f"{store.generation()})", file=sys.stderr)
+                return 3
+            res = fstore.path_to(store, args.seed, args.path_to, max_depth=args.depth,
+                                 max_nodes=args.max_nodes)
+            hyd = None if args.hydrate == "none" else (
+                lambda nid: hydrate_from_store(store, nid,
+                                               max_bytes=args.hydrate_bytes))
+            _print_path(res, hydrator=hyd, mode=args.hydrate, max_bytes=args.hydrate_bytes)
+            if res.cursor is not None and not res.found:
+                print(f"\n  cursor (resume in generation {store.generation()}):\n"
+                      f"    {res.cursor.encode()}")
+            if res.found:
+                return 0
+            return 5 if res.stopped_by in ("max_depth", "max_nodes") else 1
 
     mesh = load_set(substrates, tenant=tenant, tenant_id=args.tenant_id)
     if args.seed not in mesh.nodes:

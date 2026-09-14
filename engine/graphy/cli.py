@@ -278,20 +278,21 @@ def _cmd_walk(args: argparse.Namespace) -> int:
         print(_flatten(f"WALK REFUSED: {exc} — rebuild the store with `graphy build`"),
               file=sys.stderr)
         return 2
-    try:
-        outcome = traversal.walk(store, traversal.home_for(tenant), args.seed, args.target,
-                                 max_depth=args.max_depth, max_nodes=args.max_nodes,
-                                 save=not args.no_store)
-    except traversal.TraversalError as exc:
-        print(f"WALK REFUSED: {exc}", file=sys.stderr)
-        return 2
-    rc = _render_walk(args, outcome.result)
-    if outcome.note:
-        print(f"TRAVERSAL SKIPPED: {outcome.note} — the walk ran live and nothing was stored")
-    else:
-        print(f"TRAVERSAL: source={outcome.source} reads={outcome.reads}"
-              + (f" stored={outcome.stored}" if outcome.stored else " stored=no"))
-    return rc
+    with store:
+        try:
+            outcome = traversal.walk(store, traversal.home_for(tenant), args.seed, args.target,
+                                     max_depth=args.max_depth, max_nodes=args.max_nodes,
+                                     save=not args.no_store)
+        except traversal.TraversalError as exc:
+            print(f"WALK REFUSED: {exc}", file=sys.stderr)
+            return 2
+        rc = _render_walk(args, outcome.result)
+        if outcome.note:
+            print(f"TRAVERSAL SKIPPED: {outcome.note} — the walk ran live and nothing was stored")
+        else:
+            print(f"TRAVERSAL: source={outcome.source} reads={outcome.reads}"
+                  + (f" stored={outcome.stored}" if outcome.stored else " stored=no"))
+        return rc
 
 
 def _cmd_bridge(args: argparse.Namespace) -> int:
@@ -314,24 +315,28 @@ def _cmd_bridge(args: argparse.Namespace) -> int:
         except TenantError as exc:
             print(f"BRIDGE REFUSED: {exc}", file=sys.stderr)
             return 2
+    sides: list = []
     try:
-        sides = bridge_lane.open_sides(pairs, on_stale=args.on_stale, roster_of=_roster)
-        receipt = bridge_lane.verify_joins(sides, list(args.join or ()), roster_of=_roster,
-                                           allow_skew=args.allow_release_skew)
-    except bridge_lane.BridgeError as exc:
-        print(f"BRIDGE REFUSED: {exc}", file=sys.stderr)
-        return 2
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"BRIDGE REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
-        return 2
-    counted = [bridge_lane.Side(s.tenant_id, s.tenant, traversal.Counting(s.store)) for s in sides]
-    res = bridge_lane.cross(counted, list(args.join), args.seed, args.target,
-                            max_depth=args.max_depth, max_nodes=args.max_nodes)
-    text, rc = bridge_lane.render(res, receipt, max_depth=args.max_depth, max_nodes=args.max_nodes)
-    print(text)
-    print("BRIDGE: " + " · ".join(f"{s.tenant_id} reads={s.store.reads} generation={s.store.generation()}"
-                                  for s in counted))
-    return rc
+        try:
+            sides = bridge_lane.open_sides(pairs, on_stale=args.on_stale, roster_of=_roster)
+            receipt = bridge_lane.verify_joins(sides, list(args.join or ()), roster_of=_roster,
+                                               allow_skew=args.allow_release_skew)
+        except bridge_lane.BridgeError as exc:
+            print(f"BRIDGE REFUSED: {exc}", file=sys.stderr)
+            return 2
+        except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+            print(_flatten(f"BRIDGE REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+            return 2
+        counted = [bridge_lane.Side(s.tenant_id, s.tenant, traversal.Counting(s.store)) for s in sides]
+        res = bridge_lane.cross(counted, list(args.join), args.seed, args.target,
+                                max_depth=args.max_depth, max_nodes=args.max_nodes)
+        text, rc = bridge_lane.render(res, receipt, max_depth=args.max_depth, max_nodes=args.max_nodes)
+        print(text)
+        print("BRIDGE: " + " · ".join(f"{s.tenant_id} reads={s.store.reads} generation={s.store.generation()}"
+                                      for s in counted))
+        return rc
+    finally:
+        bridge_lane.close_sides(sides)
 
 
 def _cmd_arms(args: argparse.Namespace) -> int:
@@ -369,20 +374,21 @@ def _cmd_arms(args: argparse.Namespace) -> int:
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
         print(_flatten(f"ARMS REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
         return 2
-    tenant_dir = args.tenant_dir or f"tenants/{Path(tenant.root).name}"
-    try:
-        regions = arms_lane.render_all(store, corpus, cut, tenant_dir=tenant_dir, tenant_id=args.tenant_id)
-        if args.verify:
-            text, rc = arms_lane.render_verdicts(arms_lane.verify(regions, args.dir))
-            print(text)
-            return rc
-        done = arms_lane.generate(regions, args.dir)
-    except arms_lane.ArmsError as exc:
-        print(f"ARMS REFUSED: {exc}", file=sys.stderr)
-        return 2
-    print("ARMS OK: " + " · ".join(f"{n} {w}" for n, w in done)
-          + f" -> {args.dir} (store {store.generation()}, cut sha256:{(cut.sha256 or '')[:12]}…)")
-    return 0
+    with store:
+        tenant_dir = args.tenant_dir or f"tenants/{Path(tenant.root).name}"
+        try:
+            regions = arms_lane.render_all(store, corpus, cut, tenant_dir=tenant_dir, tenant_id=args.tenant_id)
+            if args.verify:
+                text, rc = arms_lane.render_verdicts(arms_lane.verify(regions, args.dir))
+                print(text)
+                return rc
+            done = arms_lane.generate(regions, args.dir)
+        except arms_lane.ArmsError as exc:
+            print(f"ARMS REFUSED: {exc}", file=sys.stderr)
+            return 2
+        print("ARMS OK: " + " · ".join(f"{n} {w}" for n, w in done)
+              + f" -> {args.dir} (store {store.generation()}, cut sha256:{(cut.sha256 or '')[:12]}…)")
+        return 0
 
 
 def _cmd_farm(args: argparse.Namespace) -> int:
@@ -458,49 +464,50 @@ def _cmd_draw(args: argparse.Namespace) -> int:
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
         print(_flatten(f"DRAW REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
         return 2
-    counted = traversal.Counting(store)
-    counted.find = store.find
-    counted.owned, counted.edges = store.owned, store.edges
-    try:
-        if args.atlas:
-            if not args.partition:
-                print("DRAW REFUSED: --atlas needs --partition — the arms are the partition's groups", file=sys.stderr)
-                return 2
-            cut = fanout.load_partition(args.partition)
-            r = draw_lane.atlas(counted, corpus, cut, args.atlas, lr=args.lr, min_weight=args.min_weight)
-            print(f"ATLAS OK: {len(r['pictures'])} picture(s) × ascii+html -> {args.atlas} (generation {r['generation']})")
-            return 0
-        if args.symbol:
-            seed = doors.resolve(counted, args.symbol)
-            pic = draw_lane.neighbourhood(counted, seed, radius=args.radius, max_nodes=args.max_nodes)
-        elif args.arm:
-            if not args.partition:
-                print("DRAW REFUSED: --arm needs --partition", file=sys.stderr)
-                return 2
-            pic = draw_lane.arm(counted, corpus, fanout.load_partition(args.partition), args.arm, min_weight=args.min_weight)
-        elif args.pillars:
-            if not args.partition:
-                print("DRAW REFUSED: --pillars needs --partition", file=sys.stderr)
-                return 2
-            pic = draw_lane.pillars(counted, corpus, fanout.load_partition(args.partition), min_weight=args.min_weight)
-        else:
-            pic = draw_lane.units(counted, corpus, depth=args.depth, min_weight=args.min_weight)
-        text = draw_lane.render(pic, emit=args.emit, lr=args.lr, color=(args.emit == "ascii" and not args.out and args.color),
-                                interactive=args.interactive, title=args.title)
-    except (draw_lane.DrawError, doors.DoorError, fanout.FanoutError) as exc:
-        print(f"DRAW UNANSWERABLE: {exc}", file=sys.stderr)
-        return 1
-    if args.out:
-        Path(args.out).write_text(text, encoding="utf-8")
-        line = f"DRAW OK: {pic.summary()} -> {args.out}"
-        if args.emit in ("html", "svg"):
-            red = sugi.check_artifact(args.out)
-            line += " · CHECK " + ("GREEN" if not red else "RED " + "; ".join(red))
-        print(line)
-        return 0 if not (args.emit in ("html", "svg") and red) else 1
-    print(text)
-    print(f"DRAW: {pic.summary()} reads={counted.reads} generation={store.generation()}")
-    return 0
+    with store:
+        counted = traversal.Counting(store)
+        counted.find = store.find
+        counted.owned, counted.edges = store.owned, store.edges
+        try:
+            if args.atlas:
+                if not args.partition:
+                    print("DRAW REFUSED: --atlas needs --partition — the arms are the partition's groups", file=sys.stderr)
+                    return 2
+                cut = fanout.load_partition(args.partition)
+                r = draw_lane.atlas(counted, corpus, cut, args.atlas, lr=args.lr, min_weight=args.min_weight)
+                print(f"ATLAS OK: {len(r['pictures'])} picture(s) × ascii+html -> {args.atlas} (generation {r['generation']})")
+                return 0
+            if args.symbol:
+                seed = doors.resolve(counted, args.symbol)
+                pic = draw_lane.neighbourhood(counted, seed, radius=args.radius, max_nodes=args.max_nodes)
+            elif args.arm:
+                if not args.partition:
+                    print("DRAW REFUSED: --arm needs --partition", file=sys.stderr)
+                    return 2
+                pic = draw_lane.arm(counted, corpus, fanout.load_partition(args.partition), args.arm, min_weight=args.min_weight)
+            elif args.pillars:
+                if not args.partition:
+                    print("DRAW REFUSED: --pillars needs --partition", file=sys.stderr)
+                    return 2
+                pic = draw_lane.pillars(counted, corpus, fanout.load_partition(args.partition), min_weight=args.min_weight)
+            else:
+                pic = draw_lane.units(counted, corpus, depth=args.depth, min_weight=args.min_weight)
+            text = draw_lane.render(pic, emit=args.emit, lr=args.lr, color=(args.emit == "ascii" and not args.out and args.color),
+                                    interactive=args.interactive, title=args.title)
+        except (draw_lane.DrawError, doors.DoorError, fanout.FanoutError) as exc:
+            print(f"DRAW UNANSWERABLE: {exc}", file=sys.stderr)
+            return 1
+        if args.out:
+            Path(args.out).write_text(text, encoding="utf-8")
+            line = f"DRAW OK: {pic.summary()} -> {args.out}"
+            if args.emit in ("html", "svg"):
+                red = sugi.check_artifact(args.out)
+                line += " · CHECK " + ("GREEN" if not red else "RED " + "; ".join(red))
+            print(line)
+            return 0 if not (args.emit in ("html", "svg") and red) else 1
+        print(text)
+        print(f"DRAW: {pic.summary()} reads={counted.reads} generation={store.generation()}")
+        return 0
 
 
 def _cmd_showcase(args: argparse.Namespace) -> int:
@@ -592,30 +599,31 @@ def _cmd_door(args: argparse.Namespace) -> int:
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
         print(_flatten(f"{verb} REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
         return 2
-    counted = traversal.Counting(store)
-    counted.find = store.find
-    try:
-        seed = doors.resolve(counted, args.symbol)
-    except doors.DoorError as exc:
-        print(f"{verb} UNANSWERABLE: {exc}", file=sys.stderr)
-        return 1
-    if args.door == "explain":
-        print(doors.render_explain(doors.explain(counted, seed, args.depth, tenant=tenant), args.limit))
-        print(f"DOOR: {args.door} reads={counted.reads} generation={store.generation()}")
+    with store:
+        counted = traversal.Counting(store)
+        counted.find = store.find
+        try:
+            seed = doors.resolve(counted, args.symbol)
+        except doors.DoorError as exc:
+            print(f"{verb} UNANSWERABLE: {exc}", file=sys.stderr)
+            return 1
+        if args.door == "explain":
+            print(doors.render_explain(doors.explain(counted, seed, args.depth, tenant=tenant), args.limit))
+            print(f"DOOR: {args.door} reads={counted.reads} generation={store.generation()}")
+            return 0
+        try:                                   # descend and blast land their rows and recall them (graphyos #111)
+            o = traversal.door(store, traversal.home_for(tenant), args.door, seed, args.depth, save=not args.no_store)
+        except (traversal.TraversalError, OSError) as exc:
+            print(_flatten(f"{verb} REFUSED: {exc}"), file=sys.stderr)
+            return 2
+        render = doors.render_descend if args.door == "descend" else doors.render_blast
+        print(render(o.result, args.limit))
+        print(f"DOOR: {args.door} reads={o.reads} generation={store.generation()}")
+        if o.note:
+            print(f"TRAVERSAL SKIPPED: {o.note} — the door ran live and nothing was stored")
+        else:
+            print(f"TRAVERSAL: source={o.source} reads={o.reads}" + (f" stored={o.stored}" if o.stored else " stored=no"))
         return 0
-    try:                                   # descend and blast land their rows and recall them (graphyos #111)
-        o = traversal.door(store, traversal.home_for(tenant), args.door, seed, args.depth, save=not args.no_store)
-    except (traversal.TraversalError, OSError) as exc:
-        print(_flatten(f"{verb} REFUSED: {exc}"), file=sys.stderr)
-        return 2
-    render = doors.render_descend if args.door == "descend" else doors.render_blast
-    print(render(o.result, args.limit))
-    print(f"DOOR: {args.door} reads={o.reads} generation={store.generation()}")
-    if o.note:
-        print(f"TRAVERSAL SKIPPED: {o.note} — the door ran live and nothing was stored")
-    else:
-        print(f"TRAVERSAL: source={o.source} reads={o.reads}" + (f" stored={o.stored}" if o.stored else " stored=no"))
-    return 0
 
 
 def _cmd_recon(args: argparse.Namespace) -> int:
@@ -643,20 +651,21 @@ def _cmd_recon(args: argparse.Namespace) -> int:
     except (fstore.StoreError, OSError) as exc:
         print(_flatten(f"RECON REFUSED: {exc} — build the store with `graphy build`"), file=sys.stderr)
         return 2
-    try:
-        data = recon_lane.recon(store, tenant, args.tenant_id)
-    except recon_lane.ReconError as exc:
-        print(f"RECON REFUSED: {exc}", file=sys.stderr)
-        return 2
-    out = Path(args.out).expanduser().resolve() if args.out else recon_lane.default_out(tenant)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(recon_lane.render(data, descriptor=str(Path(args.tenant).resolve()),
-                                     tenant_id=args.tenant_id), encoding="utf-8", newline="\n")
-    shaped = sum(1 for s in data["sections"] if s["shape"])
-    flat = len(data["sections"]) - shaped
-    print(f"RECON OK: {len(data['corpora'])} corpus/corpora — {shaped} with a pillar shape, "
-          f"{flat} by census · store {data['generation']} -> {out} ({out.stat().st_size:,} B)")
-    return 0
+    with store:
+        try:
+            data = recon_lane.recon(store, tenant, args.tenant_id)
+        except recon_lane.ReconError as exc:
+            print(f"RECON REFUSED: {exc}", file=sys.stderr)
+            return 2
+        out = Path(args.out).expanduser().resolve() if args.out else recon_lane.default_out(tenant)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(recon_lane.render(data, descriptor=str(Path(args.tenant).resolve()),
+                                         tenant_id=args.tenant_id), encoding="utf-8", newline="\n")
+        shaped = sum(1 for s in data["sections"] if s["shape"])
+        flat = len(data["sections"]) - shaped
+        print(f"RECON OK: {len(data['corpora'])} corpus/corpora — {shaped} with a pillar shape, "
+              f"{flat} by census · store {data['generation']} -> {out} ({out.stat().st_size:,} B)")
+        return 0
 
 
 def _cmd_pillars(args: argparse.Namespace) -> int:
@@ -692,53 +701,54 @@ def _cmd_pillars(args: argparse.Namespace) -> int:
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
         print(_flatten(f"PILLARS REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
         return 2
-    try:
-        # An explicit --depth pins the cut and disables the escalation, so today's behaviour stays
-        # reachable; without one the door deepens to --max-depth rather than telling a caller to do
-        # by hand what it just worked out for them (graphyos #75).
-        graph, proposal, at_depth = pillars_lane.shape(
-            store, corpus, depth=args.depth, max_depth=args.max_depth,
-            arms=args.arms, floor=args.floor, owned=args.owned, client=args.client, rest=args.rest)
-    except pillars_lane.PillarsArgumentError as exc:
-        # A caller error is never answered with a different door's output: asking for one arm is a
-        # typo, not a lane without a shape, and the census would silently reward it (graphyos #76).
-        print(f"PILLARS UNANSWERABLE: {exc}", file=sys.stderr)
-        return 1
-    except pillars_lane.PillarsError as exc:
-        # A lane with no orchestrator is not a lane with nothing in it. The refusal is correct — a
-        # table does not call another table — and on its own it is useless, because the engine
-        # already wrote down what the lane holds. Falling back to that census is a better answer
-        # than an empty-handed refusal, and it says which one it gave (graphyos #76).
+    with store:
         try:
-            c = pillars_lane.census(tenant.data_home, corpus)
-        except pillars_lane.PillarsError:
+            # An explicit --depth pins the cut and disables the escalation, so today's behaviour stays
+            # reachable; without one the door deepens to --max-depth rather than telling a caller to do
+            # by hand what it just worked out for them (graphyos #75).
+            graph, proposal, at_depth = pillars_lane.shape(
+                store, corpus, depth=args.depth, max_depth=args.max_depth,
+                arms=args.arms, floor=args.floor, owned=args.owned, client=args.client, rest=args.rest)
+        except pillars_lane.PillarsArgumentError as exc:
+            # A caller error is never answered with a different door's output: asking for one arm is a
+            # typo, not a lane without a shape, and the census would silently reward it (graphyos #76).
             print(f"PILLARS UNANSWERABLE: {exc}", file=sys.stderr)
             return 1
-        print(f"PILLARS: no pillar shape for {corpus!r} — {exc}")
-        print(f"PILLARS GAVE THE CENSUS INSTEAD: this lane has structure, it is not a call graph")
-        print(pillars_lane.render_census(c))
+        except pillars_lane.PillarsError as exc:
+            # A lane with no orchestrator is not a lane with nothing in it. The refusal is correct — a
+            # table does not call another table — and on its own it is useless, because the engine
+            # already wrote down what the lane holds. Falling back to that census is a better answer
+            # than an empty-handed refusal, and it says which one it gave (graphyos #76).
+            try:
+                c = pillars_lane.census(tenant.data_home, corpus)
+            except pillars_lane.PillarsError:
+                print(f"PILLARS UNANSWERABLE: {exc}", file=sys.stderr)
+                return 1
+            print(f"PILLARS: no pillar shape for {corpus!r} — {exc}")
+            print(f"PILLARS GAVE THE CENSUS INSTEAD: this lane has structure, it is not a call graph")
+            print(pillars_lane.render_census(c))
+            print(f"DOOR: pillars generation={store.generation()}")
+            return 0
+        if args.depth is None and at_depth != pillars_lane.DEFAULT_DEPTH:
+            print(f"PILLARS: cut escalated to depth {at_depth} — the default {pillars_lane.DEFAULT_DEPTH} "
+                  f"yielded no orchestrator for this corpus")
+        print(pillars_lane.render(proposal, graph))
+        if args.write:
+            doc = pillars_lane.to_partition(proposal)
+            pillars_lane.write_partition(args.write, doc)
+            print(f"PILLARS WROTE: {args.write} — {len(doc['groups'])} group(s), rest={doc['rest']}; "
+                  f"cut the shard by it with `graphy fanout --partition`")
         print(f"DOOR: pillars generation={store.generation()}")
+        if args.against:
+            try:
+                cut = fanout.load_partition(args.against)
+            except fanout.FanoutError as exc:
+                print(f"PILLARS REFUSED: {exc}", file=sys.stderr)
+                return 2
+            moved = pillars_lane.diff(proposal, cut)
+            print(pillars_lane.render_diff(moved, args.against))
+            return 1 if moved else 0
         return 0
-    if args.depth is None and at_depth != pillars_lane.DEFAULT_DEPTH:
-        print(f"PILLARS: cut escalated to depth {at_depth} — the default {pillars_lane.DEFAULT_DEPTH} "
-              f"yielded no orchestrator for this corpus")
-    print(pillars_lane.render(proposal, graph))
-    if args.write:
-        doc = pillars_lane.to_partition(proposal)
-        pillars_lane.write_partition(args.write, doc)
-        print(f"PILLARS WROTE: {args.write} — {len(doc['groups'])} group(s), rest={doc['rest']}; "
-              f"cut the shard by it with `graphy fanout --partition`")
-    print(f"DOOR: pillars generation={store.generation()}")
-    if args.against:
-        try:
-            cut = fanout.load_partition(args.against)
-        except fanout.FanoutError as exc:
-            print(f"PILLARS REFUSED: {exc}", file=sys.stderr)
-            return 2
-        moved = pillars_lane.diff(proposal, cut)
-        print(pillars_lane.render_diff(moved, args.against))
-        return 1 if moved else 0
-    return 0
 
 
 def _cmd_refresh(args: argparse.Namespace) -> int:
@@ -834,7 +844,8 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         return 2
     print(f"graphy mcp: serving tenant {args.tenant_id!r} generation {tools.generation} on stdio "
           f"({', '.join(t['name'] for t in mcp_server.TOOLS)})", file=sys.stderr)
-    return mcp_server.serve(tools)
+    with tools:
+        return mcp_server.serve(tools)
 
 
 def _recall(args: argparse.Namespace, store, home, live: str) -> int:
@@ -894,48 +905,49 @@ def _cmd_traversals(args: argparse.Namespace) -> int:
     except fstore.StoreError as exc:
         print(_flatten(f"TRAVERSALS REFUSED: {exc}"), file=sys.stderr)
         return 2
-    live = store.generation()
-    if args.seed or args.target:
-        if args.replay or (args.seed and args.target):
-            print("TRAVERSALS REFUSED: a recall takes one of --seed or --target, and never --replay", file=sys.stderr)
+    with store:
+        live = store.generation()
+        if args.seed or args.target:
+            if args.replay or (args.seed and args.target):
+                print("TRAVERSALS REFUSED: a recall takes one of --seed or --target, and never --replay", file=sys.stderr)
+                return 2
+            return _recall(args, store, home, live)
+        if not args.replay:
+            n, vocab = 0, traversal.vocabulary(store)
+            for gen_dir in sorted(p for p in home.iterdir() if p.is_dir()) if home.is_dir() else []:
+                for seed, rp in traversal.stored(home, gen_dir.name).items():
+                    r = json.loads(rp.read_text(encoding="utf-8"))
+                    tag = "live" if gen_dir.name == live else "past"
+                    print(f"  {tag} {gen_dir.name[:12]}  {seed} -> {r['target']}  hops={r['hops']} "
+                          f"rows={r['rows']} exhausted={r['exhausted']} reads={r['reads']}")
+                    n += 1
+                for r in traversal.stored_doors(home, gen_dir.name):
+                    tag = "past" if gen_dir.name != live else "live" if r.get("vocabulary") == vocab else "stale-vocab"
+                    print(f"  {tag} {gen_dir.name[:12]}  {r['door']} {r['seed']}  depth={r['depth']} rows={r['rows']} reads={r['reads']}")
+                    n += 1
+            print(f"TRAVERSALS OK: {n} stored traversal(s) under {home} (live generation {live[:12]})")
+            return 0
+        try:
+            reports = traversal.replay(store, home)
+        except traversal.TraversalError as exc:
+            print(f"TRAVERSALS REFUSED: {exc}", file=sys.stderr)
             return 2
-        return _recall(args, store, home, live)
-    if not args.replay:
-        n, vocab = 0, traversal.vocabulary(store)
-        for gen_dir in sorted(p for p in home.iterdir() if p.is_dir()) if home.is_dir() else []:
-            for seed, rp in traversal.stored(home, gen_dir.name).items():
-                r = json.loads(rp.read_text(encoding="utf-8"))
-                tag = "live" if gen_dir.name == live else "past"
-                print(f"  {tag} {gen_dir.name[:12]}  {seed} -> {r['target']}  hops={r['hops']} "
-                      f"rows={r['rows']} exhausted={r['exhausted']} reads={r['reads']}")
-                n += 1
-            for r in traversal.stored_doors(home, gen_dir.name):
-                tag = "past" if gen_dir.name != live else "live" if r.get("vocabulary") == vocab else "stale-vocab"
-                print(f"  {tag} {gen_dir.name[:12]}  {r['door']} {r['seed']}  depth={r['depth']} rows={r['rows']} reads={r['reads']}")
-                n += 1
-        print(f"TRAVERSALS OK: {n} stored traversal(s) under {home} (live generation {live[:12]})")
-        return 0
-    try:
-        reports = traversal.replay(store, home)
-    except traversal.TraversalError as exc:
-        print(f"TRAVERSALS REFUSED: {exc}", file=sys.stderr)
-        return 2
-    broken_total = 0
-    for rep in reports:
-        broken_total += len(rep["broken"])
-        state = "HOLDS" if not rep["broken"] else "BROKEN"
-        print(f"  {state} {rep['generation'][:12]} -> {rep['live'][:12]}  {rep['seed']} -> {rep['target']}  "
-              f"hops_checked={rep['hops_checked']} broken={len(rep['broken'])} on_path={len(rep['path_broken'])}")
-        for b in rep["broken"][: args.limit]:
-            print(f"      hop {b['hop']}: {b['via_src']} -[{b['relation']}]-> {b['node']}  ({b['why']})")
-        if len(rep["broken"]) > args.limit:
-            print(f"      … {len(rep['broken']) - args.limit} more (raise --limit)")
-    if not reports:
-        print(f"TRAVERSALS REPLAY OK: no stored walk from a past generation under {home}")
-        return 0
-    print(f"TRAVERSALS REPLAY {'OK' if not broken_total else 'BROKEN'}: {len(reports)} past walk(s), "
-          f"{broken_total} broken hop(s) against live generation {live[:12]}")
-    return 0 if not broken_total else 1
+        broken_total = 0
+        for rep in reports:
+            broken_total += len(rep["broken"])
+            state = "HOLDS" if not rep["broken"] else "BROKEN"
+            print(f"  {state} {rep['generation'][:12]} -> {rep['live'][:12]}  {rep['seed']} -> {rep['target']}  "
+                  f"hops_checked={rep['hops_checked']} broken={len(rep['broken'])} on_path={len(rep['path_broken'])}")
+            for b in rep["broken"][: args.limit]:
+                print(f"      hop {b['hop']}: {b['via_src']} -[{b['relation']}]-> {b['node']}  ({b['why']})")
+            if len(rep["broken"]) > args.limit:
+                print(f"      … {len(rep['broken']) - args.limit} more (raise --limit)")
+        if not reports:
+            print(f"TRAVERSALS REPLAY OK: no stored walk from a past generation under {home}")
+            return 0
+        print(f"TRAVERSALS REPLAY {'OK' if not broken_total else 'BROKEN'}: {len(reports)} past walk(s), "
+              f"{broken_total} broken hop(s) against live generation {live[:12]}")
+        return 0 if not broken_total else 1
 
 
 def _render_walk(args: argparse.Namespace, result) -> int:
@@ -1114,7 +1126,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     else:
         try:
             fstore.open_for(substrates, tenant=tenant, tenant_id=args.tenant_id,
-                            on_stale="refuse")
+                            on_stale="refuse").close()      # the audit asks whether it opens, and holds nothing
         except fstore.StoreError as exc:
             findings.append((
                 "RED",
@@ -1319,19 +1331,20 @@ def _cmd_timeline(args: argparse.Namespace) -> int:
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
         print(_flatten(f"HISTORY REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
         return 2
-    from graphy import timeline as timeline_lane          # after every refusal: lightning says so on stderr when rg is absent
-    from graphy.lightning.archive import sessions_dir
-    try:
-        if args.symbol:                                    # --sessions names the archive's captures the shard lacks
-            t = timeline_lane.timeline_symbol(store, args.symbol, Path(args.sessions).expanduser() if args.sessions else None)
-        else:
-            corpus = Path(args.sessions).expanduser() if args.sessions else sessions_dir()
-            t = timeline_lane.timeline(store, args.terms[0], args.partner, corpus, window=args.window)
-    except timeline_lane.TimelineError as exc:
-        print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
-        return 2
-    print(timeline_lane.render(t))
-    return 0 if t.sessions else 1
+    with store:
+        from graphy import timeline as timeline_lane          # after every refusal: lightning says so on stderr when rg is absent
+        from graphy.lightning.archive import sessions_dir
+        try:
+            if args.symbol:                                    # --sessions names the archive's captures the shard lacks
+                t = timeline_lane.timeline_symbol(store, args.symbol, Path(args.sessions).expanduser() if args.sessions else None)
+            else:
+                corpus = Path(args.sessions).expanduser() if args.sessions else sessions_dir()
+                t = timeline_lane.timeline(store, args.terms[0], args.partner, corpus, window=args.window)
+        except timeline_lane.TimelineError as exc:
+            print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
+            return 2
+        print(timeline_lane.render(t))
+        return 0 if t.sessions else 1
 
 
 def _cmd_history(args: argparse.Namespace) -> int:

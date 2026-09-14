@@ -328,42 +328,49 @@ class SQLiteStore:
         if not p.is_file():
             raise StoreError(f"no compiled store at {p} — build it with `compile_store`")
         self._db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
-        self._owned_cache: dict[str, list] = {}
-        self._edges_cache: list | None = None
-        meta = dict(self._db.execute("SELECT k, v FROM meta"))
-        if "generation" not in meta:
-            raise StoreError(f"store at {p} carries no generation row — refusing to serve "
-                             f"a snapshot that cannot be invalidated")
-        got = meta.get("generation_format")
-        if got != str(GENERATION_FORMAT):
-            raise StoreError(
-                f"store at {p} was compiled under generation format "
-                f"{got or '<pre-versioning>'}; this build speaks {GENERATION_FORMAT}. Its "
-                f"generations are not comparable with ours — recompile with `compile_store`")
-        if "input_digest" not in meta:
-            raise StoreError(f"store at {p} carries no input_digest row — refusing to "
-                             f"serve a snapshot whose freshness cannot be measured; "
-                             f"recompile with `compile_store`")
-        self._input_digest = meta["input_digest"]
+        # A store the constructor refuses is a store nobody holds: every raise below — no generation row,
+        # a foreign format, no digest — is the advertised `recompile`, which on Windows cannot replace a
+        # file this handle still holds (graphyos #124 round 1).
         try:
-            fmt = json.loads(self._input_digest).get(_INPUT_DIGEST_FORMAT_KEY)
-        except (ValueError, AttributeError):
-            fmt = None
-        if fmt != INPUT_DIGEST_FORMAT:
-            raise StoreError(
-                f"store at {p} measures its inputs under digest format "
-                f"{fmt or '<pre-versioning>'}; this build speaks {INPUT_DIGEST_FORMAT} "
-                f"(the bytes hashed, never parsed). Its freshness cannot be compared with "
-                f"ours — recompile with `compile_store`")
-        self._gen = meta["generation"]
-        try:                                   # a store compiled before graphyos #68 has no row
-            self.relations = json.loads(meta.get(RELATIONS_META) or "{}")
-        except ValueError:
-            self.relations = {}
-        try:                                   # a store compiled before graphyos #86 has no row
-            self.doc_declaration = json.loads(meta.get(DOC_META) or "{}")
-        except ValueError:
-            self.doc_declaration = {}
+            self._owned_cache: dict[str, list] = {}
+            self._edges_cache: list | None = None
+            meta = dict(self._db.execute("SELECT k, v FROM meta"))
+            if "generation" not in meta:
+                raise StoreError(f"store at {p} carries no generation row — refusing to serve "
+                                 f"a snapshot that cannot be invalidated")
+            got = meta.get("generation_format")
+            if got != str(GENERATION_FORMAT):
+                raise StoreError(
+                    f"store at {p} was compiled under generation format "
+                    f"{got or '<pre-versioning>'}; this build speaks {GENERATION_FORMAT}. Its "
+                    f"generations are not comparable with ours — recompile with `compile_store`")
+            if "input_digest" not in meta:
+                raise StoreError(f"store at {p} carries no input_digest row — refusing to "
+                                 f"serve a snapshot whose freshness cannot be measured; "
+                                 f"recompile with `compile_store`")
+            self._input_digest = meta["input_digest"]
+            try:
+                fmt = json.loads(self._input_digest).get(_INPUT_DIGEST_FORMAT_KEY)
+            except (ValueError, AttributeError):
+                fmt = None
+            if fmt != INPUT_DIGEST_FORMAT:
+                raise StoreError(
+                    f"store at {p} measures its inputs under digest format "
+                    f"{fmt or '<pre-versioning>'}; this build speaks {INPUT_DIGEST_FORMAT} "
+                    f"(the bytes hashed, never parsed). Its freshness cannot be compared with "
+                    f"ours — recompile with `compile_store`")
+            self._gen = meta["generation"]
+            try:                                   # a store compiled before graphyos #68 has no row
+                self.relations = json.loads(meta.get(RELATIONS_META) or "{}")
+            except ValueError:
+                self.relations = {}
+            try:                                   # a store compiled before graphyos #86 has no row
+                self.doc_declaration = json.loads(meta.get(DOC_META) or "{}")
+            except ValueError:
+                self.doc_declaration = {}
+        except BaseException:
+            self._db.close()
+            raise
 
     def generation(self) -> str:
         return self._gen
@@ -428,7 +435,16 @@ class SQLiteStore:
         yield from rows
 
     def close(self) -> None:
+        """Release the file. Idempotent, and every verb calls it on every path (``with store:``):
+        on Windows a store a process still holds cannot be renamed or replaced, so a handle a
+        verb left open was the next rebuild's sharing violation (graphyos #124)."""
         self._db.close()
+
+    def __enter__(self) -> "SQLiteStore":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
 
 def store_path_for(substrates: list[str], *, tenant: Tenant | None = None) -> Path:
@@ -763,33 +779,40 @@ def open_for(substrates: list[str], *, tenant: Tenant | None = None,
             f"    A query never builds one (walk-kernel Rung 4: no query-time writes).\n"
             f"    Build it:  {_repair_hint(substrates, tenant, tenant_id, p)}")
     store = SQLiteStore(p)
-
-    live_input_digest = _compute_input_digest(substrates, tenant=tenant)
-    if live_input_digest == store._input_digest:
-        return store
-
+    # A refusal hands back no store, so it holds none: the handle would otherwise ride out in the
+    # traceback, and the recompile every refusal below advertises could not replace the file on
+    # Windows (graphyos #124; round 1 found the digest's own refusal outside the first guard).
     try:
-        live_gen = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id).generation()
-    except (OSError, ValueError) as exc:
-        raise StoreError(
-            f"inputs for roster {sorted(substrates)} changed AND the live shards cannot "
-            f"be materialized to compare generations ({type(exc).__name__}: {exc}) — "
-            f"refusing to serve") from exc
-    served_gen = store.generation()
-    if live_gen == served_gen:
-        return store
 
-    if on_stale == "warn":
-        print(f"graphy.federated_store: store for {sorted(substrates)} is STALE — serving generation "
-              f"{served_gen} while the live shards digest to {live_gen}.\n"
-              f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}",
-              file=sys.stderr)
-        return store
-    raise StoreError(
-        f"compiled store for roster {sorted(substrates)} at {p} is STALE: it serves "
-        f"generation {served_gen} but the live shards digest to {live_gen}.\n"
-        f"    A query never rebuilds one (walk-kernel Rung 4: no query-time writes).\n"
-        f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}")
+        live_input_digest = _compute_input_digest(substrates, tenant=tenant)
+        if live_input_digest == store._input_digest:
+            return store
+
+        try:
+            live_gen = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id).generation()
+        except (OSError, ValueError) as exc:
+            raise StoreError(
+                f"inputs for roster {sorted(substrates)} changed AND the live shards cannot "
+                f"be materialized to compare generations ({type(exc).__name__}: {exc}) — "
+                f"refusing to serve") from exc
+        served_gen = store.generation()
+        if live_gen == served_gen:
+            return store
+
+        if on_stale == "warn":
+            print(f"graphy.federated_store: store for {sorted(substrates)} is STALE — serving generation "
+                  f"{served_gen} while the live shards digest to {live_gen}.\n"
+                  f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}",
+                  file=sys.stderr)
+            return store
+        raise StoreError(
+            f"compiled store for roster {sorted(substrates)} at {p} is STALE: it serves "
+            f"generation {served_gen} but the live shards digest to {live_gen}.\n"
+            f"    A query never rebuilds one (walk-kernel Rung 4: no query-time writes).\n"
+            f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}")
+    except BaseException:
+        store.close()
+        raise
 
 
 def _repair_hint(substrates, tenant, tenant_id: str, p) -> str:

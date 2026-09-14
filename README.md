@@ -145,7 +145,10 @@ away. The hooks, `shell install` and the MCP pointer are bash, so WSL is still t
 What is proven on the platform on every push is the store lane — CI's `store-windows` job runs the
 `durable` mark, so the defect that wrote no store at all there can never come back silently
 (graphyos #77) — and the lock: every lock the engine takes (journal, index, fan-out, inventory, registry) is `msvcrt.locking` there, and
-the same job proves a concurrent append blocks instead of minting a duplicate seq (graphyos #122).
+the same job proves a concurrent append blocks instead of minting a duplicate seq (graphyos #122) — and
+the handles: every verb closes the store it opened before it returns, so the rename or replace that
+follows it (a re-eat landing, a rebuild pruning, the recompile a stale refusal advertises) is never a
+sharing violation there, and the job renames the home after an eat to prove it (graphyos #124).
 `[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build
 says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the TypeScript
 and JavaScript producer.

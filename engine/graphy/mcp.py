@@ -78,6 +78,17 @@ class Doors:
         self.store, self.tenant, self.tenant_id = store, tenant, tenant_id
         self.generation = store.generation()
 
+    def close(self) -> None:
+        """The server's one store, released when the server stops: a long-lived process that kept
+        it would refuse every rebuild's rename on Windows (graphyos #124)."""
+        self.store.close()
+
+    def __enter__(self) -> "Doors":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
     def _counted(self):
         c = traversal.Counting(self.store)
         c.find = self.store.find
@@ -237,23 +248,26 @@ def handle(msg: dict, tools: Doors) -> dict | None:
 def serve(tools: Doors, inp: io.TextIOBase | None = None, out: io.TextIOBase | None = None) -> int:
     inp = inp or sys.stdin
     out = out or sys.stdout
-    for line in inp:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except ValueError:
-            out.write(json.dumps(_error(None, -32700, "parse error")) + "\n"); out.flush()
-            continue
-        if not isinstance(msg, dict):
-            out.write(json.dumps(_error(None, -32600, "invalid request")) + "\n"); out.flush()
-            continue
-        reply = handle(msg, tools)
-        if reply is not None:
-            out.write(json.dumps(reply, ensure_ascii=False) + "\n")
-            out.flush()
-    return 0
+    try:
+        for line in inp:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                out.write(json.dumps(_error(None, -32700, "parse error")) + "\n"); out.flush()
+                continue
+            if not isinstance(msg, dict):
+                out.write(json.dumps(_error(None, -32600, "invalid request")) + "\n"); out.flush()
+                continue
+            reply = handle(msg, tools)
+            if reply is not None:
+                out.write(json.dumps(reply, ensure_ascii=False) + "\n")
+                out.flush()
+        return 0
+    finally:
+        tools.close()                      # the server's store lives exactly as long as its input (graphyos #124)
 
 
 def open_tools(tenant, tenant_id: str, roster: list[str], on_stale: str = "refuse") -> Doors:
