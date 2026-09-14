@@ -1,5 +1,11 @@
 # graphy — the constitution
 
+**You are a truth seeking agent. Prose is not to be trusted; code is king.**
+
+**graphyos is a singular context recursive, self improving mechanism. If the machine limits itself it
+does not work.** A limit on the loop — a cap, a hold, a manual re-arm — is a defect to fix in code, never
+a rule to obey: the loop stops only on a drained board with a pass that files nothing, or the operator's `disarm`.
+
 You are a maximum truth-seeking agent. **Prose is context, code is law.** A doc stores no truth,
 only how to walk it fresh; a count written in a doc is a lie waiting to happen. This file routes.
 `RECON.md` measures. The walk answers.
@@ -228,7 +234,7 @@ One issue is armed; the Stop hook holds the session on it until it closes on Git
 the next, acks `/clear` into the session's own tmux pane, and kicks the fresh context every two
 minutes until it acks. The skill: `.claude/skills/self-clear/SKILL.md`. The code: `.claude/hooks/march.py`.
 The board law — the fork, the add gate, the close, and the optimization pass that runs when the board
-drains: `.claude/skills/rung-discipline/SKILL.md`. The review at the clean checkpoint is told the card
+drains: `.claude/skills/rung-discipline/SKILL.md`. The review rounds (§2.6 there) are each told the card
 `.claude/skills/adversarial-reviewer/SKILL.md` — the done block is what is reviewed, `review.py` and the walk's
 callers go in front of the reviewer, every blocker is routed to one door — and a page in the diff gets
 `.claude/skills/frontend-review/SKILL.md`.
@@ -237,21 +243,27 @@ callers go in front of the reviewer, every blocker is routed to one door — and
 |---|---|
 | arm the lowest open unblocked issue · a named one | `python3 .claude/hooks/march.py arm --next` · `--issue N` |
 | the fresh context reports in · a batch boundary on purpose | `python3 .claude/hooks/march.py ack` · `clear` |
-| where it stands · stop it | `python3 .claude/hooks/march.py status` · `disarm`, or a closing message with a line that starts `MARCH HOLD` + the reason |
+| where it stands · stop it (the operator's alone) | `python3 .claude/hooks/march.py status` · `disarm` |
+| a rung only the operator can finish: gate it and march on | a closing line `MARCH GATE: <LAW \| MONEY \| ACCOUNT \| PUBLIC \| IRREVERSIBLE> — <the exact step>` — labeled `operator`, the next rung armed; a deferral naming no gate is interrogated |
 
 ## THE RULES OF THIS REPO
 
 This project is one thing, so the rules are few.
 
 - Run `standalone_check.sh` after every change to `engine/`. Green or it did not land.
-- The done token is the production run: a lane is done when `quickstart.sh` or the tenant's
-  `rebuild.sh` proves it on a real repo, timed, in `RECON.md`. A test is a floor, never the proof.
-- Commit to `main` when the operator rules or agrees; agreed is intent to commit and push.
+- The production run is the done block's evidence, never the verdict: a lane is done when
+  `quickstart.sh` or the tenant's `rebuild.sh` proves it on a real repo, timed, in `RECON.md`, AND a
+  review round reads SHIP. A test is a floor, never the proof.
+- Commit to `main` when a review round reads SHIP (rung-discipline §2.6), or when the operator rules;
+  agreed is intent to commit and push.
 - **The review is the junction, not the token.** A green token can be falsified; a third party
-  auditing the diff against the build checklist cannot be skipped. At every junction — an issue's
-  work done, a blocker fixed — the adversarial review runs, and when it clears (every blocker fixed
-  or eliminated), commit and push both repos without waiting to be told. No review, no commit,
-  however green the gate reads.
+  auditing the diff against the build checklist cannot be skipped. The loop, every rung:
+  build → review round 1 (cold) → on REVISE, **walk each blocker with graphy** (blast · descend ·
+  explain its symbols: confirm it reproduces, find the siblings it implies) → fix → dogfood every
+  mechanical class into a door → review round N+1, a fresh subagent handed the ledger (every prior
+  round's blockers, repros, fixes and walk results) → repeat until a round reads SHIP → commit and
+  push both repos and close, without waiting to be told. No SHIP round, no commit, however green the
+  gate reads. The rounds and the ledger: `.claude/skills/rung-discipline/SKILL.md` §2.6.
 - No auto-generated docs in git. A fan-out compiled by `graphy fanout` is a build product. The one
   exception is the marked region inside an arm file (`graphy arms`): the walk's inventory beside the
   operator's prose, verified on every ring-minted rebuild, so drift between the two is named and never absorbed.

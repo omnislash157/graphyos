@@ -66,6 +66,10 @@ python3 "$HERE/burden.py" || { echo "burden            FAILED — a responsibili
 # The workflow files parse here, on the box, before CI is asked: a file GitHub cannot parse runs
 # zero jobs and nobody sees CI stop (RECON.md §58). stdlib only; every refusal names file:line.
 python3 "$HERE/workflows.py" || { echo "workflows          FAILED — a file under .github/workflows/ would run zero jobs"; exit 3; }
+# The march's stop hook (the self-driving loop): a wait on background work never holds it, a closed rung
+# always marches the next — pinned by its own floor, run with the repo's hooks (RECON.md §125).
+python3 -m pytest -q -p no:cacheprovider "$HERE/.claude/hooks/test_march.py" >/dev/null || { echo "march              FAILED — the board loop's stop hook regressed: python3 -m pytest -q .claude/hooks/test_march.py"; exit 3; }
+echo "march              OK"
 # The box sweep (sweep.py, graphyos #107): every rule that removes a directory proven on its own fixture —
 # a quiet scratchpad, a finished pytest tree, a hand-built gallery go; a held, fresh or unnamed one stays.
 python3 "$HERE/sweep.py" --selftest || { echo "sweep              FAILED — a sweep rule removes what it must keep, or keeps what it must remove"; exit 3; }
