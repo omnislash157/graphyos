@@ -386,3 +386,81 @@ def test_GREEN_a_foreign_shard_s_path_field_is_posix_by_the_time_the_STORE_reads
                      tenant_id="x")
     store = fs.open_for(["foreign"], tenant=tenant, tenant_id="x")
     assert store.record(nid)["file"] == "foreign/sub/mod.py"
+
+
+def test_GREEN_a_function_referenced_as_a_value_mints_a_references_edge_bound_through_scope(tmp_path):
+    """A function reached through a dispatch table, a callback argument, a decorator's argument or a
+    default had no inbound edge, so `blast` answered zero for all 26 CLI verbs (graphyos #94). The
+    producer now mints `references` for a name read as a value whose head the module's own scope
+    binds — a def, a class, an import — and the owning function never rebinds. Never a name match:
+    a parameter or a local of the same name mints nothing; a callee is `calls`, a bare decorator
+    `decorates`, a base `inherits`, an annotation a type — none is a reference."""
+    from collections import Counter
+    from graphy.adapters import python_ast
+    mod = tmp_path / "sample.py"
+    mod.write_text(
+        "import json\n"
+        "import os.path\n"
+        "from functools import wraps as w\n"
+        "def a(): pass\n"
+        "def b(): pass\n"
+        "class K(object):\n"
+        "    field = a\n"                       # a class body's own reference
+        "def register(p):\n"
+        "    p.set_defaults(handler=a)\n"       # the callback argument — cli.py's shape, x26
+        "    table = {'b': b, 'k': K}\n"        # the dispatch table
+        "    return table\n"
+        "@w(on=b)\n"                            # the decorator's argument; `w` itself is `decorates`
+        "def c(x=a):\n"                         # the default
+        "    b()\n"                             # a call, not a reference
+        "    return json.dumps\n"               # an import's attribute, read as a value
+        "def shadow(a):\n"
+        "    return a\n"                        # the parameter shadows the def: nothing
+        "def shadow2():\n"
+        "    b = 1\n"
+        "    return b\n"                        # a rebound local: nothing
+        "def typed(k: K) -> K:\n"
+        "    return os.path.join\n"             # the annotations are types; the chain is a value
+        "DISPATCH = {'c': c}\n"                 # the module's own top level
+        "if __name__ == '__main__':\n"
+        "    c()\n"                             # a module-level call: never a reference
+        # review round 1 of #94: the module's and a class body's own rebindings shadow too — a name match
+        # minted from a comprehension target, a lambda's parameter, a for target, a class-level assignment
+        "import email\n"
+        "M = {raw: email for email, raw in ()}\n"
+        "def la(): pass\n"
+        "def fb(): pass\n"
+        "L = lambda la: la\n"                  # the lambda's parameter shadows la on the module
+        "for fb in ():\n    pass\n"           # the for target shadows fb on the module
+        "USE = fb\n"
+        "class C(Generic[K]):\n"               # a subscripted base is `inherits`, never a reference to its head
+        "    a = 1\n"
+        "    USES = a\n"
+        "    OK = K\n"
+        # review round 2 of #94: a match capture — a star or a mapping rest — binds too
+        "match ():\n    case [*fb]:\n        pass\n    case {**la}:\n        pass\n",
+        encoding="utf-8",
+    )
+    records = list(python_ast._emit_records_for_file(mod, tmp_path, "sample"))
+    refs = Counter((r["src"].rsplit("/", 1)[1], r["dst_repr"]) for r in records if r.get("edge_type") == "references")
+    assert refs == Counter({
+        ("sample.K", "a"): 1,
+        ("sample.register", "a"): 1, ("sample.register", "b"): 1, ("sample.register", "K"): 1,
+        ("sample.c", "b"): 1, ("sample.c", "a"): 1, ("sample.c", "json.dumps"): 1,
+        ("sample.typed", "os.path.join"): 1,
+        ("sample", "c"): 1,
+        ("sample.C", "K"): 1,                   # the class's own reference; `a` is rebound in the body, `email` on the module
+    }), refs
+    assert ("sample.C", "Generic") not in refs and {r["dst_repr"] for r in records if r.get("edge_type") == "inherits"} == {"object", "Generic[K]"}
+    calls = {(r["src"].rsplit("/", 1)[1], r["dst_repr"]) for r in records if r.get("edge_type") == "calls"}
+    assert calls == {("sample.register", "p.set_defaults"), ("sample.c", "w"), ("sample.c", "b")}
+    for r in records:
+        if r.get("edge_type") == "references":
+            assert isinstance(r.get("line"), int) and r["line"] > 0 and "dst" not in r     # text for the resolver
+    validate_graph({r["id"]: r for r in records if r["kind"] == "node"},
+                   [r for r in records if r["kind"] == "edge"], PYTHON_AST_VOCABULARY)
+    # the engine's own sharpest case: every `_cmd_*` handler is a value `_build_parser` binds
+    cli = GRAPHOS / "graphy" / "cli.py"
+    recs = list(python_ast._emit_records_for_file(cli, GRAPHOS / "graphy", "graphy"))
+    binders = {r["src"].rsplit(".", 1)[1] for r in recs if r.get("edge_type") == "references" and r["dst_repr"] == "_cmd_check"}
+    assert binders == {"_build_parser"}, binders

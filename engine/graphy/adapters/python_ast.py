@@ -99,7 +99,40 @@ def _class_info(cls: type) -> tuple[int, tuple[str, ...]]:
     return info
 
 
-def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, int]]]]:
+def _module_bindings(body: list) -> set[str]:
+    """The names the module's own scope binds to something the resolver can reach: a def or class
+    ``_defs_in`` tracks, and every name a module-level import statement binds (``import a.b`` binds
+    ``a``; ``from x import y as z`` binds ``z``) — descending through the same compound statements
+    ``_defs_in`` does and never into a function body. These are the only heads a reference may
+    carry: a local, a parameter, a global assigned at module level is not a definition."""
+    out: set[str] = set()
+    for stmt in body:
+        if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            out.add(stmt.name)
+        elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            for alias in stmt.names:
+                if alias.name != "*":
+                    out.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(stmt, _COMPOUND):
+            out |= _module_bindings(stmt.body)
+            out |= _module_bindings(getattr(stmt, "orelse", []) or [])
+            for handler in getattr(stmt, "handlers", []) or []:
+                out |= _module_bindings(handler.body)
+            out |= _module_bindings(getattr(stmt, "finalbody", []) or [])
+    return out
+
+
+# The fields whose subtree is a type, never a value: a name there is an annotation, and an
+# annotation is not a reference (graphyos #94 mints a function or class USED, not named as a type).
+_TYPE_FIELDS = frozenset({"annotation", "returns"})
+# The lists whose bare names are already an edge of their own: a decorator is `decorates`, a base is
+# `inherits`. A call among them (`@retry(on=fn)`, `class K(make_base(fn))`) still carries values.
+_BOUND_LISTS = frozenset({"decorator_list", "bases"})
+_NAME_KINDS = (ast.Name, ast.Attribute)
+
+
+def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, int]]],
+                                  dict[ast.AST | None, list[tuple[str, int]]]]:
     """One level-order pass over every node of a file — the order ``ast.walk`` yields them, so the
     records read the same — visiting no node twice. It collects the import statements wherever
     they sit and, keyed by the tracked definition that owns them, every call: a definition is
@@ -107,39 +140,99 @@ def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, i
     outermost tracked function around it, the one whose subtree the old per-definition walk read.
     The children come straight off each class's child fields (``_class_info``, once per class) —
     the generator ``ast.iter_child_nodes`` builds costs three times the walk — and a leaf
-    (``_LEAF``) is never queued: it has nothing the scan reads and no children."""
+    (``_LEAF``) is never queued: it has nothing the scan reads and no children.
+
+    The same pass collects every REFERENCE (graphyos #94): a name read as a value — ``handler=fn``,
+    ``{"x": fn}``, ``@d(fn)``, ``def f(x=fn)``, ``mod.fn`` — whose head the module's own scope binds
+    (``_module_bindings``: a tracked def or class, a module-level import) and that no scope between the
+    reader and the module rebinds — the module's own top level (``_shadow_in``: a for target, a comprehension
+    target, a lambda's parameter, a walrus, an assignment), the class body around a class-level reference,
+    and the owning function (a parameter, an assignment, a nested def's name — ``_rebound_names``). It is
+    keyed by the tracked def or class that holds it, ``None`` for the module's own top level. A call's
+    callee is a ``calls`` edge already and is not a reference; a bare decorator is ``decorates``; a bare or
+    subscripted base is ``inherits``; a name under an annotation is a type, not a value; the inner names of
+    a dotted chain are the chain's, not their own. Every push is unchanged: a node the old pass visited is
+    visited once, with two more flags. ``rebound`` — each function's own rebindings, computed once here and
+    handed to ``_bindable_annotations`` — is returned beside the records."""
     imports: list[ast.AST] = []
     calls: dict[ast.AST, list[tuple[str, int]]] = {}
-    todo: deque[tuple[ast.AST, ast.AST | None, bool]] = deque([(tree, None, True)])
+    refs: dict[ast.AST | None, list[tuple[str, int]]] = {}
+    body = getattr(tree, "body", []) or []
+    bound = _module_bindings(body)
+    module_shadow = _shadow_in(body)
+    shadows: dict[ast.AST | None, set[str]] = {None: module_shadow}
+    rebound: dict[ast.AST, set[str]] = {}
+    # (node, owner: the tracked function whose calls these are, tracked, holder: the tracked def or class
+    #  a reference belongs to, ref_ok: a name here is a value and not a callee, a decorator or a type)
+    todo: deque[tuple[ast.AST, ast.AST | None, bool, ast.AST | None, bool]] = deque([(tree, None, True, None, True)])
     pop, push = todo.popleft, todo.append
     visited, cached, class_info = _VISITED, _CLASS_INFO.get, _class_info
     while todo:
-        node, owner, tracked = pop()
+        node, owner, tracked, holder, ref_ok = pop()
         cls = type(node)
         kind, fields = cached(cls) or class_info(cls)
+        callee: ast.AST | None = None
         if kind == _CALL:
             if owner is not None:
                 calls.setdefault(owner, []).append((_expr_repr(node.func), getattr(node, "lineno", 0)))
+            if type(node.func) in _NAME_KINDS:
+                callee = node.func                      # the callee is the calls edge, never a reference
         elif kind == _IMPORT:
             imports.append(node)
         elif kind == _FUNC_KIND:
             if owner is None and tracked:
                 owner = node
+                holder = node
             tracked = False
+        elif kind == _SCOPE_KIND:
+            if cls is ast.ClassDef and tracked:
+                holder = node
         elif kind == _OTHER:
             tracked = False
+            if ref_ok and cls in _NAME_KINDS:
+                label = node.id if cls is ast.Name else _name_chain(node)
+                if label is not None:
+                    ref_ok = False                      # the chain's inner names are the chain's own
+                    head = label.split(".", 1)[0]
+                    if head in bound and isinstance(node.ctx, ast.Load) and head not in module_shadow:
+                        shadow = shadows.get(holder)
+                        if shadow is None:                  # a class body's own rebindings, once per class
+                            shadow = shadows[holder] = _shadow_in(holder.body) if isinstance(holder, ast.ClassDef) else set()
+                        if head not in shadow and owner is not None:
+                            own = rebound.get(owner)
+                            if own is None:
+                                own = rebound[owner] = _rebound_names(owner)
+                            if head in own or head in _param_names(owner):
+                                shadow = None               # the function's own scope rebinds it
+                        if shadow is not None and head not in shadow:
+                            refs.setdefault(holder, []).append((label, getattr(node, "lineno", 0)))
         values = node.__dict__
         for name in fields:
             value = values.get(name)
             if value is None:
                 continue
+            ok = ref_ok and name not in _TYPE_FIELDS
             if type(value) is list:
+                if name in _BOUND_LISTS:
+                    for child in value:
+                        if type(child) in visited:  # a bare decorator or base is its own edge; a call's arguments are values
+                            push((child, owner, tracked, holder, ok and not _is_bound_shape(child)))
+                    continue
                 for child in value:
                     if type(child) in visited:
-                        push((child, owner, tracked))
+                        push((child, owner, tracked, holder, ok))
             elif type(value) in visited:
-                push((value, owner, tracked))
-    return imports, calls
+                push((value, owner, tracked, holder, ok and value is not callee))
+    return imports, calls, refs, rebound
+
+
+def _is_bound_shape(node: ast.AST) -> bool:
+    """A decorator or a base the producer already spells as its own edge: a name, a dotted chain, or a
+    subscripted one (`Generic[T]`, `Mapping[str, int]`) — the `inherits` label is the whole text, so
+    its head is not a second edge; a call among them still carries values (`@retry(on=fn)`)."""
+    if type(node) in _NAME_KINDS:
+        return True
+    return isinstance(node, ast.Subscript) and type(node.value) in _NAME_KINDS
 
 
 
@@ -257,14 +350,44 @@ def _rebound_names(fn: ast.AST) -> set[str]:
             out.update(node.names)
         elif isinstance(node, ast.alias):
             out.add((node.asname or node.name).split(".")[0])
-        elif isinstance(node, ast.MatchAs) and node.name:
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
             out.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            out.add(node.rest)
     return out
 
 
-def _bindable_annotations(fn: ast.AST) -> dict[str, str] | None:
+def _shadow_in(body: list) -> set[str]:
+    """Every name a module's or a class's own scope rebinds by anything but a def, a class or an
+    import — an assignment, a for/with/except target, a comprehension target, a walrus, a lambda's
+    parameter, a global — never descending into a function (its rebindings are its own,
+    ``_rebound_names``) or a nested class (its own scope). A reference whose head is here is not the
+    definition it spells, so it mints nothing (graphyos #94, review round 1)."""
+    out: set[str] = set()
+    todo = list(body)
+    while todo:
+        node = todo.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            out.add(node.id)
+        elif isinstance(node, ast.Lambda):
+            out.update(_param_names(node))
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            out.add(node.name)
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            out.update(node.names)
+        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+            out.add(node.name)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            out.add(node.rest)
+        todo.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _bindable_annotations(fn: ast.AST, rebound: set[str] | None = None) -> dict[str, str] | None:
     a = fn.args
-    rebound = _rebound_names(fn)
+    rebound = _rebound_names(fn) if rebound is None else rebound
     out = {}
     for p in (*a.posonlyargs, *a.args, *a.kwonlyargs):
         if p.annotation is None or p.arg in rebound:
@@ -284,8 +407,12 @@ def _walk_stmt(
     package: str = "",
     local_packages: frozenset[str] = frozenset(),
     calls: dict[ast.AST, list[tuple[str, int]]] | None = None,
+    refs: dict[ast.AST | None, list[tuple[str, int]]] | None = None,
+    rebound: dict[ast.AST, set[str]] | None = None,
 ) -> Iterator[dict]:
     calls = calls if calls is not None else {}
+    refs = refs if refs is not None else {}
+    rebound = rebound if rebound is not None else {}
     if isinstance(stmt, ast.ClassDef):
         class_dotted = f"{parent_dotted}.{stmt.name}"
         class_id = _node_id("class", class_dotted)
@@ -316,10 +443,11 @@ def _walk_stmt(
                 "dst": class_id,
                 "line": stmt.lineno,
             }
+        yield from _reference_edges(class_id, refs.get(stmt, ()))
         for sub in _defs_in(stmt.body):
             yield from _walk_stmt(sub, class_id, class_dotted, file_rel,
                                   container_class=stmt.name, package=package,
-                                  local_packages=local_packages, calls=calls)
+                                  local_packages=local_packages, calls=calls, refs=refs, rebound=rebound)
     elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
         kind = "method" if container_class else "func"
         func_dotted = f"{parent_dotted}.{stmt.name}"
@@ -337,7 +465,7 @@ def _walk_stmt(
             # a parameter's annotation when it is a name the resolver can bind (graphyos #57): `ctx: Context`
             # makes `ctx.invoke` `Context.invoke` the way `self.` binds the container — by scope. Only a bare
             # or dotted name is kept, and only when the body never rebinds the parameter; the rest is text
-            "annotations": _bindable_annotations(stmt),
+            "annotations": _bindable_annotations(stmt, rebound.get(stmt)),
             "returns": _expr_repr(stmt.returns) if stmt.returns else None,
             "docstring": (ast.get_docstring(stmt) or "")[:200],
             "container_class": container_class,
@@ -359,6 +487,14 @@ def _walk_stmt(
                 "dst_repr": call_repr,
                 "line": line,
             }
+        yield from _reference_edges(func_id, refs.get(stmt, ()))
+
+
+def _reference_edges(src_id: str, refs) -> Iterator[dict]:
+    """A ``references`` edge per value-use ``_scan`` keyed to this node, the target left as text for
+    the resolver the way a call's is — one edge per site, like a call (graphyos #94)."""
+    for label, line in refs:
+        yield {"kind": "edge", "edge_type": "references", "src": src_id, "dst_repr": label, "line": line}
 
 
 def _is_excluded(file: Path, exclude_patterns: tuple[str, ...], root: Path) -> bool:
@@ -451,14 +587,15 @@ def _emit_raw_records_for_file(
         "docstring": (ast.get_docstring(tree) or "")[:200],
     }
 
-    imports, calls = _scan(tree)
+    imports, calls, refs, rebound = _scan(tree)
     yield from _emit_import_edges(imports, module_id, module_dotted, package,
                                   local_packages,
                                   is_package=file.name == "__init__.py")
+    yield from _reference_edges(module_id, refs.get(None, ()))     # the module's own top level: a table, a registry
 
     for stmt in _defs_in(tree.body):
         yield from _walk_stmt(stmt, module_id, module_dotted, file_rel,
-                              package=package, local_packages=local_packages, calls=calls)
+                              package=package, local_packages=local_packages, calls=calls, refs=refs, rebound=rebound)
 
 
 
@@ -567,7 +704,9 @@ def mint_records(corpus_dir: str | Path, *, reuse=None) -> tuple[_NodeRecords, l
         package, base = root.name, root
         local_packages = frozenset() if is_package_dir(root) else _local_package_names(root)
         rel_base, rel_root = base.parent, root
-    pin = f"python_ast:{package}:{'package' if is_package_dir(root) or root.is_file() else 'tree'}:" \
+    # `references` is in the pin: a span a mint before graphyos #94 wrote holds no reference edge, and a
+    # re-mint that spliced it would answer zero for every handler in the file it never re-read
+    pin = f"python_ast:references:{package}:{'package' if is_package_dir(root) or root.is_file() else 'tree'}:" \
           + ",".join(sorted(local_packages))
     receipt = Receipt("last")
     files, skipped = walk_files_naming_skips(root)

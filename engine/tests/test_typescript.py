@@ -305,3 +305,59 @@ def test_GREEN_a_write_is_bound_through_lexical_scope_and_destructuring_is_a_wri
     writes = {(e["src"].rsplit(".", 1)[-1], e["dst_repr"], e["line"]) for e in edges if e["edge_type"] == "writes"}
     assert writes == {("A", "a", 8), ("A", "b", 8), ("h", "count", 9), ("t", "count", 11), ("u", "count", 12),
                       ("c", "this.count", 5)}
+
+
+def test_GREEN_a_function_referenced_as_a_value_mints_a_references_edge_in_typescript_too(tmp_path):
+    """The same word from the second producer (graphyos #94): a handler passed to a router, a
+    dispatch table, a shorthand property, a namespace member, a decorator's argument, a default, a
+    class field and the module's own top level each mint `references`; a callee, a `new`, a
+    parameter or local of the same name, a type position, a re-export clause and the function's own
+    name mint nothing."""
+    from collections import Counter
+    src = tmp_path / "tsapp" / "src"
+    src.mkdir(parents=True)
+    (tmp_path / "tsapp" / "package.json").write_text(json.dumps({"name": "tsapp", "version": "0.0.1"}))
+    (src / "helpers.ts").write_text(
+        "export function helper(n: number) { return n; }\nexport const arrow = (n: number) => n;\n"
+        "export class Svc { static handler = helper; run() { return 1; } }\n")
+    (src / "app.ts").write_text(
+        "import { helper, Svc } from './helpers';\nimport * as ns from './helpers';\nimport type { Shape } from './types';\n"
+        "export function reg(app: any, cb = helper) {\n"                     # 4: the default
+        "  app.get('/', helper);\n"                                          # 5: the callback argument
+        "  const t = { helper, svc: Svc, alt: ns.arrow };\n"                 # 6: shorthand · table · namespace member
+        "  helper(1);\n"                                                     # 7: a call
+        "  new Svc();\n"                                                     # 8: a constructor call
+        "  const x: typeof helper = helper;\n"                               # 9: the type is skipped, the value read
+        "  return t as Routes;\n}\n"
+        "export function shadow(helper: any) { return helper; }\n"           # 12: the parameter shadows
+        "export function shadow2() { const helper = 1; return helper; }\n"   # 13: the local shadows
+        "export const routes = { home: reg };\n"                             # 14: the module's own table
+        "app.use(reg);\n"                                                    # 15
+        "export { reg, shadow };\n"                                          # 16: a re-export binds, never reads
+        "export default shadow2;\n"                                          # 17
+        "class K { @dec(helper) m() { return Svc; } }\n"                     # 18: the decorator's argument, a return
+        # review round 1 of #94: a lexical shadow at any depth, and a type alias, mint nothing
+        "for (const helper of [1, 2]) { Svc(helper); }\n"                    # 19: the loop binds and reads its own
+        "type H = typeof helper;\n"                                          # 20: a type
+        "export function g() {\n"
+        "  try { Svc(1); } catch (helper) { Svc(helper); }\n"                # 22
+        "  { const helper = 2; Svc(helper); }\n"                             # 23
+        "  for (let helper = 0; helper < 2; helper++) { Svc(helper); }\n"    # 24
+        "  const h = (helper: number) => Svc(helper);\n"                     # 25: an arrow is not descended
+        "  return helper;\n}\n"                                             # 26: the import, read
+        # review round 2 of #94: a chain over a call result is no name — `f(1).prop` is not `f.prop`
+        "export function k() { const a = helper(1)?.x; const b = helper(2).x; const c = ns.arrow[0].y; return [a, b, c]; }\n")  # 27
+    nodes, edges, _ = ts.mint_records(src, "tsapp")
+    refs = Counter((e["src"].rsplit("/", 1)[1], e["dst_repr"], e["line"]) for e in edges if e["edge_type"] == "references")
+    assert refs == Counter({
+        ("tsapp.app.reg", "helper", 4): 1, ("tsapp.app.reg", "helper", 5): 1,
+        ("tsapp.app.reg", "helper", 6): 1, ("tsapp.app.reg", "Svc", 6): 1, ("tsapp.app.reg", "ns.arrow", 6): 1,
+        ("tsapp.app.reg", "helper", 9): 1,
+        ("tsapp.app", "reg", 14): 1, ("tsapp.app", "reg", 15): 1, ("tsapp.app", "shadow2", 17): 1,
+        ("tsapp.app.K.m", "helper", 18): 1, ("tsapp.app.K.m", "Svc", 18): 1,
+        ("tsapp.helpers.Svc", "helper", 3): 1,
+        ("tsapp.app.g", "helper", 26): 1,
+        ("tsapp.app.k", "ns.arrow", 28): 1,     # the subscript's object is read; `helper(…).x` mints nothing but its call
+    }), refs
+    assert ("tsapp.app.k", "helper.x", 28) not in refs and ("tsapp.app.k", "helper", 28) not in refs
+    validate_graph(nodes, edges, ts.TYPESCRIPT_AST_VOCABULARY)

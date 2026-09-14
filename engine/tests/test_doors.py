@@ -417,11 +417,15 @@ def test_GREEN_the_shipped_producers_declare_exactly_the_families_the_doors_hard
     what doors.py used to hardcode, so an eaten repo answers byte-identically before and after."""
     from graphy.adapters.typescript_ast import TYPESCRIPT_AST_VOCABULARY
     from graphy.ir import DEPENDS, PYTHON_AST_VOCABULARY, REACHES
-    assert PYTHON_AST_VOCABULARY.types_in(DEPENDS) == doors.BLAST_RELATIONS
+    # Both producers declare one word past the doors' fallback, and only where they mint it: a function
+    # or class used as a value is `references`, a dependency and never a reach (graphyos #94). The
+    # fallback stays the #68 set: a shard minted before #94 carries no `references`, so it answers as
+    # it did, and a shard nobody declared never walks a type its producer did not mean.
+    assert PYTHON_AST_VOCABULARY.types_in(DEPENDS) == doors.BLAST_RELATIONS | {"references"}
     assert PYTHON_AST_VOCABULARY.types_in(REACHES) == doors.DESCEND_RELATIONS
-    # typescript_ast declares one word past the defaults, and only where it mints it: a write to a
-    # rune's state (graphyos #85). A shard minted before carries no `writes`, so it answers as it did.
-    assert TYPESCRIPT_AST_VOCABULARY.types_in(DEPENDS) == doors.BLAST_RELATIONS | {"writes"}
+    assert "references" not in doors.BLAST_RELATIONS
+    # typescript_ast declares one more, and only where it mints it: a write to a rune's state (graphyos #85)
+    assert TYPESCRIPT_AST_VOCABULARY.types_in(DEPENDS) == doors.BLAST_RELATIONS | {"writes", "references"}
     assert TYPESCRIPT_AST_VOCABULARY.types_in(REACHES) == doors.DESCEND_RELATIONS | {"writes"}
 
 

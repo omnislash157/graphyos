@@ -6,7 +6,7 @@
 `session_tail` turns a transcript into its semantic tail; `reseed` captures and injects it around a clear; `lightning` is the ripgrep-anchored search over the archive. The walk names this the floor no arm consumes — it runs beside the engine, not under the CLI.
 
 <!-- graphy:arm MEMORY generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=bffeb29661bb2b38 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:dab06584e58f0dbc36212d6d67dcbeb1e1a35d217fee91677d85d305fdad729a -->
+     store=17340ab7f2dc9bda cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:dab06584e58f0dbc36212d6d67dcbeb1e1a35d217fee91677d85d305fdad729a -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.

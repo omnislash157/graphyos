@@ -8,7 +8,10 @@ are ``imports`` edges — a relative specifier resolved to the module it names, 
 package it names (``pkg://module/pkg``, a wormhole literal once that package is minted; Node's
 built-ins are the ecosystem's standard library); ``extends`` and ``implements`` are ``inherits``
 with the target left as text for the resolver; decorators are ``decorates``; every call and
-``new`` inside a function or method body is ``calls`` with the callee as text. Every node
+``new`` inside a function or method body is ``calls`` with the callee as text; a function or
+class read as a value (``app.get('/', handler)``, ``{ handler }``, a default, a decorator's
+argument, a route table at the module's top level) is ``references``, its head bound by the
+module's own declarations and imports and never by a name match. Every node
 carries ``module`` and, when the file is a test by this producer's rule, ``role: test``.
 
 No consumer downstream knows any of this: the store, the walk, the doors, pillars and arms read
@@ -237,6 +240,165 @@ def _calls_in(body, src: bytes, anonymous: bool = False) -> Iterator[tuple[str, 
         stack.extend(n.named_children)
 
 
+_REF_SKIP_TYPES = frozenset({"type_annotation", "type_arguments", "type_parameters", "type_predicate",
+                             "asserts", "export_clause", "type_alias_declaration", "interface_declaration"})
+
+
+def _refs_in(body, src: bytes, bound: frozenset, shadow=frozenset(), anonymous: bool = False) -> Iterator[tuple[str, int]]:
+    """Every name READ AS A VALUE under ``body`` whose head the module binds (``bound``: a top-level
+    function, class or import) and no scope between the reader and the module rebinds, as (label, line)
+    — ``app.get('/', handler)`` · ``{ handler }`` · ``ns.handler`` · ``@d(handler)`` (graphyos #94).
+    The shadow is lexical, the way ``_writes_in`` keeps it: ``shadow`` is the enclosing function's
+    (its parameters and hoisted names), a block adds its own ``let``/``const``/declarations, a ``for``
+    its loop variables, a ``catch`` its parameter, a function expression or arrow (when descended) its
+    parameters and hoisted names — each for its own subtree only (review round 1: a module-level
+    ``for (const helper of …)`` read the loop variable as the import it shadows). The same descent rules
+    as ``_calls_in``: never into a nested declaration, into a function expression or arrow only when
+    ``anonymous``. A callee is the ``calls`` edge and not a reference; a member chain is one label and
+    its inner names are not their own; a property name, a type (an annotation, a type alias, an
+    interface), a declared name and a shorthand pattern are never values. ``this`` binds nothing here."""
+    skip = {"function_declaration", "class_declaration", "abstract_class_declaration",
+            "method_definition", "generator_function_declaration"}
+    if not anonymous:
+        skip |= {"function_expression", "arrow_function"}
+    stack = [(c, False, frozenset(shadow)) for c in body.named_children]
+    while stack:
+        n, callee, sh = stack.pop()
+        t = n.type
+        if t in skip or t in _REF_SKIP_TYPES:
+            continue
+        if t in ("identifier", "shorthand_property_identifier"):
+            if not callee:
+                name = _text(n, src)
+                if name in bound and name not in sh:
+                    yield name, n.start_point[0] + 1
+            continue
+        if t == "member_expression":
+            if _pure_chain(n):                             # `a.b.c`: one label, its inner names are the chain's own
+                r = _expr_repr(n, src)
+                head = r.split(".", 1)[0] if r else None
+                if head and not callee and head in bound and head not in sh:
+                    yield r, n.start_point[0] + 1
+                continue
+            # `f(1).prop` · `f[0].prop` · `(x as T).prop`: no name spells this chain — `_expr_repr` would
+            # flatten it to `f.prop`, a label nothing binds, from a head that is the call's callee (review
+            # round 2). Descend: the call keeps its callee flag, a bare name inside is its own value.
+            stack.extend((c, False, sh) for c in n.named_children)
+            continue
+        if t in ("call_expression", "new_expression"):
+            fn = n.child_by_field_name("function") if t == "call_expression" else n.child_by_field_name("constructor")
+            stack.extend((c, fn is not None and c == fn, sh) for c in n.named_children)   # a tree-sitter node has no identity
+            continue
+        if t in ("as_expression", "satisfies_expression"):   # `x as T`: the value, never the type
+            if n.named_children:
+                stack.append((n.named_children[0], False, sh))
+            continue
+        if t == "decorator":                               # a bare decorator is `decorates`; its call's arguments are values
+            inner = n.named_children[0] if n.named_children else None
+            if inner is not None and inner.type in ("call_expression", "new_expression"):
+                stack.append((inner, False, sh))
+            continue
+        if t in ("variable_declarator", "required_parameter", "optional_parameter", "rest_parameter",
+                 "assignment_pattern", "object_assignment_pattern"):
+            for field in ("value", "right"):                # the declared name is a binding, its value a value
+                v = n.child_by_field_name(field)
+                if v is not None:
+                    stack.append((v, False, sh))
+            continue
+        if t == "pair":                                     # `{ key: value }`: the key is a name, never a value
+            v = n.child_by_field_name("value")
+            if v is not None:
+                stack.append((v, False, sh))
+            continue
+        if t in _FUNCTION_LIKE:                             # descended only when anonymous: its own scope
+            sh = sh | _hoisted(n, src) | {x for p in (n.child_by_field_name("parameters"),) if p is not None
+                                          for c in p.named_children for x in _bound_names(c.child_by_field_name("pattern") or c, src)}
+        elif t in ("statement_block", "switch_body"):
+            sh = sh | _block_names(n, src)
+        elif t == "for_statement":
+            init = n.child_by_field_name("initializer")
+            if init is not None and init.type in ("lexical_declaration", "variable_declaration"):
+                sh = sh | {x for d in init.named_children if d.type == "variable_declarator"
+                           for x in _bound_names(d.child_by_field_name("name"), src)}
+        elif t == "for_in_statement":                       # `for (const x of xs)`: x is bound, never read here
+            left = n.child_by_field_name("left")
+            if left is not None:
+                sh = sh | set(_bound_names(left, src))
+                stack.extend((c, False, sh) for c in n.named_children if c != left)
+                continue
+        elif t == "catch_clause":
+            param = n.child_by_field_name("parameter")
+            if param is not None:
+                sh = sh | set(_bound_names(param, src))
+                stack.extend((c, False, sh) for c in n.named_children if c != param)
+                continue
+        stack.extend((c, False, sh) for c in n.named_children)
+
+
+def _pure_chain(node) -> bool:
+    """``a.b.c`` and nothing else: every link of the object spine is a member expression and the base is
+    a name (or ``this``/``super``). A call, a ``new``, a subscript, a cast or a parenthesis anywhere in
+    the spine makes it an expression, not a name a scope can bind."""
+    n = node
+    while n.type == "member_expression":
+        n = n.child_by_field_name("object")
+        if n is None:
+            return False
+    return n.type in ("identifier", "this", "super")
+
+
+def _module_bound(tree, src: bytes) -> frozenset[str]:
+    """The names the module's own top level binds to something the resolver can reach: a function,
+    class or interface declaration, a ``const x = () => …``, a CommonJS ``exports.x = function``
+    whose name is one identifier, and every name an ``import`` or a ``require`` binds. The only
+    heads a reference may carry (graphyos #94); a local or a parameter is never one."""
+    out: set[str] = set()
+    for raw in tree.root_node.named_children:
+        stmt = _unwrap_export(raw)
+        t = stmt.type
+        if t == "import_statement":
+            for c in stmt.named_children:
+                if c.type != "import_clause":
+                    continue
+                for cc in c.named_children:
+                    if cc.type == "identifier":
+                        out.add(_text(cc, src))
+                    elif cc.type == "namespace_import":
+                        ident = next((x for x in cc.named_children if x.type == "identifier"), None)
+                        if ident is not None:
+                            out.add(_text(ident, src))
+                    elif cc.type == "named_imports":
+                        for spec_node in cc.named_children:
+                            if spec_node.type != "import_specifier":
+                                continue
+                            n = spec_node.child_by_field_name("name")
+                            a = spec_node.child_by_field_name("alias")
+                            if a is not None:
+                                out.add(_text(a, src))
+                            elif n is not None:
+                                out.add(_text(n, src))
+        elif t in ("class_declaration", "abstract_class_declaration", "interface_declaration",
+                   "function_declaration", "generator_function_declaration"):
+            name_node = stmt.child_by_field_name("name")
+            if name_node is not None:
+                out.add(_text(name_node, src))
+        elif t in ("lexical_declaration", "variable_declaration", "expression_statement"):
+            for _spec, names, _line in _requires_in(stmt, src):
+                for name, alias in names:
+                    if alias:
+                        out.add(alias)
+                    elif name:
+                        out.add(name)
+            if t == "expression_statement":
+                for name, _fn in _assigned_functions(stmt, src):
+                    if name.isidentifier():
+                        out.add(name)
+            else:
+                for name_node, _fn in _func_of_lexical(stmt):
+                    out.add(_text(name_node, src))
+    return frozenset(out)
+
+
 def _unwrap_export(stmt):
     """``export [default] <declaration>`` → the declaration; anything else → itself."""
     if stmt.type == "export_statement":
@@ -389,11 +551,22 @@ def _decorators(node, src: bytes) -> Iterator[str]:
                 yield r
 
 
-def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes, runes: bool = False) -> Iterator[dict]:
+def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes, runes: bool = False,
+                bound: frozenset = frozenset()) -> Iterator[dict]:
     body = cls.child_by_field_name("body")
     if body is None:
         return
+    pending: list = []                                     # the decorators the grammar lays before a member, not under it
     for m in body.named_children:
+        if m.type == "decorator":
+            pending.append(m)
+            continue
+        decorators, pending = pending, []
+        if m.type == "public_field_definition":            # `static handler = fn`: the class's own reference
+            value = m.child_by_field_name("value")
+            if value is not None and not (runes and _state_rune(value, src)):
+                for label, line in _refs_in(_Wrap([value]), src, bound):
+                    yield {"kind": "edge", "edge_type": "references", "src": class_id, "dst_repr": label, "line": line}
         if runes and m.type == "public_field_definition":
             name_node, rune = m.child_by_field_name("name"), _state_rune(m.child_by_field_name("value"), src)
             if name_node is not None and rune:
@@ -425,6 +598,8 @@ def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes
         if mbody is not None:
             for call, line in _calls_in(mbody, src):
                 yield {"kind": "edge", "edge_type": "calls", "src": mid, "dst_repr": call, "line": line}
+            for label, line in _refs_in(_Wrap(decorators + list(m.named_children)), src, bound, frozenset(_scope_of(m, src))):
+                yield {"kind": "edge", "edge_type": "references", "src": mid, "dst_repr": label, "line": line}
             if runes:
                 for label, line in _writes_in(_Wrap([mbody]), src, frozenset(_scope_of(m, src))):
                     yield {"kind": "edge", "edge_type": "writes", "src": mid, "dst_repr": label, "line": line}
@@ -432,6 +607,7 @@ def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes
 
 def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: bytes,
                  resolve_import, component: bool = False, runes: bool = False) -> Iterator[dict]:
+    bound = _module_bound(tree, src)
     for raw in tree.root_node.named_children:
         stmt = _unwrap_export(raw)
         t = stmt.type
@@ -500,7 +676,7 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
                 yield {"kind": "edge", "edge_type": "inherits", "src": cid, "dst_repr": base, "line": stmt.start_point[0] + 1}
             for d in _decorators(raw, src):
                 yield {"kind": "edge", "edge_type": "decorates", "src_repr": d, "dst": cid, "line": stmt.start_point[0] + 1}
-            yield from _walk_class(stmt, dotted, cid, file_rel, src, runes)
+            yield from _walk_class(stmt, dotted, cid, file_rel, src, runes, bound)
             continue
         if t in ("lexical_declaration", "variable_declaration", "expression_statement"):
             for spec, names, line in _requires_in(stmt, src):
@@ -550,6 +726,10 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
             # function body's are the function's — `onMount(() => load())` included.
             for call, line in _calls_in(_Wrap([stmt]), src, anonymous=True):
                 yield {"kind": "edge", "edge_type": "calls", "src": module_id, "dst_repr": call, "line": line}
+        if not funcs and t not in ("function_declaration", "generator_function_declaration", "import_statement"):
+            # the module's own top level: a route table, a registry, `app.get('/', handler)` (graphyos #94)
+            for label, line in _refs_in(_Wrap([raw]), src, bound, anonymous=component):
+                yield {"kind": "edge", "edge_type": "references", "src": module_id, "dst_repr": label, "line": line}
         for name, fn, anchor in funcs:
             dotted = f"{module_dotted}.{name}"
             fid = _node_id("func", dotted)
@@ -571,6 +751,10 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
                 else:                                   # an arrow function's expression body
                     for call, line in _calls_in(_Wrap([body]), src):
                         yield {"kind": "edge", "edge_type": "calls", "src": fid, "dst_repr": call, "line": line}
+                # the parameters' defaults and the body; never the function's own name (a binding, not a value)
+                for label, line in _refs_in(_Wrap([c for c in (params, body) if c is not None]), src, bound,
+                                            frozenset(_scope_of(fn, src))):
+                    yield {"kind": "edge", "edge_type": "references", "src": fid, "dst_repr": label, "line": line}
 
 
 class _Wrap:
@@ -835,7 +1019,7 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
         modules[str(f.resolve())] = _node_id("module", d)
         rels[f] = str(f.relative_to(root)).replace("\\", "/")
     listing = hashlib.sha256("\n".join(sorted(rels.values())).encode("utf-8")).hexdigest()
-    pin = f"typescript_ast:{package}:{listing}"
+    pin = f"typescript_ast:references:{package}:{listing}"      # a pre-#94 span holds no reference edge: never spliced
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
     receipt = Receipt("first")

@@ -19,7 +19,7 @@ def test_wire_relations_rank_at_wire_salience():
 
 
 def test_struct_relations_rank_at_struct_salience():
-    for rel in ("imports", "contains", "calls", "inherits", "decorates"):
+    for rel in ("imports", "contains", "calls", "inherits", "decorates", "references"):
         assert _ast_edge_salience(rel) == AST_STRUCT_SALIENCE == 1.0
 
 

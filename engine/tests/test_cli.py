@@ -1337,3 +1337,41 @@ def test_GREEN_a_cp1252_console_never_crashes_draw_and_eat_in_a_subprocess(tmp_p
     lit_out = lit.stdout.decode("utf-8")
     assert lit.returncode == 0 and "UnicodeEncodeError" not in lit_out, lit.stdout
     assert lit_out.count("slow Python fallback") == 1 and "—" in lit_out, lit_out
+
+
+def test_GREEN_blast_names_the_binder_of_a_handler_referenced_as_a_value(tmp_path, capsys):
+    """The issue's own red (graphyos #94): every CLI verb is wired `set_defaults(handler=_cmd_x)` and
+    called once, dynamically, so `blast _cmd_x` answered a confident zero. Eaten cold, the handler's
+    blast names the function that bound it, through a `references` edge the resolver bound to the
+    module's own definition — and `descend` from the binder does not follow it: a reference is a
+    dependency, never a reach."""
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "verbs").mkdir(parents=True)
+    (repo / "verbs" / "__init__.py").write_text("")
+    (repo / "verbs" / "cli.py").write_text(
+        "import argparse\n"
+        "def _cmd_check(args):\n    return 0\n"
+        "def _build_parser():\n"
+        "    p = argparse.ArgumentParser()\n"
+        "    p.set_defaults(handler=_cmd_check)\n"
+        "    return p\n"
+        "def main(argv):\n"
+        "    args = _build_parser().parse_args(argv)\n"
+        "    return args.handler(args)\n")
+    (repo / "pyproject.toml").write_text('[project]\nname = "verbs"\nversion = "0"\n')
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i"], cwd=repo, check=True)
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    capsys.readouterr()
+    tenant = [ "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "verbs"]
+    assert cli.main(["blast", "verbs.cli._cmd_check", *tenant, "--no-store"]) == 0
+    out = capsys.readouterr().out
+    assert "verbs://func/verbs.cli._build_parser  ◀─references─ verbs://func/verbs.cli._cmd_check" in out, out
+    assert "dependents=0" not in out
+    sidecar = json.loads((_served(repo) / "verbs_graph" / "wormhole_edges.json").read_text())
+    bound = [e for e in sidecar["edges"] if e["edge_type"] == "references"]
+    assert bound and all(e["via"] == "resolver:local" for e in bound), bound
+    assert cli.main(["descend", "verbs.cli._build_parser", *tenant, "--no-store"]) == 0
+    out = capsys.readouterr().out
+    assert "_cmd_check" not in out, out

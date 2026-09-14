@@ -30,7 +30,7 @@ __all__ = [
 SCHEMA_VERSION = 1
 
 NODE_TYPES = ("module", "func", "class", "method")
-EDGE_TYPES = ("imports", "contains", "calls", "inherits", "decorates")
+EDGE_TYPES = ("imports", "contains", "calls", "inherits", "decorates", "references")
 
 # WHAT A RELATION MEANS, declared by the producer that mints it (graphyos #68). A tenant could
 # always declare what its edge types ARE and never what they MEAN, so every door was blind to any
@@ -460,6 +460,11 @@ PYTHON_AST_RELATIONS = {
     "imports": (DEPENDS,),
     "decorates": (DEPENDS,),
     "contains": (STRUCTURAL,),
+    # a function or class used as a VALUE — a dispatch table, a callback argument, a decorator's
+    # argument, a default — bound through the module's own definitions and imports, never a name
+    # match (graphyos #94). A reference is a dependency (blast walks it) and not a reach: a descent
+    # through every callback would say something vaguer than "what this arrives at".
+    "references": (DEPENDS,),
 }
 
 PYTHON_AST_VOCABULARY = Vocabulary(

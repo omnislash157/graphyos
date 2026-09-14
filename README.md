@@ -242,7 +242,9 @@ is true on the machine it ran on; `RECON.md` §16 records the last run.
 ## What an edge is, and is not
 
 Every edge is one of three things: **structural** (from the syntax tree — imports, contains,
-inherits, decorates, calls), a **wormhole** (the same literal is a node id in two shards, free by
+inherits, decorates, calls, and references: a function or class used as a value — a dispatch
+table, a callback, a decorator's argument — so `blast` on a handler names what wired it), a
+**wormhole** (the same literal is a node id in two shards, free by
 construction: `starlette://module/starlette.routing` is an edge target in FastAPI's shard and a
 node in Starlette's), or a **resolved label** — a call target the producer left as text, bound
 through the scope that actually binds it: a definition in the same module, the module's own
