@@ -1219,6 +1219,125 @@ def check_host_interpreter(repo: Path) -> list[Finding]:
     return found
 
 
+_GH_STUB = """#!/usr/bin/env python3
+import os, sys
+log = open(os.environ["GH_STUB_LOG"], "a")
+args, words, skip = sys.argv[1:], [], False
+for i, a in enumerate(args):
+    if skip:
+        skip = False
+        continue
+    flag, eq, val = a.partition("=")
+    if a.startswith("-F") and len(a) > 2 and not a.startswith("--"):
+        flag, eq, val = "-F", "=", a[3:] if a[2] == "=" else a[2:]   # pflag strips the `=` of -F=path
+    if flag in ("-R", "--repo"):
+        skip = not eq
+        continue
+    if a == "--json" and args[:2] == ["workflow", "run"]:
+        words.append(sys.stdin.read())
+        continue
+    if flag in ("--body-file", "-F", "--notes-file") or (flag.startswith("--") and flag.endswith("-file")):
+        path = val if eq else (args[i + 1] if i + 1 < len(args) else "")
+        skip = not eq
+        try:
+            words.append(sys.stdin.read() if path in ("-", "/dev/stdin") else open(path).read())
+        except OSError:
+            pass
+        continue
+    words.append(a)
+log.write("\\n".join(words) + "\\n")
+"""
+
+
+def _bash_posts(command: str, cwd: Path, work: Path) -> str | None:
+    """What a command hands to `gh`, as bash runs it with a stub `gh` first on a PATH of system directories: its argv
+    and every body it reads, or None when bash cannot be run here."""
+    import os
+    import subprocess as sp
+    stub = work / "stub-bin"
+    stub.mkdir(exist_ok=True)
+    gh = stub / "gh"
+    if not gh.exists():
+        gh.write_text(_GH_STUB, encoding="utf-8")
+        gh.chmod(0o755)
+    log = work / "posted.log"
+    log.write_text("", encoding="utf-8")
+    env = {"PATH": f"{stub}:/usr/local/bin:/usr/bin:/bin", "HOME": str(work), "GH_STUB_LOG": str(log), "LANG": "C.UTF-8"}
+    try:
+        sp.run(["bash", "-c", command], cwd=cwd, env=env, stdin=sp.DEVNULL, stdout=sp.DEVNULL, stderr=sp.DEVNULL, timeout=10)
+    except (OSError, sp.SubprocessError):
+        return None
+    return log.read_text(encoding="utf-8", errors="replace")
+
+
+def check_specimen_corpus(repo: Path) -> list[Finding]:
+    """specimen-corpus: every line of `review_specimens/<door>.tsv` replayed against its door, the exit code it must
+    give. A review round's blocker lands as a line here — the battery compounds without a new check per round: #91's
+    hook went through three REVISE rounds, each finding post forms the last cut read wrong, and each specimen is a
+    line. Doors: `gh_hook.tsv` → `scrub.gh_hook` under a fixture key (no box key needed, never the real markers)."""
+    import importlib.util
+    import json
+    corpus = repo / "review_specimens" / "gh_hook.tsv"
+    scrub_py = repo / "scrub.py"
+    if not corpus.is_file() or not scrub_py.is_file():
+        raise CheckError(f"specimen-corpus has no {corpus.relative_to(repo)} or no scrub.py — the corpus is the battery's memory")
+    spec = importlib.util.spec_from_file_location("scrub_under_review", scrub_py)
+    scrub = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scrub)
+    work = Path(tempfile.mkdtemp(prefix="specimens-"))
+    try:
+        word = "zorblaxquux"
+        key = b"0123456789abcdef" * 2
+        hashes = frozenset({scrub.norm_hash(word, key)})
+        home = work / f"{word}-home"
+        home.mkdir()
+        (home / "clean.md").write_text("a public sentence\n", encoding="utf-8")
+        (home / "body.md").write_text(f"fine\n{word}\n", encoding="utf-8")
+        subs = {"{M}": word, "{HOME}": str(home), "{CLEAN}": str(home / "clean.md"), "{DIRTY}": str(home / "body.md")}
+        found: list[Finding] = []
+        n = 0
+        for i, line in enumerate(corpus.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip() or line.startswith("#"):
+                continue
+            parts = line.split("\t", 2)
+            if len(parts) != 3 or parts[0] not in ("0", "2") or parts[1] not in ("-", "home"):
+                found.append(Finding("specimen-corpus", f"{corpus.relative_to(repo)}:{i}", "a line is not `expect<TAB>cwd<TAB>command` (expect 0|2, cwd -|home)"))
+                continue
+            (home / "clean.md").write_text("a public sentence\n", encoding="utf-8")   # a line may rewrite a fixture:
+            (home / "body.md").write_text(f"fine\n{word}\n", encoding="utf-8")       # every line starts from the same two
+            command = re.sub(r"\\(n|\\)", lambda m: "\n" if m.group(1) == "n" else "\\", parts[2])
+            for k, v in subs.items():
+                command = command.replace(k, v)
+            payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+            if parts[1] == "home":
+                payload["cwd"] = str(home)
+            import contextlib
+            import io
+            with contextlib.redirect_stderr(io.StringIO()):
+                got = scrub.gh_hook(json.dumps(payload), hashes, key)
+            n += 1
+            where = f"{corpus.relative_to(repo)}:{i}"
+            if str(got) != parts[0]:
+                found.append(Finding("specimen-corpus", where, f"gh_hook exits {got}, the specimen says {parts[0]}: {parts[2][:90]}"))
+            # the oracle: what bash itself would post, through a gh that only logs (round 5 of #91 — four rounds of the
+            # parser disagreeing with bash are one class, and bash is the only judge of it)
+            posted = _bash_posts(command, home if parts[1] == "home" else work, work)
+            if posted is None:
+                found.append(Finding("specimen-corpus", where, f"the bash oracle could not run this line (no bash, a timeout or an OSError): {parts[2][:80]}"))
+                continue
+            if scrub.hits_in_text(posted, hashes, key):
+                if got != 2:
+                    found.append(Finding("specimen-corpus", where, f"bash posts the marker and gh_hook exits {got} — fail-open: {parts[2][:80]}"))
+                if parts[0] == "0":
+                    found.append(Finding("specimen-corpus", where, f"the specimen says 0 but bash posts the marker: {parts[2][:80]}"))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    if not n:
+        raise CheckError("specimen-corpus replayed ZERO specimens — the corpus is empty, or every line is malformed")
+    NOTES["specimen-corpus"] = f"{n} specimen(s) replayed"
+    return found
+
+
 # ── the battery ───────────────────────────────────────────────────────────────────────────────────
 
 CHECKS = {
@@ -1234,6 +1353,7 @@ CHECKS = {
     "cursor-exclude-by-tenant": check_cursor_exclude_by_tenant,
     "generation-identity": check_generation_identity,
     "host-interpreter": check_host_interpreter,
+    "specimen-corpus": check_specimen_corpus,
 }
 
 
@@ -1370,6 +1490,13 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
              "gate.sh": "#!/usr/bin/env bash\n\"$PY\" -m pytest -q x.py\npython3 -m venv v && v/bin/python -m pytest\n$HERE/.venv/bin/python -m pytest\n"
                         "  python3 -m json.tool a\n# python3 -m pytest in a comment\n"
                         "python3 - <<'X'\ncmd = f\"python3 -m graphy pull {n}\"\nX\n"}),
+        "specimen-corpus": (
+            # red: a clean post the corpus wrongly says refuses · a malformed line · a line saying 0 that bash shows posting the marker
+            {"scrub.py": (HERE / "scrub.py").read_text(encoding="utf-8"),
+             "review_specimens/gh_hook.tsv": "# corpus\n2\t-\tgh issue create --title t --body \"a public sentence\"\n0\tnowhere\tgh issue view 1\n"
+                                             "0\t-\tgh issue comment 1 -b {M}\n"},   # + the oracle: bash posts the marker, the line says 0
+            {"scrub.py": (HERE / "scrub.py").read_text(encoding="utf-8"),
+             "review_specimens/gh_hook.tsv": "# corpus\n0\t-\tgh issue create --title t --body \"a public sentence\"\n2\t-\tgh issue comment 1 -b {M}\n"}),
         "severance": (
             {"engine/graphy/a.py": "def f():\n    pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
              "engine/graphy/c.py": "from graphy import a\na.f()\nimport sqlite3\nsqlite3.connect(':memory:').g()\n"},

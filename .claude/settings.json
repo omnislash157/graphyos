@@ -54,6 +54,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scrub.py\" --gh-hook",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

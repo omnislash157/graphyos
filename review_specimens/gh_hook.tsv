@@ -1,0 +1,225 @@
+# review_specimens/gh_hook.tsv — every post form a review round found, replayed by `review.py specimen-corpus`
+# against scrub.gh_hook under a fixture key. A blocker's specimen is a new line here, never only prose.
+#
+# expect <TAB> cwd <TAB> command
+#   expect  0 = the post passes · 2 = refused
+#   cwd     - (the hook's own) · home (the marker-bearing directory below)
+#   command \n is a newline; placeholders:
+#     {M}      a word the fixture key marks private
+#     {HOME}   a directory whose own name carries {M}
+#     {CLEAN}  {HOME}/clean.md, a public sentence
+#     {DIRTY}  {HOME}/body.md, a line carrying {M}
+#
+# #91 build — the first cut
+2	-	gh issue create --repo o/r --title x --body "measured at {M}"
+2	-	gh issue comment 9 --repo o/r --body "$(cat <<'EOF'\nfine\nfor {M}\nEOF\n)"
+2	-	gh pr create --title t --body-file {DIRTY}
+0	-	gh issue create --repo o/r --title x --body "a public sentence"
+0	-	grep {M} notes.md
+# #91 round 1 — B1: only what travels is scrubbed (a path, a cd, a --repo never reach GitHub)
+0	-	gh issue create --repo o/r --title t --body-file {CLEAN}
+0	-	cd {HOME} && gh issue close 91 --repo o/r --comment done
+0	-	gh issue create --title t --body-file {CLEAN} && echo {HOME}
+# #91 round 1 — B2: a body the hook cannot read refuses
+2	-	gh issue create --title t --body-file={DIRTY}
+2	home	gh issue create --title t -F body.md
+2	-	cd {HOME} && gh issue create --title t -F body.md
+2	-	cat {DIRTY} | gh issue create --title t --body-file -
+2	-	gh issue create --title t --body-file {HOME}/absent.md
+2	-	gh issue create --title t --body-file - <<'EOF'\nfor {M}\nEOF
+0	-	gh issue create --title t --body-file - <<'EOF'\na public sentence\nEOF
+0	-	python3 - <<'PY'\nsp = '{HOME}'\nprint("gh issue comment 1 --body x")\nPY\ngh issue close 3 --comment done
+0	-	gh issue comment 9 --body "$(cat <<'EOF'\nit's fine\nEOF\n)"
+2	-	gh issue create --title "a (parenthesised) title" --body "$(cat <<'EOF'\nfor {M}\nEOF\n)"
+0	-	gh issue comment 9 --body "$(cat <<'EOF'\n1) the first\n2) a :) face\nEOF\n)"
+# #91 round 2 — B3: a post is recognised from parsed words, however gh is named and wherever its flags sit
+2	-	gh -R o/r issue create -t x -b {M}
+2	-	gh issue --repo o/r comment 1 -b {M}
+2	-	gh issue \\\ncomment 1 -b {M}
+2	-	/usr/bin/gh issue comment 1 -b {M}
+2	-	"gh" issue comment 1 -b {M}
+2	-	gh issue comment 1 -b{M}
+2	-	gh --repo=o/r pr create --title fix#3 --body {M}
+2	-	sh -c 'gh issue comment 1 --body {M}'
+# #91 round 2 — B4: a word the shell builds is read when static, refused otherwise
+2	-	gh issue create -t x -b "$(cat {DIRTY})"
+2	-	gh issue create -t x -b "`cat {DIRTY}`"
+2	-	B=$(cat {DIRTY}); gh issue create -t x -b "$B"
+2	-	cat notes | xargs gh issue comment 1 -b
+0	-	gh issue create -t x -b "$(cat {CLEAN})"
+0	-	D={HOME}; gh issue create -t x --body-file "$D/clean.md"
+2	-	D={HOME}; gh issue create -t x --body-file "$D/body.md"
+2	-	gh issue comment 1 --body "$(git log -1 --format=%s)"
+0	-	gh issue create --title t --body '## What\n`scrub.py` costs $5 and '"'"'$(nothing)'"'"' runs'
+2	-	gh issue create --title t --body '## What\n`scrub.py` is for {M}'
+# #91 round 3 — B5: every word after the head travels (no flag arity assumed); B6: expansions; B7: verbs and shells
+2	-	gh pr review 7 --comment --body {M}
+2	-	gh pr review 7 -c -b {M}
+2	-	gh issue edit 3 --add-label {M}
+0	-	gh issue close 3 --comment done > {HOME}/log 2>&1
+0	-	gh issue close 3 --comment done >{HOME}/log
+0	-	gh release create v1 --notes-file {CLEAN}
+2	-	gh release edit v1 --notes-file {DIRTY}
+2	home	gh issue comment 1 --body-file - <<EOF\nsee $(cat body.md)\nEOF
+2	-	echo {M} | gh issue comment 1 --body-file /dev/stdin
+2	-	set -- {M}; gh issue comment 1 -b "$1"
+2	-	f(){ gh issue comment 1 -b "$@"; }; f {M}
+2	home	gh issue create -t x --body-file "$PWD/body.md"
+2	-	gh issue comment 1 -b "$ANY_PROFILE_VARIABLE_ZZ"
+2	-	gh issue reopen 1 --comment {M}
+2	-	gh pr reopen 2 --comment {M}
+2	-	bash -ec 'gh issue comment 1 --body {M}'
+0	-	cd "$UNSET_ZZ" && gh issue view 3
+0	-	gh -R o/r issue view 9
+0	-	gh issue list --repo o/r
+# #91 round 4 — B9: a heredoc spelled inside quotes is text, and a heredoc fed to a shell is a script
+2	-	gh issue comment 1 --body 'repro:\ncat <<EOF\n{M}\nEOF\ndone'
+2	-	gh issue comment 1 --body "repro:\ncat <<EOF\n{M}\nEOF\ndone"
+2	-	bash <<'EOF'\ngh issue comment 1 --body {M}\nEOF
+# #91 round 4 — B10: a quoted word is never a redirection
+2	-	gh issue comment 1 --body ">{M}"
+2	-	gh issue edit 1 --title "<{M}>"
+2	-	gh issue create -t t --body '<{M}>'
+# #91 round 4 — B11: a built word in the group or verb slot expands or refuses
+2	-	V=comment; gh issue $V 1 -b {M}
+# #91 round 5 — B12: a shell's script (options before -c, a prefix assignment, a built -c/eval) · B13: bash's heredoc end line and delimiter · B14: a greedy quoted-heredoc body
+2	-	bash -euo pipefail -c 'gh issue comment 1 --body {M}'
+2	-	bash --norc --noprofile -c 'gh issue comment 1 --body {M}'
+2	-	FOO=1 bash <<'EOF'\ngh issue comment 1 --body {M}\nEOF
+2	-	bash -c "$(cat <<'EOF'\ngh issue comment 1 --body {M}\nEOF\n)"
+2	-	eval "$(cat <<'EOF'\ngh issue comment 1 --body {M}\nEOF\n)"
+2	-	cat > x.txt <<E"O"F\nhi\nEOF\ngh issue comment 1 --body {M}\nE"O"F
+2	-	cat > x.txt <<E\\OF\nhi\nEOF\ngh issue comment 1 --body {M}\nE\\OF
+2	-	gh issue comment 1 --body-file - <<'EOF'\nclean\n EOF\n{M}\nEOF
+2	-	gh issue comment 1 --body-file - <<'EOF'\nclean\nEOF \n{M}\nEOF
+2	-	cat > x.txt <<'EOF'\nx\\\nEOF\ngh issue comment 1 --body {M}\nEOF
+2	home	gh issue comment 1 --body "$(cat <<'EOF'\nclean\nEOF\n)$(cat body.md)\nEOF\n)"
+0	-	gh issue create --repo o/r --label x --title "a (t) title" --body "$(cat <<'EOF'\n## What\n`scrub.py` costs $5, <<EOF and a > b (really) $(nothing) 1) item\nEOF\n)"
+# #91 round 6 — B15: an assignment bash keeps (or drops) where the hook read otherwise
+2	-	B=a; if true; then B="$(cat {DIRTY})"; fi; gh issue comment 1 --body "$B"
+2	-	B=a; export B={M}; gh issue comment 1 -b "$B"
+2	-	B=a; for x in 1; do B={M}; done; gh issue comment 1 -b "$B"
+2	-	B=a; { B={M}; }; gh issue comment 1 -b "$B"
+2	-	B=a; ! B={M}; gh issue comment 1 -b "$B"
+2	-	B={M}; B=a true; gh issue comment 1 -b "$B"
+# #91 round 6 — B16: a file written earlier in the same command is posted as bash leaves it
+2	-	cat > {CLEAN} <<'EOF'\n{M}\nEOF\ngh issue create --title t --body-file {CLEAN}
+2	-	echo {M} > {CLEAN} && gh issue comment 1 --body "$(cat {CLEAN})"
+2	home	echo {M} | tee clean.md >/dev/null; gh issue comment 1 --body-file clean.md
+2	-	cp {DIRTY} {CLEAN} && gh issue comment 1 --body-file {CLEAN}
+0	-	cat > {CLEAN} <<'EOF'\na public sentence\nEOF\ngh issue create --title t --body-file {CLEAN}
+2	-	gh label create {M} --description "a public label"
+# #91 round 7 — B17: `new` is gh's own alias of create, and a repo's description travels
+2	-	gh issue new --repo o/r --title x --body {M}
+2	-	gh pr new --title x --body {M}
+2	-	gh release new v1 --notes {M}
+2	-	gh issue new -t x -F {DIRTY}
+2	-	gh repo edit o/r --description {M}
+# #91 round 7 — B18: an assignment bash may skip (`||` · `&&`) or run in a subshell (`|` · `&`) is not the value bash keeps
+2	-	B={M}; true || B=clean; gh issue comment 1 --body "$B"
+2	-	B="$(cat {DIRTY})"; test -s {DIRTY} || B="a public sentence"; gh issue comment 1 --body "$B"
+2	-	B={M}; false && B=clean; gh issue comment 1 --body "$B"
+2	-	B={M}; B=clean | cat; gh issue comment 1 --body "$B"
+2	-	B={M}; B=clean & gh issue comment 1 --body "$B"
+2	-	B={M}; case y in x) true; B=clean;; esac; gh issue comment 1 --body "$B"
+0	-	true && B="a public sentence" && gh issue comment 1 --body "$B"
+# #91 round 7 — B19: a closed block returns the depth to 0, so a clean filing after a loop or a branch passes
+0	-	for f in a b; do echo $f; done; B="a public sentence"; gh issue comment 1 --body "$B"
+0	-	if true; then echo ok; fi\nB="a public sentence"\ngh issue comment 1 --body "$B"
+0	-	while false; do :; done; B="a public sentence"; gh issue comment 1 --body "$B"
+# #91 round 8 — a branch name, a project item and a run's inputs travel; gh's own output redirected to a file is a write the hook cannot read
+2	-	gh issue develop 1 --name {M}
+2	-	gh project item-create 1 --owner o --title {M}
+2	-	gh workflow run x.yml -f note={M}
+2	-	gh issue view 1 > {CLEAN}; gh issue comment 1 -F {CLEAN}
+# #91 round 8 (B20) — a `cd` inside `( … )` ends with the subshell; `cd -`, `pushd` and `popd` are followed, never read as directories
+0	home	( cd .. && true ) && gh issue comment 1 --body-file clean.md
+0	home	(cd .. && ls); gh issue comment 1 --body-file clean.md
+0	home	cd .. && cd - >/dev/null && gh issue comment 1 --body-file clean.md
+2	home	cd .. ; cd -; gh issue comment 1 --body-file body.md
+0	home	pushd .. >/dev/null && popd >/dev/null && gh issue comment 1 --body-file clean.md
+2	home	cd .. && cd - >/dev/null && gh issue comment 1 --body-file body.md
+# #91 round 9 — B21: `>&` · `<&` · `&>` are one redirection word, never split at the `&`
+0	home	git status > log.txt 2>&1; gh issue comment 1 -F clean.md
+0	home	echo warn >&2; gh issue comment 1 -F clean.md
+0	home	ls 2>&1 | tail -1; gh issue comment 1 --body "$(cat clean.md)"
+2	home	echo {M} &> clean.md; gh issue comment 1 -F clean.md
+2	home	echo {M} >& clean.md; gh issue comment 1 -F clean.md
+2	home	echo {M} > clean.md 2>&1; gh issue comment 1 -F clean.md
+# #91 round 9 — B22: `workflow run` is recognised by its words, wherever the flags sit, and `--json` reads its inputs from stdin
+2	-	gh workflow --repo o/r run x.yml -f note={M}
+2	-	gh workflow \\\n  run x.yml -f note={M}
+2	-	echo '{"note":"{M}"}' | gh workflow run x.yml --json
+2	-	gh workflow run x.yml --json <<'EOF'\n{"note":"{M}"}\nEOF
+0	-	gh workflow run x.yml --json <<'EOF'\n{"note":"clean"}\nEOF
+0	-	gh api repos/o/r/actions/jobs/$JID/logs | tail -3
+# #91 round 10 — B23: a post standing inside `$(…)` or a backtick is a command, walked like a script (the `sh -c` · `eval` class)
+2	-	URL=$(gh issue create -t t -b {M}); echo "$URL"
+2	-	URL="$(gh issue create --repo o/r --title t --body {M})"; echo "$URL"
+2	-	URL=$(gh issue create -t t -F {DIRTY}); echo "$URL"
+2	-	URL=`gh issue create -t t -b {M}`; echo $URL
+2	-	N=$(gh pr create -t t -b {M} | tail -1); echo $N
+2	-	echo "created $(gh issue create -t t -b {M})"
+2	-	echo $(gh issue comment 1 -b {M})
+2	-	x=$(gh issue comment 1 --body {M}) || true
+2	-	if [ -n "$(gh issue comment 1 -b {M})" ]; then echo ok; fi
+0	-	URL=$(gh issue create -t t -b "a public sentence"); echo "$URL"
+0	-	URL=$(gh issue create -t t -F {CLEAN}); echo "$URL"
+2	home	S={HOME}; URL=$(gh issue create -t t -F $S/body.md); echo "$URL"
+0	home	S={HOME}; URL=$(gh issue create -t t -F $S/clean.md); echo "$URL"
+# #91 round 11 — B24: a posted word is scrubbed whole; the text after its first `=` is never re-expanded as live shell
+0	-	gh issue comment 1 -b "$(cat <<'EOF'\nthe idiom: URL=$(gh issue create -t t -b x)\nEOF\n)"
+0	-	gh issue comment 1 -b "$(cat <<'EOF'\nexport PATH=$PATH:/x\nEOF\n)"
+0	-	gh issue comment 1 -b "$(cat <<'EOF'\nPY=.venv/bin/python; $PY -m pytest -q\nEOF\n)"
+0	-	gh issue create -t t -b "$(cat <<'EOF'\ncost=$5\nEOF\n)"
+0	-	gh issue comment 1 -b "$(cat <<'EOF'\nfoo=$1\nEOF\n)"
+# #91 round 11 — B25: a writer inside a walked `$(…)` or `eval` marks the outer command; the depth cap refuses, never skips
+2	home	x=$(python3 -c "open('clean.md','w').write('{M}')"); gh issue comment 1 -F clean.md
+2	home	OUT=$(python3 -c "open('clean.md','w').write('{M}')" 2>&1); gh issue comment 1 -F clean.md
+2	home	cat > gen.py <<'EOF'\nopen('clean.md','w').write('{M}')\nEOF\nx=$(python3 gen.py); gh issue comment 1 -F clean.md
+2	home	x=$(bash -c "echo {M} > clean.md"); gh issue comment 1 -F clean.md
+2	home	eval "cp body.md clean.md"; gh issue comment 1 -F clean.md
+2	-	echo $(echo $(echo $(echo $(gh issue comment 1 -b {M}))))
+# #91 round 12 — B26: a writer after `do` · `then` · `else` · `time` · `env` · `!` · `{` or in a function body is a writer; B27: a child shell's walk sees the outer's writes
+2	home	for n in 1; do python3 -c "open('clean.md','w').write('{M}')"; done; gh issue comment 1 -F clean.md
+2	home	time python3 -c "open('clean.md','w').write('{M}')"; gh issue comment 1 -F clean.md
+2	home	env X=1 python3 -c "open('clean.md','w').write('{M}')"; gh issue comment 1 -F clean.md
+2	home	if true; then cp body.md clean.md; fi; gh issue comment 1 -F clean.md
+2	home	true && { cp body.md clean.md; } && gh issue comment 1 -F clean.md
+2	home	f() { cp body.md clean.md; }; f; gh issue comment 1 -F clean.md
+2	home	for n in 1; do python3 -c "open('clean.md','w').write('{M}')"; done; gh issue comment 1 --body "$(cat clean.md)"
+0	home	for n in 1; do echo $n; done; gh issue comment 1 -F clean.md
+0	home	time ls >/dev/null; gh issue comment 1 -F clean.md
+0	home	if true; then echo ok; fi; gh issue comment 1 -F clean.md
+2	home	echo {M} > clean.md; bash -c 'gh issue comment 1 -F clean.md'
+2	home	cat > clean.md <<'EOF'\n{M}\nEOF\nbash -c 'gh issue comment 1 -F clean.md'
+2	home	echo {M} > clean.md; bash <<'EOF'\ngh issue comment 1 -F clean.md\nEOF
+2	home	cp body.md clean.md; sh -c 'gh issue comment 1 -F clean.md'
+# #91 round 13 — B28: a redirect heading a segment (after `( … )`, or before the command word) is a write; B29: a writer after `if` · `while` · `until` · `function` is a writer; a prefix word's separated flag value is not the command
+2	home	( echo {M} ) > clean.md; gh issue comment 1 -F clean.md
+2	home	( cd .. && echo {M} ) > clean.md 2>&1; gh issue comment 1 -F clean.md
+2	home	( echo {M} ) >> clean.md; gh issue comment 1 --body "$(cat clean.md)"
+2	home	( echo {M} ) &> clean.md; gh issue comment 1 -F clean.md
+2	home	(echo {M})>clean.md; gh issue comment 1 -F clean.md
+2	home	( echo {M} ) > clean.md && gh issue comment 1 --body-file clean.md
+2	home	x=$( ( echo {M} ) > clean.md ); gh issue comment 1 -F clean.md
+2	home	> clean.md echo {M}; gh issue comment 1 -F clean.md
+0	home	( echo ok ) > log.txt; gh issue comment 1 -F clean.md
+2	home	if python3 -c "open('clean.md','w').write('{M}')"; then gh issue comment 1 -F clean.md; fi
+2	home	if cp body.md clean.md; then gh issue comment 1 -F clean.md; fi
+2	home	if cp body.md clean.md\nthen gh issue comment 1 -F clean.md\nfi
+2	home	if ! cp body.md clean.md; then echo no; fi; gh issue comment 1 -F clean.md
+2	home	while ! cp body.md clean.md; do sleep 1; done; gh issue comment 1 -F clean.md
+2	home	until cp body.md clean.md; do break; done; gh issue comment 1 -F clean.md
+2	home	function f { cp body.md clean.md; }; f; gh issue comment 1 -F clean.md
+0	home	if [ -f body.md ]; then gh issue comment 1 -F clean.md; fi
+0	home	if grep -q public clean.md; then gh issue comment 1 -F clean.md; fi
+2	home	nice -n 5 python3 -c "open('clean.md','w').write('{M}')"; gh issue comment 1 -F clean.md
+2	home	env -u X python3 -c "open('clean.md','w').write('{M}')"; gh issue comment 1 -F clean.md
+# #91 round 14 — B30: a prefix word's value flags are its own (`time -p` and `command -p` take none; `command -v X` names X, never runs it); `< F` heads a segment like `> F`
+2	home	time -p cp body.md clean.md; gh issue comment 1 -F clean.md
+2	home	time -p python3 -c "open('clean.md','w').write('{M}')"; gh issue comment 1 -F clean.md
+2	home	command -p cp body.md clean.md; gh issue comment 1 -F clean.md
+2	home	< body.md tee clean.md >/dev/null; gh issue comment 1 -F clean.md
+2	home	< body.md python3 -c "import sys; open('clean.md','w').write(sys.stdin.read())"; gh issue comment 1 -F clean.md
+0	home	command -v python3 >/dev/null && gh issue comment 1 -F clean.md
