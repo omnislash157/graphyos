@@ -309,3 +309,81 @@ def test_RED_a_doc_lane_carrying_another_lanes_scheme_refuses_naming_both(tmp_pa
                                          "dotted": "core.mod.run", "module": "core", "role": "code"}}
     with pytest.raises(rebuild_lane.RebuildError, match=r"lane 'skills' declares doc relations \['governs'\] but lane 'core' also owns \['core'\]"):
         _rebuild_with_skills(tmp_path, ["governs"], extra_nodes=stub)
+
+
+def test_GREEN_store_stays_servable_through_a_rebuild(tmp_path, capsys, monkeypatch):
+    """graphyos #98: the rebuild's clear removed the served store, the descriptor and the ring, so a door
+    opened at any step before build landed refused `no compiled store` — a session that starts inside the
+    window loses the door for its life. Now every step finds the last good store: served, named STALE,
+    under warn; refused as STALE under refuse (never a silent stale answer, #97); the next descriptor lands
+    in one rename after build, and a store no roster names any more is pruned."""
+    from graphy import cli
+    from graphy import federated_store as fs
+    from graphy import mcp as mcp_server
+    repo = _git_repo(tmp_path)
+    sub = repo / ".graphy" / "substrate"
+    sub.mkdir(parents=True)
+    _place_foreign_lane(sub)
+    desc = repo / ".graphy" / "tenant.json"
+
+    def lanes():
+        out = [rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+               rebuild_lane.Lane.placed("pg_schema")]
+        return out
+
+    rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", lanes=lanes(),
+                         container="none", log=lambda *a: None)
+    first = sorted(p.name for p in sub.glob(".mesh_store_*"))
+    assert first
+    # a roster that no longer exists left a store behind: the next landing prunes it
+    orphan = sub / ".mesh_store_000000000000.sqlite"
+    orphan.write_bytes(b"")
+
+    seen: list[tuple[str, str, str]] = []
+
+    def probe(step: str) -> None:
+        d, tid = cli.repo_tenant(repo)
+        t = cli._load_tenant(str(d))
+        tools = mcp_server.open_tools(t, tid, cli._roster(t), on_stale="warn")
+        seen.append((step, "warn", tools.generation))
+        try:
+            fs.open_for(cli._roster(t), tenant=t, tenant_id=tid, on_stale="refuse")
+            seen.append((step, "refuse", "fresh"))
+        except fs.StoreError as exc:
+            assert "STALE" in str(exc), exc
+            seen.append((step, "refuse", "STALE"))
+
+    real_main, real_clear = cli.main, rebuild_lane.clear_substrate
+
+    def main(argv):
+        probe(f"before {argv[0]}")
+        return real_main(argv)
+
+    def clear(*a, **k):
+        kept = real_clear(*a, **k)
+        probe("after clear")
+        return kept
+
+    monkeypatch.setattr(cli, "main", main)
+    monkeypatch.setattr(rebuild_lane, "clear_substrate", clear)
+    (repo / "core" / "extra.py").write_text("def more():\n    return 3\n", encoding="utf-8")
+    rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", lanes=lanes(),
+                         container="none", log=lambda *a: None, cursor="sha256:" + "1" * 64)
+    monkeypatch.setattr(cli, "main", real_main)
+    probe("after rebuild")
+
+    steps = [s for s, mode, _ in seen if mode == "warn"]
+    assert steps[0] == "after clear" and "before smash" in steps and "before build" in steps and "before check" in steps
+    assert all(gen for _, mode, gen in seen if mode == "warn")            # a store at every step
+    assert ("after clear", "refuse", "STALE") in seen                      # named, never served silently
+    assert seen[-1] == ("after rebuild", "refuse", "fresh")
+    warn_gens = [gen for _, mode, gen in seen if mode == "warn"]
+    assert warn_gens[0] != warn_gens[-1]                                   # the new generation landed
+    assert not orphan.exists() and not (repo / ".graphy" / ".tenant.json.next").exists()
+    assert not (sub / fs.REBUILD_MARKER).exists()
+    # with no rebuild in flight, an unreadable input is a torn substrate: refused even under warn
+    (sub / "registry.json").unlink()
+    t = cli._load_tenant(str(desc))
+    with pytest.raises(fs.StoreError, match="registry"):
+        fs.open_for(cli._roster(t), tenant=t, tenant_id="core", on_stale="warn")
+    assert "STALE" in capsys.readouterr().err

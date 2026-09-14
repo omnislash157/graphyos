@@ -170,8 +170,8 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
 
     sub.mkdir(parents=True, exist_ok=True)
     kept = clear_substrate(sub, keep=[l.dirname for l in placed])
-    if desc.exists():
-        desc.unlink()
+    staged = cli_lane.staged_descriptor(desc)
+    staged.unlink(missing_ok=True)        # the served descriptor names the last good store until build lands (graphyos #98)
     if kept:
         log(f"REBUILD: {len(kept)} placed lane(s) kept across the clear: " + " · ".join(kept))
 
@@ -208,7 +208,7 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
             log(f"REBUILD: the working tree is dirty ({dirty} file(s) past HEAD) — the cursor "
                 f"carries it; `graphy check` reads STALE the moment they move")
 
-    rc = cli_lane.main(["init", "--tenant", str(desc), "--root", str(root), "--data-home", str(sub),
+    rc = cli_lane.main(["init", "--tenant", str(staged), "--root", str(root), "--data-home", str(sub),
                         "--join-keys", str(join_keys or sub / "registry.json"),
                         "--journal", str(journal or sub / "journal"),
                         "--cursor", cursor, "--policy", policy, *declared])
@@ -224,14 +224,17 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
 
     steps = []
     if resolve:
-        steps.append(["converge", "--tenant", str(desc), "--tenant-id", tenant_id, "--resolve"])
-    steps.append(["build", "--tenant", str(desc), "--tenant-id", tenant_id, "--container", container])
-    if check:
-        steps.append(["check", "--tenant", str(desc), "--tenant-id", tenant_id])
+        steps.append(["converge", "--tenant", str(staged), "--tenant-id", tenant_id, "--resolve"])
+    steps.append(["build", "--tenant", str(staged), "--tenant-id", tenant_id, "--container", container])
     for step in steps:
         rc = cli_lane.main(step)
         if rc != 0:
             raise RebuildError(f"rebuild: {step[0]} failed (exit {rc})")
+    cli_lane.land_descriptor(staged, desc, tenant_id)
+    if check:
+        rc = cli_lane.main(["check", "--tenant", str(desc), "--tenant-id", tenant_id])
+        if rc != 0:
+            raise RebuildError(f"rebuild: check failed (exit {rc})")
 
     receipt = {
         "tenant_id": tenant_id,

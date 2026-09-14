@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import json
 import re
 import shlex
@@ -1812,13 +1813,40 @@ def _eat_again(args: argparse.Namespace, repo: Path, package: str) -> str:
     return " ".join(argv)
 
 
+SERVED_PREFIX = ".mesh_store_"
+
+
+def staged_descriptor(desc: Path) -> Path:
+    """Where a re-eat writes the next descriptor while the served one keeps naming the last good store."""
+    desc = Path(desc)
+    return desc.with_name(f".{desc.name}.next")
+
+
+def land_descriptor(staged: Path, desc: Path, tenant_id: str) -> None:
+    """The next descriptor replaces the served one in one rename, once build has landed its store; a
+    store no roster names any more is removed (a held file on a platform that cannot unlink it stays
+    until the next rebuild — garbage, never an answer: no descriptor names it)."""
+    os.replace(staged, desc)
+    tenant = _load_tenant(str(desc))
+    from graphy import federated_store as fstore
+    (Path(tenant.data_home) / fstore.REBUILD_MARKER).unlink(missing_ok=True)
+    live = fstore.store_path_for(_roster(tenant), tenant=tenant).name
+    for f in Path(tenant.data_home).glob(f"{SERVED_PREFIX}*"):
+        if not f.name.startswith(live):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
 def _clear_substrate(sub: Path) -> None:
     """A re-eat starts from the previous substrate's shards, never from nothing: each
     ``<slug>_graph/`` keeps exactly nodes.json · edges.json · PROVENANCE.json — the splice the
     re-mint reads (``smash.mint``), so only the files whose bytes moved are parsed — and the
-    stored walks keep their directory, so they diff against the new generation. Everything
-    else under the substrate (the registry, the journal, the resolver's sidecars, the store,
-    the parquet, the atlas) is a build product and is rebuilt."""
+    stored walks keep their directory, so they diff against the new generation. The served store
+    and the ring receipt stay too, so a door opened mid-rebuild finds the last good store, named
+    STALE, until build replaces it (graphyos #98). Everything else under the substrate (the
+    registry, the journal, the resolver's sidecars, the parquet, the atlas) is rebuilt."""
     from graphy import journal
     from graphy import traversal
     from graphy import smash as smash_lane
@@ -1834,11 +1862,17 @@ def _clear_substrate(sub: Path) -> None:
                         shutil.rmtree(f, ignore_errors=True) if f.is_dir() else f.unlink(missing_ok=True)
             elif entry.is_dir():
                 shutil.rmtree(entry, ignore_errors=True)
+            elif entry.name.startswith(SERVED_PREFIX) or entry.name == smash_lane.RING_NAME:
+                continue                      # served until build replaces it; the ring until smash rewrites it
             else:
                 entry.unlink(missing_ok=True)
     if kept.is_dir():
         sub.mkdir(parents=True, exist_ok=True)
         shutil.move(str(kept), str(sub / traversal.DIRNAME))
+    if any(sub.glob(f"{SERVED_PREFIX}*")):      # a store is served: a door opened now is told a rebuild is in flight
+        from datetime import datetime, timezone
+        from graphy.federated_store import REBUILD_MARKER
+        (sub / REBUILD_MARKER).write_text(datetime.now(timezone.utc).isoformat(timespec="seconds") + "\n", encoding="utf-8")
 
 
 def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, producer: str) -> int:
@@ -1868,8 +1902,8 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         except (OSError, ValueError, KeyError, TypeError):
             prev_live = set()        # an unreadable previous ring claims nothing, so nothing is "mine"
     _clear_substrate(sub)
-    if desc.exists():
-        desc.unlink()
+    staged = staged_descriptor(desc)
+    staged.unlink(missing_ok=True)       # the served descriptor stays until build lands (graphyos #98)
 
     print(f"EAT: {package} at {corpus} -> {home}")
     rc = main(["smash", "--package", package, "--site-packages", args.site_packages,
@@ -1920,7 +1954,7 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     elif dirty:
         print(f"EAT: the working tree is dirty ({dirty} file(s) past HEAD) — the cursor carries it; "
               f"`graphy check` reads STALE the moment they move")
-    rc = main(["init", "--tenant", str(desc), "--root", str(repo), "--data-home", str(sub),
+    rc = main(["init", "--tenant", str(staged), "--root", str(repo), "--data-home", str(sub),
                "--join-keys", str(sub / "registry.json"), "--journal", str(sub / "journal"),
                "--cursor", cursor, "--policy", "refuse", "--adapter", producer, *lanes])
     if rc != 0:
@@ -1933,9 +1967,11 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     except DocDeclarationError as exc:            # a malformed or overlapping doc declaration (graphyos #86)
         print(f"EAT REFUSED: {exc}", file=sys.stderr)
         return 2
-    for step in (["converge", "--tenant", str(desc), "--tenant-id", package, "--resolve"],
-                 ["build", "--tenant", str(desc), "--tenant-id", package, "--container", "none"],
+    for step in (["converge", "--tenant", str(staged), "--tenant-id", package, "--resolve"],
+                 ["build", "--tenant", str(staged), "--tenant-id", package, "--container", "none"],
                  ["check", "--tenant", str(desc), "--tenant-id", package]):
+        if step[0] == "check":
+            land_descriptor(staged, desc, package)
         rc = main(step)
         if rc != 0:
             print(f"EAT FAILED at {step[0]}", file=sys.stderr)
