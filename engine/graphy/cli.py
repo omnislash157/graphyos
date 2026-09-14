@@ -1882,6 +1882,26 @@ def _of_family(sub: Path, home: Path) -> bool:
     return home == sub or (home.parent == sub.parent and generation_of(home.name) == sub.name)
 
 
+def served_previous(sub: Path, desc: Path) -> Path | None:
+    """The generation a landing replaces: the home the served descriptor names when it is ``sub`` or one of
+    its generations (never another checkout's, review round 2 of #98), else ``sub`` itself when it exists —
+    a substrate built before generations existed — else nothing. One answer for `stage` and `land`."""
+    sub = _spelled(sub)
+    prev = served_data_home(desc) if Path(desc).is_file() else None
+    prev = _spelled(prev) if prev is not None else None
+    if prev is not None and not _of_family(sub, prev):
+        prev = None
+    if prev is None and sub.is_dir():
+        prev = sub
+    return prev
+
+
+def staged_descriptor(desc: Path) -> Path:
+    """Where the next descriptor is staged beside the served one: ``.<name>.next``, the one spelling."""
+    desc = Path(desc)
+    return desc.with_name(f".{desc.name}.next")
+
+
 def stage_generation(sub: Path, desc: Path, *, whole=()) -> tuple[Path, Path, Path | None]:
     """A rebuild never touches the data home a door is serving (graphyos #98). The next generation
     is built in a fresh sibling ``<substrate>.gen-<token>/`` beside it, seeded from the served data
@@ -1893,12 +1913,7 @@ def stage_generation(sub: Path, desc: Path, *, whole=()) -> tuple[Path, Path, Pa
     is never this tenant's to read (review round 2). The next descriptor is staged beside the served one.
     A copy that fails removes the partial stage. Returns (stage, staged descriptor, served home)."""
     sub, desc = _spelled(sub), Path(desc)
-    prev = served_data_home(desc) if desc.is_file() else None
-    prev = _spelled(prev) if prev is not None else None
-    if prev is not None and not _of_family(sub, prev):
-        prev = None
-    if prev is None and sub.is_dir():
-        prev = sub                                    # a substrate built before generations existed
+    prev = served_previous(sub, desc)
     token = f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}-{os.getpid()}-{os.urandom(3).hex()}"
     stage = sub.with_name(generation_name(sub.name, token))
     stage.mkdir(parents=True)
@@ -1924,7 +1939,7 @@ def stage_generation(sub: Path, desc: Path, *, whole=()) -> tuple[Path, Path, Pa
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)
         raise
-    staged = desc.with_name(f".{desc.name}.next")
+    staged = staged_descriptor(desc)
     staged.unlink(missing_ok=True)
     return stage, staged, prev
 
@@ -2248,6 +2263,108 @@ def _cmd_index(args: argparse.Namespace) -> int:
         print(f"  {name:<40} {address}")
     print(f"INDEX: {len(cat)} named shard(s) at {args.index}")
     return 0
+
+
+def _cmd_generation(args: argparse.Namespace) -> int:
+    """`generation stage` · `generation land`: the #98 helpers as verbs, so a house driver that runs the CLI
+    verbs itself stages the next generation beside the served one and lands it in one descriptor rename,
+    importing nothing (graphyos #133). Between the two the driver runs its own mint lanes into the stage,
+    then `init · converge · build` against the staged descriptor; `land` refuses a stage build never landed
+    a store in, so the served generation is never replaced by a torn one. A door answers throughout."""
+    from graphy import federated_store as fstore
+    verb = args.generation_verb
+    if not args.tenant:
+        print("GENERATION REFUSED: --tenant <descriptor> is required — the served descriptor is what a landing "
+              "replaces, never the cwd", file=sys.stderr)
+        return 2
+    desc = Path(args.tenant).expanduser()
+    if not desc.is_absolute():
+        print(f"GENERATION REFUSED: --tenant must be absolute, got {desc}", file=sys.stderr)
+        return 2
+    placed = [f"{s}_graph" for s in (args.placed or ())]
+    if verb == "stage":
+        if not args.substrate:
+            print("GENERATION REFUSED: stage needs --substrate <abs> — the family the next generation is a "
+                  "sibling of", file=sys.stderr)
+            return 2
+        sub = Path(args.substrate).expanduser()
+        if not sub.is_absolute():
+            print(f"GENERATION REFUSED: --substrate must be absolute, got {sub}", file=sys.stderr)
+            return 2
+        if generation_of(sub.name) is not None:
+            print(f"GENERATION REFUSED: --substrate names a generation ({sub.name}); name the substrate it is a "
+                  f"generation of ({generation_of(sub.name)})", file=sys.stderr)
+            return 2
+        try:
+            stage, staged, prev = stage_generation(sub, desc, whole=placed)
+        except OSError as exc:
+            print(f"GENERATION REFUSED: the stage could not be seeded ({type(exc).__name__}: {exc})", file=sys.stderr)
+            return 2
+        carried = sorted(p.name for p in stage.glob("*_graph") if p.is_dir())
+        print(f"GENERATION STAGED: {stage}")
+        print(f"  descriptor: {staged}")
+        print(f"  seeded from: {prev if prev is not None else '<nothing served>'} — "
+              f"{len(carried)} shard(s): {' · '.join(carried) if carried else 'none'}"
+              + (f"; carried whole: {' · '.join(sorted(placed))}" if placed else ""))
+        print(f"  next: mint into {stage}, then init · converge · build with --tenant {staged} "
+              f"(--data-home {stage}), then `graphy generation land --stage {stage} --tenant {desc} --tenant-id <id>`")
+        return 0
+    if verb == "land":
+        if not args.stage:
+            print("GENERATION REFUSED: land needs --stage <abs> — the generation `generation stage` printed",
+                  file=sys.stderr)
+            return 2
+        if not args.tenant_id:
+            print("GENERATION REFUSED: land needs --tenant-id — the store it proves is opened through a declared "
+                  "tenant, never guessed", file=sys.stderr)
+            return 2
+        stage = Path(args.stage).expanduser()
+        if not stage.is_absolute():
+            print(f"GENERATION REFUSED: --stage must be absolute, got {stage}", file=sys.stderr)
+            return 2
+        stage = _spelled(stage)
+        base = generation_of(stage.name)
+        if base is None:
+            print(f"GENERATION REFUSED: {stage} is not a generation of a substrate — only what `generation stage` "
+                  f"made (`GENERATION STAGED: <stage>`) can land", file=sys.stderr)
+            return 2
+        if not stage.is_dir():
+            print(f"GENERATION REFUSED: no stage at {stage}", file=sys.stderr)
+            return 2
+        sub = stage.with_name(base)
+        staged = staged_descriptor(desc)
+        if not staged.is_file():
+            print(f"GENERATION REFUSED: no staged descriptor at {staged} — `graphy init --tenant {staged} "
+                  f"--data-home {stage} …` writes it", file=sys.stderr)
+            return 2
+        home = served_data_home(staged)
+        if home is None or _spelled(home) != stage:
+            print(f"GENERATION REFUSED: the staged descriptor {staged} names data home {home}, not the stage {stage}",
+                  file=sys.stderr)
+            return 2
+        try:                                       # build landed a store in the stage, and it is fresh: proven, never assumed
+            tenant = _load_tenant(str(staged))
+            with fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id, on_stale="refuse") as store:
+                gen = store.generation()
+        except (TenantError, fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+            print(_flatten(f"GENERATION REFUSED: the stage holds no fresh store to land — run `graphy build --tenant "
+                           f"{staged} --tenant-id {args.tenant_id}` first ({exc})"), file=sys.stderr)
+            return 2
+        prev = served_previous(sub, desc)
+        if prev is not None and _spelled(prev) == stage:
+            print(f"GENERATION REFUSED: {stage} is already the served generation", file=sys.stderr)
+            return 2
+        try:
+            land_generation(stage, staged, desc, prev, sub, keep=placed)
+        except OSError as exc:
+            print(f"GENERATION REFUSED: the next generation could not land ({type(exc).__name__}: {exc}) — the "
+                  f"served generation stands", file=sys.stderr)
+            return 2
+        print(f"GENERATION LANDED: {desc} → {stage} (store generation {gen})"
+              + (f" — replaced {prev}, kept for a door that began on it" if prev is not None else ""))
+        return 0
+    print(f"GENERATION REFUSED: the verbs are `stage` and `land`, got {verb!r}", file=sys.stderr)
+    return 2
 
 
 def _cmd_shell(args: argparse.Namespace) -> int:
@@ -2637,6 +2754,19 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="the harness whose wiring is written (repeatable; default claude): .claude/settings.json · "
                               ".codex/hooks.json · .cursor/hooks.json — the same three hook scripts behind each")
     p_shell.set_defaults(handler=_cmd_shell)
+
+    p_gen = sub.add_parser("generation", help="a house rebuild driver's stage and land: `generation stage --substrate <abs> "
+                                              "--tenant <descriptor>` seeds the next generation beside the served one; "
+                                              "`generation land --stage <abs> --tenant <descriptor> --tenant-id <id>` "
+                                              "proves its store and lands it in one descriptor rename (graphyos #133)")
+    p_gen.add_argument("generation_verb", choices=("stage", "land"), help="stage | land")
+    p_gen.add_argument("--tenant", default=None, help="the served descriptor (absolute); the staged one is written beside it")
+    p_gen.add_argument("--tenant-id", default=None, help="land: the tenant id the stage's store is opened under")
+    p_gen.add_argument("--substrate", default=None, help="stage: the substrate the next generation is a sibling of (absolute)")
+    p_gen.add_argument("--stage", default=None, help="land: the generation `generation stage` printed (absolute)")
+    p_gen.add_argument("--placed", action="append", default=None,
+                       help="a lane the tenant's own producer wrote (slug; repeatable): carried whole into the stage, kept by the landing")
+    p_gen.set_defaults(handler=_cmd_generation)
 
     p_check = sub.add_parser("check", help="read-only audit over the declared tenant")
     p_check.add_argument("--tenant", default=None,

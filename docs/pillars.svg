@@ -92,7 +92,7 @@
       <path d="M 824,117 L 855.5,117 L 855.5,61 L 866,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
       <g class="node" data-id="CLI">
         <rect x="180" y="152" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="246.5" y="177.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (157→ ·→16)</text>
+        <text x="246.5" y="177.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (159→ ·→16)</text>
       </g>
       <g class="node" data-id="CUT">
         <rect x="40" y="40" width="126" height="42" class="card" rx="3" stroke-width="1"/>
@@ -116,6 +116,6 @@
       </g>
       <g class="node" data-id="SEAM">
         <rect x="866" y="40" width="140" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="936" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (26→ ·→134)</text>
+        <text x="936" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (26→ ·→136)</text>
       </g>
 </svg>

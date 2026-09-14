@@ -17,6 +17,10 @@ The served data home is never written: the next generation is built in ``<substr
 and lands in one rename of the descriptor, so a door opened at any step opens the last good store,
 fresh, and a rebuild that fails or is interrupted discards its stage (graphyos #98).
 
+A house driver that runs the CLI verbs itself instead of calling ``rebuild`` gets the same two
+steps as verbs — ``graphy generation stage`` and ``graphy generation land`` (graphyos #133): stage →
+its own mint lanes into the stage → init · converge · build against the staged descriptor → land → check.
+
 **A placed lane is the point.** The engine does not run a tenant's producer: `cartograph` carries no
 build-lane runner and the engine never runs a shell, so a foreign emitter stays the tenant's to
 invoke. It writes its shard into the substrate and declares the lane ``placed``; this lane keeps it

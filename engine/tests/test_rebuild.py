@@ -608,3 +608,89 @@ def test_RED_a_refresh_sibling_keeps_its_name_across_landings_and_is_never_a_gen
     dotted = tmp_path / "substrate.gen-x.2.0"                     # a sibling spelled after a token, as the old plan did
     assert not cli._of_family(sub, dotted) and not cartograph._excluded(dotted / "venv" / "x", sub)
     assert cartograph.generation_base(dotted) == dotted
+
+
+def _blast_text(repo: Path, capsys) -> tuple[int, str]:
+    """`blast` against a known id through the served descriptor — the client's 5 s poll — with the
+    generation stamp removed, so two answers compare on what they say."""
+    import re
+    from graphy import cli
+    capsys.readouterr()                                    # the step before printed; the poll's answer is its own
+    rc = cli.main(["blast", "core.mod.run", "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "core",
+                   "--no-store"])
+    out = capsys.readouterr()
+    return rc, re.sub(r"generation=\S+", "generation=<gen>", out.out)
+
+
+def test_GREEN_generation_verbs_keep_the_door_answering(tmp_path, capsys):
+    """graphyos #133: a house driver that runs the CLI verbs itself unlinked `tenant.json` up front, so for the
+    whole rebuild (423.7 s on the first client's tenant) `blast` refused `tenant descriptor not found`. The #98
+    helpers are verbs now: `generation stage` seeds the next generation beside the served one, the driver mints
+    into it and runs init · converge · build against the staged descriptor, `generation land` proves the stage's
+    store and renames the descriptor. `blast` against a known id answers the same at every step; the landed
+    generation answers with the symbol the rebuild added; the replaced generation is kept one back."""
+    from graphy import cli
+    from graphy import smash as smash_lane
+    repo = _git_repo(tmp_path)
+    sub = repo / ".graphy" / "substrate"
+    desc = repo / ".graphy" / "tenant.json"
+    assert cli.main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)]) == 0
+    capsys.readouterr()
+    rc, first = _blast_text(repo, capsys)
+    assert rc == 0 and "BLAST seed=core://func/core.mod.run" in first
+    old_home = cli.served_data_home(desc)
+    (repo / "core" / "extra.py").write_text("from core.mod import run\n\ndef more():\n    return run() + 2\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "two"], cwd=repo, check=True)
+
+    answers = {}
+    # a stage, and what it printed
+    assert cli.main(["generation", "stage", "--substrate", str(sub), "--tenant", str(desc)]) == 0
+    out = capsys.readouterr().out
+    stage = Path(out.splitlines()[0].split("GENERATION STAGED: ", 1)[1])
+    staged = repo / ".graphy" / ".tenant.json.next"
+    assert stage.is_dir() and stage.parent == sub.parent and ".gen-" in stage.name and f"descriptor: {staged}" in out
+    assert (stage / "core_graph" / "nodes.json").is_file() and not staged.exists()   # seeded; the descriptor is init's to write
+    answers["stage"] = _blast_text(repo, capsys)
+    # land before init: refused, the served generation untouched
+    assert cli.main(["generation", "land", "--stage", str(stage), "--tenant", str(desc), "--tenant-id", "core"]) == 2
+    assert "no staged descriptor" in capsys.readouterr().err and cli.served_data_home(desc) == old_home
+    # the driver's own lanes into the stage, then the verbs against the staged descriptor
+    assert cli.main(["smash", "--package", "core", "--site-packages", str(repo), "--out", str(stage), "--corpus", str(repo / "core")]) == 0
+    answers["smash"] = _blast_text(repo, capsys)
+    ring = json.loads((stage / smash_lane.RING_NAME).read_text(encoding="utf-8"))
+    lanes = [f"--lane={m['slug']}_graph:static-dep" for m in ring["minted"].values()]
+    assert cli.main(["init", "--tenant", str(staged), "--root", str(repo), "--data-home", str(stage),
+                     "--join-keys", str(stage / "registry.json"), "--journal", str(stage / "journal"),
+                     "--cursor", "sha256:" + "3" * 64, "--policy", "refuse", *lanes]) == 0
+    answers["init"] = _blast_text(repo, capsys)
+    # the house's own scheme index, the way every house driver writes it: from ring.json
+    index = {"_meta": {"description": "house index", "standard": ring.get("standard", [])}, **ring["scheme_index"]}
+    (stage / ".federation_scheme_index.json").write_text(json.dumps(index), encoding="utf-8")
+    # land before build, with the staged descriptor present: still refused — no store to land
+    assert cli.main(["generation", "land", "--stage", str(stage), "--tenant", str(desc), "--tenant-id", "core"]) == 2
+    assert "no fresh store" in capsys.readouterr().err and cli.served_data_home(desc) == old_home
+    assert cli.main(["converge", "--tenant", str(staged), "--tenant-id", "core", "--resolve"]) == 0
+    answers["converge"] = _blast_text(repo, capsys)
+    assert cli.main(["build", "--tenant", str(staged), "--tenant-id", "core", "--container", "none"]) == 0
+    answers["build"] = _blast_text(repo, capsys)
+    for step, (rc, text) in answers.items():
+        assert rc == 0 and text == first, (step, text)                       # the door answered the same at every step
+    assert cli.served_data_home(desc) == old_home and staged.is_file()
+    # the landing: one rename; the new generation answers with the symbol the rebuild added
+    assert cli.main(["generation", "land", "--stage", str(stage), "--tenant", str(desc), "--tenant-id", "core"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"GENERATION LANDED: {desc} → {stage}") and f"replaced {old_home}" in out
+    assert cli.served_data_home(desc) == stage and not staged.exists() and old_home.is_dir()
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "core"]) == 0
+    capsys.readouterr()
+    rc, after = _blast_text(repo, capsys)
+    assert rc == 0 and "core://func/core.extra.more" in after and "core://func/core.extra.more" not in first
+    # landing the served generation again, a stage that is not a generation, a substrate that is one: refused by name
+    assert cli.main(["generation", "land", "--stage", str(stage), "--tenant", str(desc), "--tenant-id", "core"]) == 2
+    assert "no staged descriptor" in capsys.readouterr().err
+    assert cli.main(["generation", "land", "--stage", str(sub), "--tenant", str(desc), "--tenant-id", "core"]) == 2
+    assert "is not a generation" in capsys.readouterr().err
+    assert cli.main(["generation", "stage", "--substrate", str(stage), "--tenant", str(desc)]) == 2
+    assert "names a generation" in capsys.readouterr().err
+    assert _generations(repo) == sorted([old_home.name, stage.name])
