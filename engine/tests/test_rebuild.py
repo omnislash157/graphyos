@@ -120,6 +120,52 @@ def test_GREEN_the_placed_lane_is_walkable_and_its_declared_vocabulary_reaches_t
     assert [r.node for r in b.reached.values() if r.hop > 0] == ["core://func/core.mod.run"]
 
 
+def test_GREEN_placed_lane_declared_relations_drive_blast_and_descend(tmp_path, capsys):
+    """graphyos #110, the production tenant's acceptance case measured on 0.2.4 (which predates #68):
+    `blast <table>` answered dependents=0 and `descend <reader>` reached no schema node although adj
+    held the `reads_table` edge. Through the supported rebuild and the CLI doors a tenant runs: the
+    house vocabulary a placed lane declares is followed by class, and a type it leaves undeclared is
+    named NOT WALKED, never followed."""
+    import graphy.cli as cli
+
+    repo = _git_repo(tmp_path)
+    sub = repo / ".graphy" / "substrate"
+    sub.mkdir(parents=True)
+    _place_foreign_lane(sub)
+    d = sub / "pg_schema_graph"
+    table, view, index = ("pg_schema://table/pg_schema.public.invoices", "pg_schema://view/pg_schema.public.v_invoices",
+                          "pg_schema://index/pg_schema.public.invoices_pk")
+    nodes = json.loads((d / "nodes.json").read_text())
+    nodes[view] = {"kind": "node", "node_type": "view", "id": view, "dotted": "pg_schema.public.v_invoices",
+                   "module": "pg_schema", "role": "view"}
+    nodes[index] = {"kind": "node", "node_type": "index", "id": index, "dotted": "pg_schema.public.invoices_pk",
+                    "module": "pg_schema", "role": "index"}
+    (d / "nodes.json").write_text(json.dumps(nodes))
+    edges = json.loads((d / "edges.json").read_text())
+    edges += [{"kind": "edge", "edge_type": "sourced_from", "src": view, "dst": table},
+              {"kind": "edge", "edge_type": "indexes_on", "src": index, "dst": table}]
+    (d / "edges.json").write_text(json.dumps(edges))
+    prov = json.loads((d / "PROVENANCE.json").read_text())
+    prov["counts"] = {"node_count": 3, "edge_count": 3, "edge_types": {"reads_table": 1, "sourced_from": 1, "indexes_on": 1}}
+    prov["vocabulary"]["relations"] = {"reads_table": ["depends", "reaches"], "sourced_from": ["depends", "reaches"]}
+    (d / "PROVENANCE.json").write_text(json.dumps(prov))
+    rebuild_lane.rebuild(
+        root=repo, substrate=sub, descriptor=repo / ".graphy" / "tenant.json", tenant_id="core",
+        lanes=[rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+               rebuild_lane.Lane.placed("pg_schema")],
+        container="none", log=lambda *_a, **_k: None,
+    )
+    argv = ["--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "core"]
+    capsys.readouterr()
+    assert cli.main(["blast", table, *argv]) == 0
+    out = capsys.readouterr().out
+    assert "core://func/core.mod.run" in out and view in out           # the reader and the view, by declared class
+    assert "hop1=2" in out                                              # both at hop 1
+    assert index not in out.split("NOT WALKED")[0] and "NOT WALKED: indexes_on 1" in out
+    assert cli.main(["descend", "core.mod.run", *argv]) == 0
+    assert table in capsys.readouterr().out                             # the reader reaches the schema node
+
+
 def test_RED_rebuild_refuses_a_placed_lane_with_no_shard_and_an_empty_roster(tmp_path):
     """The engine never runs a foreign producer, so a placed lane with nothing on disk is a caller
     error and is named as one rather than producing a roster with a hole in it."""

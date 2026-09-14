@@ -436,7 +436,7 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
             return allow(f"issue {issue} is open and {len(pending)} background task(s) are still running; "
                          f"their notification wakes the session")
         if tool_uses > int(state.get("tool_uses", 0)):
-            state["blocks"] = 0            # a turn that called a tool made progress; the cap counts stalls only
+            state["blocks"] = 0            # a turn that called a tool made progress; the stall count is progress-reset, never a cap
         state["tool_uses"] = tool_uses
         # no cap: the loop never limits itself — an open issue with no background work is always blocked
         blocks = int(state.get("blocks", 0)) + 1
