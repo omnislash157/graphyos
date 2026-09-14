@@ -57,10 +57,12 @@ REAL_GATES = {
     "IRREVERSIBLE": "a destructive act git cannot undo",
 }
 # the verb is an order only at the start of a line, outside code spans — naming it in prose is not a gate
-_GATE_RE = re.compile(r"^\s*" + re.escape(GATE_TOKEN) + r"\s*:\s*(?P<gate>[A-Za-z.]+)\s*[—–-]+\s*(?P<step>\S.*?)(?:\*\*|__)?\s*$",
+_GATE_RE = re.compile(r"^\s*" + re.escape(GATE_TOKEN) + r"\s*:\s*(?P<gate>[A-Za-z.]+)(?:\s+#(?P<rung>\d+))?\s*[—–-]+\s*(?P<step>\S.*?)(?:\*\*|__)?\s*$",
                       re.MULTILINE | re.IGNORECASE)
 _GATE_BARE_RE = re.compile(r"^\s*" + re.escape(GATE_TOKEN) + r"\b(?P<rest>.*)$", re.MULTILINE | re.IGNORECASE)
-_CODE_RE = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
+_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+_SPAN_RE = re.compile(r"`[^`\n]*`")
+_ISSUE_RE = re.compile(r"#(\d+)\b")
 PUNTS = (
     r"^\s*MARCH HOLD\b",
     r"\byour call\b", r"\bup to you\b", r"\byou decide\b",
@@ -97,41 +99,71 @@ Then one of two:
   • it is one of the gates → a line of its own, outside code:
         MARCH GATE: <{names}> — <the exact step the operator takes>
     The hook labels issue {issue} `{label}`, comments the step, and marches the next rung.
-    The loop does not stop.
+    A gate that belongs to another rung names it in the head — `MARCH GATE: <gate> #N — <step>` —
+    and that rung takes the label while issue {issue} stays the lane; a step that merely mentions
+    another `#N` is refused, never relabeled. The loop does not stop.
 """
 
 BAD_GATE = """MARCH — `{got}` names no real gate. A gate line is not a password: it names which gate no walk
 can derive, and there are only these: {gates}. Written as
 
     MARCH GATE: <{names}> — <the exact step the operator takes>
+    MARCH GATE: <{names}> #N — <the step>          a gate that belongs to rung N, not the armed one
 
 If none fits, it is not a gate — it is a walk not yet taken. Take it, then report the result.
 """
 
 
-def _prose(message: str) -> str:
+def _outside_fences(message: str) -> str:
     text = message or ""
     if text.count("```") % 2:                          # an unclosed fence: everything after it is code
         text = text.rsplit("```", 1)[0]
-    return _DECOR_RE.sub("", _CODE_RE.sub(" ", text))
+    return _FENCE_RE.sub(" ", text)
 
 
-def gate_of(message: str) -> tuple[str, str] | None:
-    """(GATE, step) when the closing message carries a well-formed gate line naming a real gate."""
-    for m in _GATE_RE.finditer(_prose(message)):
-        if m.group("gate").upper() in REAL_GATES:
-            return m.group("gate").upper(), m.group("step").strip()
-    return None
+def _prose(message: str) -> str:
+    return _DECOR_RE.sub("", _SPAN_RE.sub(" ", _outside_fences(message)))
+
+
+def _gate_lines(message: str):
+    """Every line whose verb is the gate token outside code, as written — the code spans stay in the
+    step. The step is what the operator runs; stripped to prose it read `run  , and push the   tag` (#116).
+    A token inside a span is not a gate: the line must still start with it once its spans are gone."""
+    for raw in _outside_fences(message).splitlines():
+        line = _DECOR_RE.sub("", raw)
+        if _GATE_BARE_RE.match(line) and _GATE_BARE_RE.match(_SPAN_RE.sub(" ", line)):
+            yield line.strip()
+
+
+def gates_of(message: str) -> list[tuple[str, str, int | None]]:
+    """Every well-formed gate line naming a real gate, in order: (GATE, step, rung) — `rung` is the `#N`
+    in the head, `MARCH GATE: PUBLIC #114 — …`, the rung the gate belongs to, or None for the armed one.
+    Every line is routed: a message may hand one rung to the operator and gate another (round 2, B5)."""
+    out = []
+    for line in _gate_lines(message):
+        m = _GATE_RE.match(line)
+        if m and m.group("gate").upper() in REAL_GATES:
+            rung = m.group("rung")
+            out.append((m.group("gate").upper(), m.group("step").strip(), int(rung) if rung else None))
+    return out
 
 
 def bad_gate(message: str) -> str | None:
     """The text of a gate line that names no real gate or carries no step, else None."""
-    prose = _prose(message)
-    for m in _GATE_BARE_RE.finditer(prose):
-        good = _GATE_RE.match(m.group(0))
+    for line in _gate_lines(message):
+        good = _GATE_RE.match(line)
         if not good or good.group("gate").upper() not in REAL_GATES:
-            return m.group(0).strip()
+            return line
     return None
+
+
+def gate_names(issue: int, step: str) -> set[int]:
+    """The rungs a step's prose names other than the armed one (`#N`, outside code spans). A gate whose
+    step names another rung and whose head names none is malformed: #111's closing line gated #114's
+    release step `(tracked as #114)` and the hook labeled #111 — the armed rung skipped, its work still
+    uncommitted (#116). The rung a gate belongs to is spelled in the head, never guessed from the step:
+    a step that mentions `#82` for its history would otherwise take #82 off the board."""
+    return {int(n) for n in _ISSUE_RE.findall(_SPAN_RE.sub(" ", step))} - {issue}
 
 
 def punt_of(message: str) -> str | None:
@@ -180,6 +212,32 @@ def gh(*args: str, timeout: float = 15) -> str:
 
 def issue_state(n: int) -> str:
     return json.loads(gh("issue", "view", str(n), "--json", "state"))["state"]
+
+
+_NO_SUCH_RE = re.compile(r"Could not resolve to an issue or pull request", re.IGNORECASE)
+
+
+def issue_takes_a_gate(n: int, line: str) -> tuple[str | None, bool]:
+    """GitHub's answer for rung n, three ways: (None, carries) — it takes the gate, and whether the board
+    already carries this exact gate line under the operator label (the board is the receipt: a landing that
+    failed between the label and the comment, or a label the operator removed, is read from the rung, never
+    from a list in the state file — round 4, B8); (a reason, False) — closed, a pull request (`gh issue view`
+    answers for a PR number too, and a PR is never a rung), or no such number (GitHub's definite `Could not
+    resolve to an issue or pull request`, a typo'd head — round 2, B4); or the exception — `gh` could not
+    answer (transport, a timeout), which is the caller's could-not-tell."""
+    try:
+        row = json.loads(gh("issue", "view", str(n), "--json", "state,url,labels,comments"))
+    except RuntimeError as exc:
+        if _NO_SUCH_RE.search(str(exc)):
+            return f"#{n} does not exist", False
+        raise
+    if "/pull/" in str(row.get("url", "")):
+        return f"#{n} is a pull request, not a rung", False
+    if row.get("state") != "OPEN":
+        return f"issue {n} is not open", False
+    labeled = any(l.get("name") == OPERATOR_LABEL for l in row.get("labels") or [])
+    commented = any(line in (c.get("body") or "") for c in row.get("comments") or [])
+    return None, labeled and commented
 
 
 def read_order() -> tuple[list[int], str | None]:
@@ -441,11 +499,11 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
     if state.get("phase") == "hold":
         # a cap or a drain holds the loop, never the gate: a gate line still labels its rung and marches
         # on. Only the operator's disarm is deaf to it.
-        gated = gate_of(message)
+        gated = gates_of(message)
         capped = str(state.get("held_because", "")).endswith("still open")      # the block cap, not a drain or a disarm
         ours = state.get("session") in (None, payload.get("session_id"))
         if gated and capped and ours:
-            return gate(state, int(state["issue"]), *gated)
+            return route_gates(state, int(state["issue"]), gated, held=True)
         if capped and ours:
             # a rung finished while the loop was held is still finished: the close marches the next one
             try:
@@ -470,9 +528,9 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
         return allow()                     # another claude in this repo is not the march
     gates = " · ".join(f"{k} ({v})" for k, v in REAL_GATES.items())
     names = " | ".join(REAL_GATES)
-    gated = gate_of(message)
-    if gated is not None:
-        return gate(state, issue, *gated)
+    gated = gates_of(message)
+    if gated:
+        return route_gates(state, issue, gated)
     # A deferral or a malformed gate is questioned once per message, and every question counts toward
     # the cap: asked on the first stop of a chain and on every later one (stop_hook_active is true for
     # nearly every stop of a march), never twice in a row, never unbounded.
@@ -553,13 +611,72 @@ def ci_red() -> str | None:
     return None
 
 
+def gate_line(name: str, step: str) -> str:
+    return f"{GATE_TOKEN}: {name} — {step}"
+
+
+def label_gate(issue: int, name: str, step: str) -> None:
+    """The label and the step, verbatim, on the rung that carries the gate."""
+    gh("issue", "edit", str(issue), "--add-label", OPERATOR_LABEL)
+    gh("issue", "comment", str(issue), "--body", f"{gate_line(name, step)}\n\nThis rung waits for the "
+       f"operator; the march does not. Removing the `{OPERATOR_LABEL}` label returns it to the board.")
+    log(f"gate {name} on issue {issue}: {step}")
+
+
 def gate(state: dict, issue: int, name: str, step: str) -> int:
     """Hand one rung to the operator and march the next: the label, the step as a comment, advance."""
-    gh("issue", "edit", str(issue), "--add-label", OPERATOR_LABEL)
-    gh("issue", "comment", str(issue), "--body", f"MARCH GATE: {name} — {step}\n\nThe march moved on; "
-       f"this rung waits for the operator. Removing the `{OPERATOR_LABEL}` label returns it to the board.")
-    log(f"gate {name} on issue {issue}: {step}")
+    label_gate(issue, name, step)
     return advance(state, issue, f"issue {issue} gated ({name}) and labeled `{OPERATOR_LABEL}`")
+
+
+def route_gates(state: dict, issue: int, gates: list[tuple[str, str, int | None]], held: bool = False) -> int:
+    """Every gate line in the message lands on the rung its HEAD names — every line judged first, then
+    every foreign rung labeled, then the armed rung's own line last, because that one marches on. No head
+    rung and no other rung in the step: the armed one is gated and the next marched. A head rung other than
+    the armed one: that rung takes the label and the step, the armed rung stays the lane, and the stop is
+    blocked with the way to gate the armed rung itself — the loop never skips live work through a mislabel
+    (#116). A step that names another rung with no head rung is refused as malformed (a mention is not an
+    address). A head rung that is closed, a pull request or no issue at all is refused by name, and a
+    refusal lands nothing (a message is a set, not a sequence — round 3); a rung that already carries the
+    line is left as it is (the board is the receipt — round 4); a `gh` that cannot answer is could-not-tell,
+    and a hook that cannot decide lets the session stop with the failure named — never a block until GitHub
+    recovers, never a stop on a definite answer."""
+    verdict = allow if held else block
+    own: tuple[str, str] | None = None
+    foreign: list[tuple[int, str, str]] = []
+    carried: list[int] = []
+    for name, step, rung in gates:
+        if rung in (None, issue):
+            others = gate_names(issue, step)
+            if others:
+                named = ", ".join(f"#{n}" for n in sorted(others))
+                log(f"gate {name} on issue {issue}: the step names {named} and the head names no rung — refused")
+                return verdict(f"MARCH — the gate line's step names {named}, and a mention is not an address. A gate "
+                               f"that belongs to another rung names it in the head: `{GATE_TOKEN}: {name} #N — <the step>`. "
+                               f"A gate for issue {issue} itself names no other rung in its step.")
+            own = own or (name, step)
+            continue
+        try:
+            why, carries = issue_takes_a_gate(rung, gate_line(name, step))
+        except Exception as exc:  # noqa: BLE001
+            log(f"gate {name} on issue {issue} names #{rung}: gh could not answer — {exc}")
+            return allow(f"gate on #{rung} not applied — gh could not answer ({exc}); issue {issue} is still armed, "
+                         f"write the line again when GitHub answers")
+        if why:
+            log(f"gate {name} on issue {issue} names #{rung}, which cannot take it: {why}")
+            return verdict(f"MARCH — the gate line names #{rung}, which cannot take it ({why}); nothing in the message "
+                           f"was applied. Issue {issue} is still the armed rung: `{GATE_TOKEN}: {name} — <step>` gates it, "
+                           f"or keep marching it.")
+        (carried if carries else foreign).append((rung, name, step))
+    for rung, name, step in foreign:
+        label_gate(rung, name, step)
+    if own:
+        return gate(state, issue, *own)
+    where = ", ".join(f"#{r}" for r, _, _ in foreign + carried)
+    return verdict(f"MARCH — the gate landed on {where}: labeled `{OPERATOR_LABEL}`, the step commented. Issue {issue} "
+                   f"is still the armed rung and OPEN — keep marching it: the done check, review rounds to SHIP, commit, "
+                   f"push, `gh issue close {issue} --repo {REPO} --comment <evidence>`; if issue {issue} itself needs the "
+                   f"operator, `{GATE_TOKEN}: <gate> — <step>` with no rung in the head gates it and marches on.")
 
 
 _BLOCKED_BY_RE = re.compile(r"\bblocked (?:by|on)\s+#(\d+)", re.IGNORECASE)

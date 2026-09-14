@@ -274,6 +274,10 @@ def _symbol_index(repo: Path) -> dict[str, set[str]]:
         py = repo / name
         if py.is_file():
             add(py.stem, py, py.stem)
+    # the hooks are cited by RECON the same way (`march.gates_of`); a row that named a deleted `march.gate_of`
+    # read clean because nothing indexed them (graphyos #116 round 3)
+    for py in sorted((repo / ".claude" / "hooks").glob("*.py")):
+        add(py.stem, py, py.stem)
     return index
 
 

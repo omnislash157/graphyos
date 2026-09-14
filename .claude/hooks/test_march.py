@@ -22,13 +22,20 @@ def board(tmp_path, monkeypatch):
     calls: list[tuple] = []
     issues = {103: "OPEN", 104: "OPEN"}
     labels: dict[int, list[str]] = {103: [], 104: []}
+    comments: dict[int, list[str]] = {}
     runs: list[dict] = []
     monkeypatch.setattr(march, "_TEST_RUNS", runs, raising=False)
+    monkeypatch.setattr(march, "_TEST_COMMENTS", comments, raising=False)
 
     def gh(*args, timeout=15):
         calls.append(args)
-        if args[:2] == ("issue", "view"):
-            return json.dumps({"state": issues[int(args[2])]})
+        if args[:2] == ("issue", "view"):                # the board as gh renders it: state, url, labels, comments
+            n = int(args[2])
+            return json.dumps({"state": issues[n], "url": f"https://github.com/o/r/issues/{n}",
+                               "labels": [{"name": l} for l in labels.get(n, [])],
+                               "comments": [{"body": b} for b in comments.get(n, [])]})
+        if args[:2] == ("issue", "comment"):
+            comments.setdefault(int(args[2]), []).append(args[4])
         if args[:2] == ("issue", "list"):
             return json.dumps([{"number": n, "labels": [{"name": l} for l in labels[n]]}
                                for n, s in issues.items() if s == "OPEN"])
@@ -152,6 +159,145 @@ def test_a_gated_rung_is_skipped_by_next(board):
     _, _, labels = board
     labels[103].append("operator")
     assert march.next_issue() == 104
+
+
+def _comment_on(calls, issue: int) -> str:
+    return "\n".join(c[4] for c in calls if c[:3] == ("issue", "comment", str(issue)))
+
+
+def test_a_gate_whose_head_names_another_rung_labels_that_rung_and_never_the_armed_one(board, capsys):
+    """#116: #111 was armed, its closing line gated the release step that belongs to #114, and the hook
+    labeled #111 `operator` and skipped it. The rung a gate belongs to is spelled in the head; the armed
+    rung stays armed and open, and the block names the way to gate the armed rung itself."""
+    calls, _, labels = board
+    out = _stop("The code is built.\nMARCH GATE: PUBLIC #104 — after #103 closes, bump the version and push the tag", capsys)
+    assert labels[104] == ["operator"] and labels[103] == []
+    assert "MARCH GATE: PUBLIC — after #103 closes" in _comment_on(calls, 104) and _comment_on(calls, 103) == ""
+    state = march.load()
+    assert state["issue"] == 103 and state["phase"] == "working"                 # the armed rung is still the lane
+    assert out["decision"] == "block" and "#104" in out["reason"] and "103" in out["reason"]
+    assert "MARCH GATE: <gate> — <step>" in out["reason"]                         # the route back for the armed rung
+    _stop("The code is built.\nMARCH GATE: PUBLIC #104 — after #103 closes, bump the version and push the tag", capsys, active=True)
+    assert labels[104] == ["operator"] and _comment_on(calls, 104).count("MARCH GATE") == 1   # the same line lands once
+
+
+def test_two_foreign_heads_in_one_message_land_once_each_and_a_refused_line_lands_nothing(board, capsys, monkeypatch):
+    """Round 3, B6: the dedup key held one line, so two foreign heads re-stopped duplicated the first's
+    label and comment on every continuation stop. And a message is a set: a refused line applies none of it.
+    Round 4, B8: the receipt was a list saved after every landing, so a gh failure between two landings
+    duplicated the first on the next stop, and a label the operator removed was never re-applied — the
+    board is the receipt now: a rung carrying the label and the line is left alone, one missing either lands."""
+    calls, issues, labels = board
+    issues[105] = "OPEN"; labels[105] = []
+    msg = "MARCH GATE: PUBLIC #104 — a\nMARCH GATE: LAW #105 — b"
+    for active in (False, True, True):
+        out = _stop(msg, capsys, active=active)
+        assert out["decision"] == "block" and "#104, #105" in out["reason"]
+    assert labels[104] == ["operator"] and labels[105] == ["operator"]
+    assert _comment_on(calls, 104).count("MARCH GATE") == 1 and _comment_on(calls, 105).count("MARCH GATE") == 1
+    issues[106] = "CLOSED"; labels[106] = []; issues[107] = "OPEN"; labels[107] = []
+    out = _stop("MARCH GATE: PUBLIC #107 — c\nMARCH GATE: LAW — own\nMARCH GATE: PUBLIC #106 — d", capsys)
+    assert out["decision"] == "block" and "#106" in out["reason"] and "nothing in the message was applied" in out["reason"]
+    assert labels[107] == [] and labels[103] == [] and march.load()["issue"] == 103
+    real = march.gh
+    boom = {"on": True}
+
+    def gh(*a, timeout=15):
+        if boom["on"] and a[:3] == ("issue", "edit", "107"):
+            raise RuntimeError("HTTP 502")
+        return real(*a, timeout=timeout)
+
+    monkeypatch.setattr(march, "gh", gh)
+    issues[108] = "OPEN"; labels[108] = []
+    with pytest.raises(RuntimeError):                                          # main() turns this into failed-open
+        _stop("MARCH GATE: PUBLIC #108 — e\nMARCH GATE: PUBLIC #107 — c", capsys)
+    assert labels[108] == ["operator"] and labels[107] == []                    # 108 landed, 107 did not
+    boom["on"] = False
+    _stop("MARCH GATE: PUBLIC #108 — e\nMARCH GATE: PUBLIC #107 — c", capsys)
+    assert labels[107] == ["operator"] and _comment_on(calls, 107).count("MARCH GATE") == 1
+    assert labels[108] == ["operator"] and _comment_on(calls, 108).count("MARCH GATE") == 1   # never a second landing on 108
+    labels[104].remove("operator")                                                # the operator returned #104 to the board
+    _stop(msg, capsys)
+    assert labels[104] == ["operator"] and _comment_on(calls, 104).count("MARCH GATE") == 2   # the identical line lands again
+
+
+def test_a_step_that_only_mentions_another_rung_is_refused_and_labels_nothing(board, capsys):
+    """The specimen's own shape, `(tracked as #114)`, and a mention for context: a mention is not an
+    address — the armed rung is never labeled, and neither is the rung mentioned."""
+    calls, _, labels = board
+    for line in ("MARCH GATE: PUBLIC — bump the version and push the tag (tracked as #104)",
+                 "MARCH GATE: PUBLIC — flip the repo public (the rationale is in #104)",
+                 "MARCH GATE: PUBLIC — cut the release (#104, #105)"):
+        out = _stop(line, capsys)
+        assert out["decision"] == "block" and "a mention is not an address" in out["reason"]
+        assert "MARCH GATE: PUBLIC #N" in out["reason"]
+    assert labels == {103: [], 104: []} and not any(c[0] == "issue" and c[1] in ("edit", "comment") for c in calls)
+    assert march.load()["issue"] == 103
+    _stop("MARCH GATE: PUBLIC — run `git show #123` and push the tag", capsys)   # a `#N` inside a code span is code
+    assert labels[103] == ["operator"]
+
+
+def test_a_gate_step_keeps_its_code_spans(board, capsys):
+    """#116: the step reached the board as "run  , and push the   tag" — every code span stripped."""
+    calls, _, labels = board
+    _stop("MARCH GATE: PUBLIC — run `bash release.sh`, and push the `v0.2.5` tag", capsys)
+    assert labels[103] == ["operator"]
+    assert "run `bash release.sh`, and push the `v0.2.5` tag" in _comment_on(calls, 103)
+
+
+def test_a_head_naming_a_closed_rung_or_a_pull_request_is_refused(board, capsys, monkeypatch):
+    calls, issues, labels = board
+    issues[104] = "CLOSED"
+    out = _stop("MARCH GATE: PUBLIC #104 — cut the release", capsys)
+    assert out["decision"] == "block" and "cannot take" in out["reason"] and "not open" in out["reason"]
+    real = march.gh
+    monkeypatch.setattr(march, "gh", lambda *a, timeout=15: json.dumps({"state": "OPEN", "url": "https://github.com/o/r/pull/120"})
+                        if a[:2] == ("issue", "view") and a[2] == "120" else real(*a, timeout=timeout))
+    out = _stop("MARCH GATE: PUBLIC #120 — merge it", capsys)
+    assert out["decision"] == "block" and "pull request" in out["reason"]
+    assert labels == {103: [], 104: []} and march.load()["issue"] == 103
+
+
+def test_a_gh_that_cannot_answer_for_the_head_rung_fails_open_by_name(board, capsys, monkeypatch):
+    """Round 1, B1: a gh error on the named rung was read as a decision and blocked every stop until GitHub
+    recovered. A hook that cannot decide lets the session stop, the failure named; nothing is labeled."""
+    calls, issues, labels = board
+    real = march.gh
+
+    def gh(*a, timeout=15):
+        if a[:2] == ("issue", "view") and a[2] == "104":
+            raise RuntimeError("HTTP 502")
+        return real(*a, timeout=timeout)
+
+    monkeypatch.setattr(march, "gh", gh)
+    out = _stop("MARCH GATE: PUBLIC #104 — cut the release", capsys)
+    assert "decision" not in out and "HTTP 502" in out["systemMessage"] and "not applied" in out["systemMessage"]
+    assert labels == {103: [], 104: []} and march.load()["issue"] == 103 and march.load()["phase"] == "working"
+    monkeypatch.setattr(march, "gh", lambda *a, timeout=15: (_ for _ in ()).throw(RuntimeError(
+        "GraphQL: Could not resolve to an issue or pull request with the number of 999. (repository.issue)"))
+        if a[:2] == ("issue", "view") and a[2] == "999" else real(*a, timeout=timeout))
+    out = _stop("MARCH GATE: PUBLIC #999 — cut the release", capsys)                  # round 2, B4: GitHub ANSWERED — no such rung
+    assert out["decision"] == "block" and "does not exist" in out["reason"] and "MARCH GATE: PUBLIC — <step>" in out["reason"]
+    assert labels == {103: [], 104: []} and march.load()["issue"] == 103
+
+
+def test_every_gate_line_in_a_message_is_routed_and_the_armed_rungs_own_line_marches(board, capsys):
+    """Round 2, B5: a foreign-rung gate is no longer terminal, so one message can carry a foreign gate and
+    the armed rung's own; the first cut read the first line only and demanded the line it was ignoring."""
+    calls, issues, labels = board
+    issues[105] = "OPEN"; labels[105] = []
+    out = _stop("MARCH GATE: PUBLIC #104 — cut the release\nMARCH GATE: LAW — rule on the nine words", capsys)
+    assert labels[104] == ["operator"] and labels[103] == ["operator"] and labels[105] == []
+    assert "MARCH GATE: LAW — rule on the nine words" in _comment_on(calls, 103)
+    assert "decision" not in out and march.load()["issue"] == 105 and march.load()["previous"] == 103   # the gated 104 is skipped
+
+
+def test_a_gate_on_another_rung_during_a_hold_labels_it_and_keeps_the_hold(board, capsys):
+    calls, _, labels = board
+    march.save({"issue": 103, "phase": "hold", "held_because": "4 blocks and issue 103 still open", "session": "s1"})
+    out = _stop("MARCH GATE: PUBLIC #104 — flip it to public", capsys, active=True)
+    assert labels[104] == ["operator"] and labels[103] == []
+    assert "decision" not in out and march.load()["phase"] == "hold" and march.load()["issue"] == 103
 
 
 def _transcript(path: Path, *lines: dict) -> Path:
@@ -286,3 +432,7 @@ def test_a_declared_order_is_marched_first_and_a_closed_or_gated_rung_falls_thro
         march.main(["order", "--clear", "122"])          # numbers or --clear, never both
     assert march.main(["order", "104"]) == 0             # redeclared: readable again
     assert march.next_issue() == 104
+
+
+if __name__ == "__main__":                               # `python3 .claude/hooks/test_march.py` runs the floor, never a silent exit 0
+    sys.exit(pytest.main([__file__, "-q", "-p", "no:cacheprovider"]))
