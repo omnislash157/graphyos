@@ -38,6 +38,116 @@ def load_standard(index_path: str | os.PathLike) -> frozenset:
     std = meta.get("standard") or ()
     return frozenset(str(x) for x in std) if isinstance(std, (list, tuple)) else frozenset()
 
+
+class DocDeclarationError(ValueError):
+    """A doc vocabulary declared in a shape no reader can honour — refused by name, never read as empty."""
+
+
+def doc_list(value, where: str) -> list[str]:
+    """A declared doc list: absent or empty is ``[]``, a bare string is one item, a list of non-empty
+    strings is itself; anything else refuses naming ``where`` and the value (graphyos #86)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) and v for v in value):
+        raise DocDeclarationError(
+            f"{where} is {value!r}: a doc declaration is a list of non-empty strings (or one string). "
+            f"Fix the declaration — a malformed one is never read as 'declares nothing'")
+    return sorted(set(value))
+
+
+def derive_doc_declaration(data_home: str | os.PathLike, slugs, among=None) -> dict:
+    """The doc vocabulary the lanes' own producers declare. ``slugs`` are the lanes on disk, every one
+    read for what it declares and what it owns; ``among`` (default: all of them) are the lanes whose
+    declarations count — a store counts only the lanes it loads. A lane whose PROVENANCE says
+    ``vocabulary.doc_relations`` adds those relations and the schemes it owns, read from its shard
+    (``smash.shard_schemes``), never from an index row a hand can edit. A doc scheme is never shared
+    with a lane that declares nothing — that lane's code would read as documentation — so that overlap,
+    a declaring lane owning nothing, or a malformed list refuses by name; lanes that all declare may
+    share a scheme (a manuals lane and its restricted twin). ``{}`` when no counted lane declares,
+    without reading a shard (graphyos #86)."""
+    from graphy.smash import shard_schemes
+    home = Path(data_home)
+    lanes = sorted({str(s) for s in slugs if not str(s).startswith("_") and (home / f"{s}_graph").is_dir()})
+    declares: dict[str, list[str]] = {}
+    for slug in lanes:
+        try:
+            with open(home / f"{slug}_graph" / "PROVENANCE.json", encoding="utf-8") as fh:
+                prov = json.load(fh)
+        except (OSError, ValueError):
+            continue                      # a lane whose PROVENANCE cannot be read declares nothing, as in fold_relations
+        vocab = prov.get("vocabulary") if isinstance(prov, dict) else None
+        if not isinstance(vocab, dict):
+            continue
+        declared = doc_list(vocab.get("doc_relations"), f"lane {slug!r} PROVENANCE vocabulary.doc_relations")
+        if declared:
+            declares[slug] = declared
+    counted = lanes if among is None else sorted(set(lanes) & {str(s) for s in among})
+    chosen = {s: declares[s] for s in counted if s in declares}
+    if not chosen:
+        return {}
+
+    def owned(slug: str) -> set[str]:
+        try:
+            return {str(s) for s in shard_schemes(home / f"{slug}_graph")[0]}
+        except (OSError, ValueError) as exc:
+            raise DocDeclarationError(
+                f"lane {slug!r}: its shard cannot be read to tell which schemes it owns ({exc}) — a doc "
+                f"declaration is never proven against a lane that could not be read") from exc
+
+    owns = {slug: owned(slug) for slug in lanes}
+    schemes: set[str] = set()
+    relations: set[str] = set()
+    for slug, declared in sorted(chosen.items()):
+        own = owns[slug]
+        if not own:
+            raise DocDeclarationError(f"lane {slug!r} declares doc relations {declared} but owns no scheme")
+        for other in lanes:
+            if other == slug or other in declares:
+                continue
+            shared = own & owns[other]
+            if shared:
+                raise DocDeclarationError(
+                    f"lane {slug!r} declares doc relations {declared} but lane {other!r} also owns "
+                    f"{sorted(shared)} and declares none: a doc scheme is never shared with a lane that is "
+                    f"not documentation, or that lane's nodes read as documentation. The doc lane carries "
+                    f"no other lane's ids")
+        relations.update(declared)
+        schemes.update(own)
+    return {"relations": sorted(relations), "schemes": sorted(schemes)}
+
+
+def _within(inner: dict, outer: dict) -> bool:
+    return all(set(inner.get(k) or ()) <= set(outer.get(k) or ()) for k in ("schemes", "relations"))
+
+
+def load_doc_declaration(index_path: str | os.PathLike) -> dict:
+    """The doc schemes and doc relations a tenant declares in its scheme index (``_meta.doc_schemes``,
+    ``_meta.doc_relations``) — the declared half only, sorted; ``{}`` when it declares nothing. The
+    doors union it with DOC_SCHEMES and DOC_EXPLAINS, so a tenant that declares nothing answers exactly
+    as it did and one that declares a skills shard keeps its history exchanges too (graphyos #86)."""
+    try:
+        with open(index_path, encoding="utf-8") as fh:
+            meta = json.load(fh).get("_meta") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    if not isinstance(meta, dict):
+        return {}
+    out = {}
+    for key, name in (("doc_schemes", "schemes"), ("doc_relations", "relations")):
+        vals = doc_list(meta.get(key), f"{index_path} _meta.{key}")
+        if vals:
+            out[name] = vals
+    return out
+
+
+def doc_vocabulary(declared: dict | None) -> tuple[frozenset, frozenset]:
+    """(schemes, relations) explain admits: the defaults and whatever the tenant declared."""
+    declared = declared or {}
+    return (DOC_SCHEMES | frozenset(declared.get("schemes") or ()),
+            DOC_EXPLAINS | frozenset(declared.get("relations") or ()))
+
 WITH = "with"
 AGAINST = "against"
 BOTH = "both"
@@ -337,19 +447,21 @@ def query_set(mesh: MeshSet, seed: str, depth: int, top: int,
     }
 
 
-def explanations(mesh: MeshSet, seed: str, depth: int) -> list:
+def explanations(mesh: MeshSet, seed: str, depth: int, declared: dict | None = None) -> list:
     return _explanations_core(
         lambda n: ((nbr, rel) for (nbr, _s, _w, rel) in mesh.adjacency.get(n, [])),
-        lambda n: mesh.node_owner.get(n, WIRE_BUCKET), seed, depth)
+        lambda n: mesh.node_owner.get(n, WIRE_BUCKET), seed, depth, declared)
 
 
 def explanations_from_store(store, seed: str, depth: int) -> list:
     return _explanations_core(
         lambda n: ((x.node, x.relation) for x in store.neighbours(n)),
-        lambda n: store.membership(n) or WIRE_BUCKET, seed, depth)
+        lambda n: store.membership(n) or WIRE_BUCKET, seed, depth,
+        getattr(store, "doc_declaration", None))
 
 
-def _explanations_core(nbrs_of, owner_of, seed: str, depth: int) -> list:
+def _explanations_core(nbrs_of, owner_of, seed: str, depth: int, declared: dict | None = None) -> list:
+    doc_schemes, doc_explains = doc_vocabulary(declared)
     hop: dict[str, int] = {seed: 0}
     frontier = [seed]
     for h in range(1, depth + 1):
@@ -366,7 +478,9 @@ def _explanations_core(nbrs_of, owner_of, seed: str, depth: int) -> list:
         if hn >= depth:
             continue
         for (nbr, rel) in nbrs_of(node):
-            if rel in DOC_EXPLAINS and _scheme(nbr) in DOC_SCHEMES and (hn == 0 or rel not in DOC_EXPLAINS_SEED_ONLY):
+            if nbr == seed:
+                continue                  # a node is never its own explanation
+            if rel in doc_explains and _scheme(nbr) in doc_schemes and (hn == 0 or rel not in DOC_EXPLAINS_SEED_ONLY):
                 key = (nbr, rel)
                 cand = hn + 1
                 if key not in best or cand < best[key]:

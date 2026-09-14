@@ -420,7 +420,7 @@ def main(argv: Optional[list] = None) -> int:
         )
         try:
             shard = fstore.ShardStore(substrates, tenant=tenant, tenant_id=args.tenant_id)
-        except (FileNotFoundError, OSError) as e:
+        except (FileNotFoundError, OSError, fstore.StoreError) as e:
             print(f"cochange query: cannot load mesh-set {substrates!r}: {e}", file=sys.stderr)
             return EXIT_USAGE
         mresult = fstore.spread(shard, args.seed, params["depth"], params["top"],

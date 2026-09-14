@@ -19,7 +19,11 @@ from graphy.cross_substrate import (
     WIRE_BUCKET,
     WITH,
     PathResult,
+    DocDeclarationError,
     Step,
+    _within,
+    derive_doc_declaration,
+    load_doc_declaration,
     load_set,
 )
 from graphy.query import activate, rank
@@ -111,9 +115,13 @@ def _columns(record: dict | None) -> dict | None:
     return {k: record.get(k) for k in COLUMNS}
 
 
-def _generation_digest(mesh, substrates: list[str]) -> str:
+def _generation_digest(mesh, substrates: list[str], doc_declaration: dict | None = None) -> str:
     h = hashlib.sha256()
     h.update(b"gf\x00" + str(GENERATION_FORMAT).encode() + b"\x00")
+    if doc_declaration:
+        # graphyos #86: a declared doc vocabulary changes what explain answers, so it is part of what the
+        # store is; hashed only when present, so an undeclared roster keeps every generation it had
+        h.update(b"d\x00" + json.dumps(doc_declaration, sort_keys=True).encode() + b"\x00")
     for s in sorted(substrates):
         h.update(b"s\x00" + s.encode() + b"\x00")
     for nid in sorted(mesh.node_owner):
@@ -167,6 +175,14 @@ def _scheme_index_input_digest(index_path: Path, loaded: list[str]) -> str:
             proj[slug] = sorted(str(s) for s in rec.get("own") or ())
         else:
             proj[slug] = []
+    # graphyos #86: a declared doc vocabulary changes what explain answers, so it moves the digest —
+    # and only when declared, so an index that declares nothing hashes exactly as it did.
+    try:
+        declared = load_doc_declaration(index_path)
+    except DocDeclarationError as exc:
+        raise StoreError(str(exc)) from exc
+    if declared:
+        proj["_meta.doc"] = [declared.get("schemes", []), declared.get("relations", [])]
     return _sha16(json.dumps(proj, sort_keys=True, separators=(",", ":")).encode())
 
 
@@ -250,8 +266,9 @@ class ShardStore:
             )
         self._mesh = load_set(substrates, tenant=tenant, tenant_id=tenant_id)
         self._substrates = list(substrates)
-        self._gen = _generation_digest(self._mesh, self._substrates)
         self.relations = fold_relations(substrates, tenant)      # graphyos #68
+        self.doc_declaration = _doc_declaration(tenant, substrates)                         # graphyos #86
+        self._gen = _generation_digest(self._mesh, self._substrates, self.doc_declaration)
 
     @classmethod
     def from_mesh(cls, mesh, substrates: list[str]) -> "ShardStore":
@@ -259,6 +276,7 @@ class ShardStore:
         self._mesh = mesh
         self._substrates = list(substrates)
         self.relations = {}                    # no tenant to read a PROVENANCE through: the defaults stand
+        self.doc_declaration = {}
         self._gen = _generation_digest(mesh, self._substrates)
         return self
 
@@ -339,6 +357,10 @@ class SQLiteStore:
             self.relations = json.loads(meta.get(RELATIONS_META) or "{}")
         except ValueError:
             self.relations = {}
+        try:                                   # a store compiled before graphyos #86 has no row
+            self.doc_declaration = json.loads(meta.get(DOC_META) or "{}")
+        except ValueError:
+            self.doc_declaration = {}
 
     def generation(self) -> str:
         return self._gen
@@ -417,6 +439,7 @@ def store_path_for(substrates: list[str], *, tenant: Tenant | None = None) -> Pa
 
 
 RELATIONS_META = "relations"       # meta key: the folded relation vocabulary, JSON
+DOC_META = "doc_vocabulary"        # meta key: the scheme index's declared doc schemes and relations, JSON (graphyos #86)
 
 
 def fold_relations(substrates: list[str], tenant) -> dict:
@@ -460,6 +483,45 @@ def fold_relations(substrates: list[str], tenant) -> dict:
             folded[edge_type] = cs
             source.setdefault(edge_type, slug)
     return {k: list(v) for k, v in sorted(folded.items())}
+
+
+def _shard_lanes(data_home) -> list[str]:
+    home = Path(data_home)
+    try:
+        return sorted(d.name[:-len("_graph")] for d in home.iterdir()
+                      if d.is_dir() and d.name.endswith("_graph") and len(d.name) > len("_graph"))
+    except OSError:
+        return []
+
+
+def _doc_declaration(tenant, substrates) -> dict:
+    """The doc vocabulary a store over ``substrates`` answers with, proven against the producers that
+    mint it (graphyos #86). The answer is what the LOADED lanes' PROVENANCE declares — a declaring
+    shard the store never loads changes nothing. The scheme index's `_meta` must carry at least that
+    (else the index is stale), and may carry nothing that no shard on disk declares (else it was written
+    by hand). The lanes read for ownership are every shard on disk — never the index's row keys, the
+    descriptor's spelling of its lanes or the roster a door loaded — so a lane is hidden from the
+    sole-owner proof only by deleting its shard. A malformed or overlapping declaration refuses."""
+    index_path = Path(tenant.data_home) / _INDEX_INPUT_KEY
+    disk = _shard_lanes(tenant.data_home)
+    try:
+        carried = load_doc_declaration(index_path)
+        declared = derive_doc_declaration(tenant.data_home, disk)
+        loaded = derive_doc_declaration(tenant.data_home, disk, among=substrates)
+    except DocDeclarationError as exc:
+        raise StoreError(str(exc)) from exc
+    if not _within(carried, declared):
+        raise StoreError(
+            f"the scheme index at {index_path} carries doc vocabulary {carried} but the PROVENANCE of the "
+            f"shards in {tenant.data_home} declares {declared or 'none'}: a doc scheme and its relations are "
+            f"declared by the lane that mints them (`vocabulary.doc_relations`), never written into `_meta` "
+            f"by hand. Re-derive the index (`graphy eat` or the tenant's rebuild) or fix the lane's declaration")
+    if not _within(loaded, carried):
+        raise StoreError(
+            f"the scheme index at {index_path} carries doc vocabulary {carried or 'none'} but the loaded "
+            f"lanes {sorted(substrates)} declare {loaded}: the index is stale. Re-derive it (`graphy eat` or "
+            f"the tenant's rebuild)")
+    return loaded
 
 
 def relations_in(store, relation_class: str, default: frozenset) -> frozenset:
@@ -536,6 +598,7 @@ def compile_store(substrates: list[str], db_path: str | Path,
             ("edges", str(len(mesh.directed))),
             ("input_digest", _compute_input_digest(substrates, tenant=tenant)),
             (RELATIONS_META, json.dumps(fold_relations(substrates, tenant), sort_keys=True)),
+            (DOC_META, json.dumps(shard.doc_declaration, sort_keys=True)),
         ])
         db.commit()
     finally:
@@ -849,7 +912,11 @@ def main(argv=None) -> int:
             print(f"  NOT LOADED (no graph on this box): {','.join(dropped)}", file=sys.stderr)
 
     out = Path(a.out) if a.out else store_path_for(substrates, tenant=tenant)
-    info = compile_store(substrates, out, tenant=tenant, tenant_id=a.tenant_id)
+    try:
+        info = compile_store(substrates, out, tenant=tenant, tenant_id=a.tenant_id)
+    except StoreError as exc:
+        print(f"STORE REFUSED: {exc}", file=sys.stderr)
+        return 2
     print(f"compiled {info['nodes']:,} nodes / {info['edges']:,} edges -> {info['db']}")
     print(f"generation {info['generation']} (format {GENERATION_FORMAT})")
     return 0

@@ -441,3 +441,263 @@ def test_GREEN_the_tests_line_names_the_family_the_declared_vocabulary_widened(t
     store = _census_store(tmp_path, declare={"reads_table": ["depends"]})
     e = doors.explain(store, TABLE, max_depth=3, tenant=None)
     assert "reads_table" in e.tests_note, e.tests_note
+
+
+# ── the declared doc vocabulary (graphyos #86) ─────────────────────────────────────────────────
+SKILL = "skills://skill/skills.routing_rules"
+
+
+SKILL2 = "skills://skill/skills.handler_rules"
+
+
+def _skills_fixture(tmp_path: Path, meta: dict, prov_doc: list | None = None):
+    """The doors fixture plus a skills shard whose `governs` edges bind a skill to the seed and one skill
+    to another, a scheme index whose `_meta` is ``meta``, and — when ``prov_doc`` — the skills lane's
+    PROVENANCE declaring those doc relations (graphyos #86)."""
+    tenant, desc, roster = _fixture(tmp_path)
+    data_home = Path(tenant.data_home)
+    _write_graph(data_home / "skills_graph", {
+        SKILL: {"kind": "node", "node_type": "skill", "id": SKILL, "dotted": "skills.routing_rules",
+                "module": "skills", "role": "skill"},
+        SKILL2: {"kind": "node", "node_type": "skill", "id": SKILL2, "dotted": "skills.handler_rules",
+                 "module": "skills", "role": "skill"},
+    }, [{"kind": "edge", "edge_type": "governs", "src": SKILL, "dst": SEED},
+        {"kind": "edge", "edge_type": "governs", "src": SKILL2, "dst": SKILL}])
+    if prov_doc is not None:
+        (data_home / "skills_graph" / "PROVENANCE.json").write_text(json.dumps(
+            {"vocabulary": {"producer": "skills_census", "doc_relations": prov_doc}}), encoding="utf-8")
+    index_path = data_home / ".federation_scheme_index.json"
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index["_meta"] = meta
+    index["skills"] = {"own": ["skills"], "out": ["fastapi"]}
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    lanes = dict(tenant.build_lanes, skills_graph=(None, "static-dep"))
+    tenant = Tenant(root=tenant.root, data_home=data_home, adapters=(), build_lanes=lanes, join_keys=tenant.join_keys,
+                    cursor=tenant.cursor, policy="refuse", journal=tenant.journal)
+    roster = [*roster, "skills"]
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="doors")
+    return tenant, roster
+
+
+def test_GREEN_a_declared_doc_scheme_reaches_explain_and_the_defaults_still_stand(tmp_path):
+    silent, roster = _skills_fixture(tmp_path / "silent", {})
+    e = doors.explain(fs.open_for(roster, tenant=silent, tenant_id="doors"), SEED, max_depth=3)
+    assert [d["id"] for d in e.docs] == [EXCHANGE]          # today's answer: the admitted skill is absent
+
+    declared, roster = _skills_fixture(tmp_path / "declared",
+                                       {"doc_schemes": ["skills"], "doc_relations": ["governs"]}, ["governs"])
+    for store in (fs.open_for(roster, tenant=declared, tenant_id="doors"),
+                  fs.ShardStore(roster, tenant=declared, tenant_id="doors")):
+        assert store.doc_declaration == {"relations": ["governs"], "schemes": ["skills"]}
+        e = doors.explain(store, SEED, max_depth=3)
+        # the declaration widens the defaults, never replaces them: the history exchange still explains
+        assert e.docs == [{"id": EXCHANGE, "relation": "mentions", "hops": 1, "owner": "history"},
+                          {"id": SKILL, "relation": "governs", "hops": 1, "owner": "skills"},
+                          {"id": SKILL2, "relation": "governs", "hops": 2, "owner": "skills"}]
+
+
+def test_GREEN_the_doc_declaration_moves_the_input_digest_only_when_declared(tmp_path):
+    tenant, roster = _skills_fixture(tmp_path, {"description": "x"})
+    index_path = Path(tenant.data_home) / ".federation_scheme_index.json"
+    bare = fs._scheme_index_input_digest(index_path, sorted(roster))
+    # an index that declares nothing hashes exactly the rows it always did
+    proj = {s: json.loads(index_path.read_text())[s]["own"] for s in sorted(roster)}
+    assert bare == fs._sha16(json.dumps(proj, sort_keys=True, separators=(",", ":")).encode())
+    index = json.loads(index_path.read_text())
+    index["_meta"]["doc_schemes"], index["_meta"]["doc_relations"] = ["skills"], ["governs"]
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    assert fs._scheme_index_input_digest(index_path, sorted(roster)) != bare   # the store reads STALE
+
+
+def test_GREEN_a_healed_scheme_index_keeps_what_its_writer_declared(tmp_path, monkeypatch):
+    """The gate's heal rewrote `_meta` to its digest alone, dropping `standard` and the doc
+    vocabulary the index's writer declared. The rows are the healer's; the declarations are not."""
+    import graphy.mesh_federation_gate as gate
+    monkeypatch.setattr(gate, "roster", lambda tenant: set())
+    monkeypatch.setattr(gate, "_registry_digest", lambda tenant: "d")
+    tenant, _ = _skills_fixture(tmp_path, {"standard": ["node"], "doc_schemes": ["skills"],
+                                           "doc_relations": ["governs"]}, ["governs"])
+    index_path = Path(tenant.data_home) / ".federation_scheme_index.json"
+    healed = gate._heal_index(json.loads(index_path.read_text()), tenant)
+    assert healed["_meta"]["standard"] == ["node"] and healed["_meta"]["doc_relations"] == ["governs"]
+    assert "registry_digest" in healed["_meta"]
+
+
+def test_RED_a_malformed_hand_declaration_refuses_the_build_and_a_seed_never_explains_itself(tmp_path):
+    with pytest.raises(fs.StoreError, match=r"_meta.doc_schemes is 5"):
+        _skills_fixture(tmp_path / "bad", {"doc_schemes": 5, "doc_relations": ["governs"]})
+    # skill2 governs skill, skill governs the seed: from skill, hop 2 walks back to itself — never its own DOCS
+    tenant, roster = _skills_fixture(tmp_path / "loop", {"doc_schemes": ["skills"], "doc_relations": ["governs"]},
+                                     ["governs"])
+    store = fs.open_for(roster, tenant=tenant, tenant_id="doors")
+    for seed in (SKILL, SKILL2):
+        docs = doors.explain(store, seed, max_depth=3).docs
+        assert docs and seed not in {d["id"] for d in docs}
+
+
+def test_RED_a_hand_written_doc_declaration_no_lane_declares_refuses_the_build(tmp_path):
+    """Round 2 of #86's review: `_meta.doc_schemes: ["graphy"]` · `doc_relations: ["imports"]` written by
+    hand built OK, checked OK, and listed 75 of the code lane's own modules under DOCS. The index only
+    carries what a lane's PROVENANCE declares; the build proves the two agree."""
+    with pytest.raises(fs.StoreError, match=r"carries doc vocabulary .*'widgets'.* but the PROVENANCE of the shards in .* declares none"):
+        _skills_fixture(tmp_path / "code", {"doc_schemes": ["widgets"], "doc_relations": ["calls"]})
+    with pytest.raises(fs.StoreError, match=r"declares \{'relations': \['governs'\], 'schemes': \['skills'\]\}"):
+        _skills_fixture(tmp_path / "widened", {"doc_schemes": ["skills", "widgets"], "doc_relations": ["governs"]},
+                        ["governs"])
+    # a declaring lane with an index that says nothing: stale index, refused rather than silently undeclared
+    with pytest.raises(fs.StoreError, match=r"carries doc vocabulary none"):
+        _skills_fixture(tmp_path / "unstamped", {}, ["governs"])
+
+
+def test_RED_a_declaration_changed_after_the_build_reads_stale_through_open_for(tmp_path):
+    """Round 3 of #86's review: the declaration moved the input digest, but `open_for` fell back to the
+    generation, which did not carry it — so `check` said fresh and explain served the old DOCS. Both
+    directions: declared after an undeclared build, and withdrawn after a declared one."""
+    tenant, roster = _skills_fixture(tmp_path / "declare_after", {})
+    data_home = Path(tenant.data_home)
+    (data_home / "skills_graph" / "PROVENANCE.json").write_text(json.dumps(
+        {"vocabulary": {"doc_relations": ["governs"]}}), encoding="utf-8")
+    index_path = data_home / ".federation_scheme_index.json"
+    index = json.loads(index_path.read_text())
+    index["_meta"] = {"doc_schemes": ["skills"], "doc_relations": ["governs"]}
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    with pytest.raises(fs.StoreError, match="STALE|stale"):
+        fs.open_for(roster, tenant=tenant, tenant_id="doors")
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="doors")
+    assert SKILL in {d["id"] for d in doors.explain(fs.open_for(roster, tenant=tenant, tenant_id="doors"), SEED).docs}
+
+    tenant, roster = _skills_fixture(tmp_path / "withdraw_after",
+                                     {"doc_schemes": ["skills"], "doc_relations": ["governs"]}, ["governs"])
+    data_home = Path(tenant.data_home)
+    (data_home / "skills_graph" / "PROVENANCE.json").unlink()
+    index_path = data_home / ".federation_scheme_index.json"
+    index = json.loads(index_path.read_text())
+    index["_meta"] = {}
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    with pytest.raises(fs.StoreError, match="STALE|stale"):
+        fs.open_for(roster, tenant=tenant, tenant_id="doors")
+
+
+def test_RED_index_rows_edited_to_hand_a_code_scheme_to_the_doc_lane_refuse_the_build(tmp_path):
+    """Round 3 of #86's review: the build's proof read ownership from the index rows, the same file a
+    hand edits — `fastapi.own = []`, `skills.own = [fastapi, skills]` put code under DOCS. Ownership
+    is read from the shards."""
+    tenant, roster = _skills_fixture(tmp_path / "ok", {"doc_schemes": ["skills"], "doc_relations": ["governs"]},
+                                     ["governs"])
+    index_path = Path(tenant.data_home) / ".federation_scheme_index.json"
+    index = json.loads(index_path.read_text())
+    index["fastapi"]["own"], index["skills"]["own"] = [], ["fastapi", "skills"]
+    index["_meta"]["doc_schemes"] = ["fastapi", "skills"]
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    with pytest.raises(fs.StoreError, match=r"carries doc vocabulary .*'fastapi'.* declares \{'relations': \['governs'\], 'schemes': \['skills'\]\}"):
+        fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="doors")
+
+
+def test_RED_an_index_row_removed_for_the_code_lane_does_not_hide_its_ownership_from_the_doc_proof(tmp_path):
+    """Round 4 of #86's review: the proof compared the lanes the index's row KEYS named, so deleting the
+    code lane's row hid it from the sole-owner check — a skills shard carrying stub `fastapi://` ids then
+    put code under DOCS with CHECK OK. The lanes compared are the descriptor's declared lanes."""
+    tenant, roster = _skills_fixture(tmp_path, {"doc_schemes": ["skills"], "doc_relations": ["governs"]}, ["governs"])
+    data_home = Path(tenant.data_home)
+    nodes = json.loads((data_home / "skills_graph" / "nodes.json").read_text())
+    nodes[SEED] = {"kind": "node", "node_type": "func", "id": SEED, "dotted": "fastapi.routing.get_request_handler"}
+    (data_home / "skills_graph" / "nodes.json").write_text(json.dumps(nodes), encoding="utf-8")
+    index_path = data_home / ".federation_scheme_index.json"
+    index = json.loads(index_path.read_text())
+    del index["fastapi"]
+    index["skills"]["own"] = ["fastapi", "skills"]
+    index["_meta"]["doc_schemes"] = ["fastapi", "skills"]
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    with pytest.raises(fs.StoreError, match=r"lane 'skills' declares doc relations \['governs'\] but lane 'fastapi' also owns \['fastapi'\]"):
+        fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="doors")
+
+
+def test_RED_the_doc_proof_reads_every_shard_on_disk_not_a_door_or_a_descriptor_spelling(tmp_path):
+    """Round 5 of #86's review. B7: a tenant built from flags (`graphy.query --mesh-set`,
+    `python -m graphy.federated_store`) declares no lanes, so a proof over the descriptor's lanes found
+    nothing and refused a legitimate declared tenant. B8: a descriptor key spelled `fastapi_graph/` was
+    loaded by the store and skipped by the proof, so a dropped index row put code under DOCS again.
+    The proof's lanes are the shards in the data home."""
+    from graphy.tenant import cli_tenant
+    tenant, roster = _skills_fixture(tmp_path / "flags", {"doc_schemes": ["skills"], "doc_relations": ["governs"]},
+                                     ["governs"])
+    flags = cli_tenant(str(tenant.data_home), str(tenant.join_keys), "doors")
+    assert flags.build_lanes == {}
+    shard = fs.ShardStore(roster, tenant=flags, tenant_id="doors")
+    assert SKILL in {d["id"] for d in doors.explain(shard, SEED, max_depth=3).docs}
+    assert fs.main(["--mesh-set", ",".join(roster), "--data-home", str(tenant.data_home),
+                    "--join-keys", str(tenant.join_keys), "--tenant-id", "doors",
+                    "--out", str(tmp_path / "flags.sqlite")]) == 0
+
+    tenant, roster = _skills_fixture(tmp_path / "spelling", {"doc_schemes": ["skills"], "doc_relations": ["governs"]},
+                                     ["governs"])
+    data_home = Path(tenant.data_home)
+    nodes = json.loads((data_home / "skills_graph" / "nodes.json").read_text())
+    nodes[SEED] = {"kind": "node", "node_type": "func", "id": SEED, "dotted": "fastapi.routing.get_request_handler"}
+    (data_home / "skills_graph" / "nodes.json").write_text(json.dumps(nodes), encoding="utf-8")
+    index_path = data_home / ".federation_scheme_index.json"
+    index = json.loads(index_path.read_text())
+    del index["fastapi"]
+    index["_meta"]["doc_schemes"] = ["fastapi", "skills"]
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    odd = Tenant(root=tenant.root, data_home=data_home, adapters=(), join_keys=tenant.join_keys, cursor=tenant.cursor,
+                 policy="refuse", journal=tenant.journal,
+                 build_lanes={"fastapi_graph/": (None, "static-dep"), "widgets_graph": (None, "static-dep"),
+                              "history_graph": (None, "static-dep"), "skills_graph": (None, "static-dep")})
+    with pytest.raises(fs.StoreError, match=r"lane 'skills' declares doc relations \['governs'\] but lane 'fastapi' also owns"):
+        fs.compile_store(roster, fs.store_path_for(roster, tenant=odd), tenant=odd, tenant_id="doors")
+
+
+def _declare_lane(data_home: Path, slug: str, nodes: dict, edges: list, doc_relations: list) -> None:
+    _write_graph(data_home / f"{slug}_graph", nodes, edges)
+    (data_home / f"{slug}_graph" / "PROVENANCE.json").write_text(json.dumps(
+        {"vocabulary": {"producer": "skills_census", "doc_relations": doc_relations}}), encoding="utf-8")
+
+
+def _recompile(tenant, roster, meta: dict, rows: dict, lanes: list[str]):
+    index_path = Path(tenant.data_home) / ".federation_scheme_index.json"
+    index = json.loads(index_path.read_text())
+    index["_meta"] = meta
+    index.update(rows)
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    tenant = Tenant(root=tenant.root, data_home=tenant.data_home, adapters=(), join_keys=tenant.join_keys,
+                    cursor=tenant.cursor, policy="refuse", journal=tenant.journal,
+                    build_lanes={**tenant.build_lanes, **{f"{l}_graph": (None, "static-dep") for l in lanes}})
+    roster = [*roster, *lanes]
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="doors")
+    return fs.open_for(roster, tenant=tenant, tenant_id="doors")
+
+
+def test_GREEN_two_doc_lanes_that_both_declare_may_share_their_scheme(tmp_path):
+    """Round 6 of #86's review (B9): the issue's own client rosters `manuals_ast` and
+    `manuals_ast_restricted`, both owning scheme `manuals_ast`. Both declaring, the sole-owner proof
+    refused them against each other. A scheme shared only by declaring lanes is documentation in all of
+    them; a co-owner that declares nothing still refuses (the stub tests above)."""
+    tenant, roster = _skills_fixture(tmp_path, {"doc_schemes": ["skills"], "doc_relations": ["governs"]}, ["governs"])
+    restricted = "skills://skill/skills.restricted_rules"
+    _declare_lane(Path(tenant.data_home), "skills_restricted",
+                  {restricted: {"kind": "node", "node_type": "skill", "id": restricted, "dotted": "skills.restricted_rules"}},
+                  [{"kind": "edge", "edge_type": "governs", "src": restricted, "dst": SEED}], ["governs"])
+    store = _recompile(tenant, roster, {"doc_schemes": ["skills"], "doc_relations": ["governs"]},
+                       {"skills_restricted": {"own": ["skills"], "out": ["fastapi"]}}, ["skills_restricted"])
+    docs = {d["id"] for d in doors.explain(store, SEED, max_depth=3).docs}
+    assert {SKILL, restricted} <= docs
+
+
+def test_RED_a_declaring_shard_the_store_never_loads_changes_nothing(tmp_path):
+    """Round 6 of #86's review (B10): reading every shard on disk for the vocabulary let an unrostered
+    lane — a placed doc lane dropped from the rebuild, still on disk — declare `cites` and put a rostered
+    lane's `cites` edge under DOCS. Ownership reads every shard; the answer counts only the loaded lanes."""
+    tenant, roster = _skills_fixture(tmp_path, {"doc_schemes": ["skills"], "doc_relations": ["governs"]}, ["governs"])
+    data_home = Path(tenant.data_home)
+    edges = json.loads((data_home / "skills_graph" / "edges.json").read_text())
+    edges.append({"kind": "edge", "edge_type": "cites", "src": SKILL2, "dst": SEED})
+    (data_home / "skills_graph" / "edges.json").write_text(json.dumps(edges), encoding="utf-8")
+    stray = "other://note/other.n"
+    _declare_lane(data_home, "other", {stray: {"kind": "node", "node_type": "note", "id": stray, "dotted": "other.n"}},
+                  [], ["cites"])
+    # the index as eat/rebuild would derive it over the disk: the stray's declaration is carried
+    store = _recompile(tenant, roster, {"doc_schemes": ["other", "skills"], "doc_relations": ["cites", "governs"]},
+                       {"other": {"own": ["other"], "out": []}}, [])
+    assert store.doc_declaration == {"relations": ["governs"], "schemes": ["skills"]}
+    assert all(d["relation"] != "cites" for d in doors.explain(store, SEED, max_depth=3).docs)

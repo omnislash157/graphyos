@@ -222,7 +222,9 @@ def _heal_index(idx: dict, tenant: Tenant) -> dict:
     for slug in roster(tenant):
         if slug not in idx:
             idx[slug] = _build_row(slug, tenant)
-    idx["_meta"] = {"registry_digest": _registry_digest(tenant)}
+    # a heal re-derives the rows and the digest; what the index's writer declared (standard, the doc
+    # vocabulary — graphyos #86) is not the healer's to drop
+    idx["_meta"] = {**(idx.get("_meta") or {}), "registry_digest": _registry_digest(tenant)}
     return idx
 
 
@@ -259,7 +261,7 @@ def observe(member_slug: str, tenant: Tenant | None = None) -> dict:
             idx = json.loads(index_path.read_text()) if index_path.exists() else build_index(tenant)
             if member_slug in roster(tenant):
                 idx[member_slug] = _build_row(member_slug, tenant)
-            idx["_meta"] = {"registry_digest": _registry_digest(tenant)}
+            idx["_meta"] = {**(idx.get("_meta") or {}), "registry_digest": _registry_digest(tenant)}
             _write_index(idx, tenant)
         result["index"] = "refreshed"
     except Exception as exc:

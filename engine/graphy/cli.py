@@ -1618,7 +1618,15 @@ def _scheme_index_from_ring(sub: Path, description: str, extra: tuple[str, ...] 
         # made it claim the code lane's scheme and disown its own tables (graphyos #71).
         own, out = smash_lane.shard_schemes(sub / f"{slug}_graph")
         rows[slug] = {"own": sorted(own), "out": sorted(out)}
-    index = {"_meta": {"description": description, "standard": ring.get("standard", [])}, **rows}
+    meta = {"description": description, "standard": ring.get("standard", [])}
+    # A doc lane says so in its own PROVENANCE; the index carries it and the build proves it (graphyos #86).
+    from graphy.cross_substrate import derive_doc_declaration
+    from graphy.federated_store import _shard_lanes
+    declared = derive_doc_declaration(sub, _shard_lanes(sub))   # every shard on disk, as the build proves it
+    if declared:
+        meta["doc_schemes"] = declared["schemes"]
+        meta["doc_relations"] = declared["relations"]
+    index = {"_meta": meta, **rows}
     (sub / ".federation_scheme_index.json").write_text(json.dumps(index, indent=1, sort_keys=True) + "\n",
                                                        encoding="utf-8")
 
@@ -1861,8 +1869,13 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     if rc != 0:
         print("EAT FAILED at init", file=sys.stderr)
         return rc
-    _scheme_index_from_ring(sub, f"{package} scheme index — derived from ring.json by graphy eat",
-                            extra=(HISTORY_SLUG,) if with_history else ())
+    from graphy.cross_substrate import DocDeclarationError
+    try:
+        _scheme_index_from_ring(sub, f"{package} scheme index — derived from ring.json by graphy eat",
+                                extra=(HISTORY_SLUG,) if with_history else ())
+    except DocDeclarationError as exc:            # a malformed or overlapping doc declaration (graphyos #86)
+        print(f"EAT REFUSED: {exc}", file=sys.stderr)
+        return 2
     for step in (["converge", "--tenant", str(desc), "--tenant-id", package, "--resolve"],
                  ["build", "--tenant", str(desc), "--tenant-id", package, "--container", "none"],
                  ["check", "--tenant", str(desc), "--tenant-id", package]):

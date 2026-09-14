@@ -38,6 +38,7 @@ from pathlib import Path
 __all__ = ["Lane", "RebuildError", "clear_substrate", "rebuild", "repo_cursor"]
 
 from graphy.cartograph import repo_cursor            # re-exported: a tenant needs it and it was not public
+from graphy.cross_substrate import DocDeclarationError
 
 
 class RebuildError(RuntimeError):
@@ -215,8 +216,11 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
         raise RebuildError(f"rebuild: init failed (exit {rc})")
 
     extra = tuple(l.slug for l in placed) + ((cli_lane.HISTORY_SLUG,) if with_history else ())
-    cli_lane._scheme_index_from_ring(
-        sub, f"{tenant_id} scheme index — derived from ring.json by graphy rebuild", extra=extra)
+    try:
+        cli_lane._scheme_index_from_ring(
+            sub, f"{tenant_id} scheme index — derived from ring.json by graphy rebuild", extra=extra)
+    except DocDeclarationError as exc:            # a malformed or overlapping doc declaration (graphyos #86)
+        raise RebuildError(f"rebuild: {exc}") from exc
 
     steps = []
     if resolve:

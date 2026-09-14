@@ -165,3 +165,101 @@ def test_GREEN_the_three_private_names_the_first_tenant_imported_are_public_now(
     assert callable(rebuild_lane.rebuild)
     # the flock is NOT exported: it is the call's business, not the caller's
     assert "_portable_flock" not in graphy.__all__
+
+
+def _place_skills_lane(sub: Path, declare: bool) -> str:
+    """A skills shard the tenant's own emitter wrote: a skill `governs` the code it rules. `declare`
+    is whether its PROVENANCE names `governs` a doc relation — the first client's 67 admitted edges
+    that appeared under DOCS zero times were this shape undeclared (graphyos #86)."""
+    d = sub / "skills_graph"
+    d.mkdir(parents=True, exist_ok=True)
+    skill = "skills://skill/skills.release_checklist"
+    (d / "nodes.json").write_text(json.dumps({
+        skill: {"kind": "node", "node_type": "skill", "id": skill, "dotted": "skills.release_checklist",
+                "module": "skills", "role": "skill"},
+    }), encoding="utf-8")
+    (d / "edges.json").write_text(json.dumps([
+        {"kind": "edge", "edge_type": "governs", "src": skill, "dst": "core://func/core.mod.run"},
+    ]), encoding="utf-8")
+    vocab = {"producer": "skills_census", "relations": {"governs": ["lexical"]}, "undeclared": []}
+    if declare:
+        vocab["doc_relations"] = ["governs"]
+    (d / "PROVENANCE.json").write_text(json.dumps({
+        "surface": "skills_graph.records",
+        "counts": {"node_count": 1, "edge_count": 1, "edge_types": {"governs": 1}},
+        "vocabulary": vocab,
+    }), encoding="utf-8")
+    return skill
+
+
+@pytest.mark.parametrize("declare", [False, True])
+def test_GREEN_a_doc_lane_that_declares_its_relation_is_listed_under_explain_docs(tmp_path, capsys, declare):
+    """graphyos #86: `explain … DOCS` pinned two schemes, so a placed skills shard whose `governs`
+    edges were admitted and walkable never appeared there. The lane's PROVENANCE declares its doc
+    relation, the rebuild carries it into the scheme index's `_meta`, the build folds it into the
+    store, and the CLI door — through the counting proxy — lists the skill. Undeclared, the index
+    carries no doc keys and the answer is today's: DOCS none."""
+    import graphy.cli as cli
+
+    repo = _git_repo(tmp_path)
+    sub = repo / ".graphy" / "substrate"
+    sub.mkdir(parents=True)
+    skill = _place_skills_lane(sub, declare)
+    rebuild_lane.rebuild(
+        root=repo, substrate=sub, descriptor=repo / ".graphy" / "tenant.json", tenant_id="core",
+        lanes=[rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+               rebuild_lane.Lane.placed("skills")],
+        container="none", log=lambda *_a, **_k: None,
+    )
+    meta = json.loads((sub / ".federation_scheme_index.json").read_text(encoding="utf-8"))["_meta"]
+    capsys.readouterr()
+    assert cli.main(["explain", "core.mod.run", "--tenant", str(repo / ".graphy" / "tenant.json"),
+                     "--tenant-id", "core"]) == 0
+    out = capsys.readouterr().out
+    if declare:
+        assert meta["doc_schemes"] == ["skills"] and meta["doc_relations"] == ["governs"]
+        assert f"hop1 governs" in out and skill in out and "DOCS (DOC_EXPLAINS endpoints, 1)" in out
+    else:
+        assert "doc_schemes" not in meta and "doc_relations" not in meta
+        assert skill not in out and "DOCS: none" in out
+
+
+def _rebuild_with_skills(tmp_path: Path, vocab_doc, extra_nodes: dict | None = None):
+    repo = _git_repo(tmp_path)
+    sub = repo / ".graphy" / "substrate"
+    sub.mkdir(parents=True)
+    _place_skills_lane(sub, declare=True)
+    d = sub / "skills_graph"
+    prov = json.loads((d / "PROVENANCE.json").read_text())
+    prov["vocabulary"]["doc_relations"] = vocab_doc
+    (d / "PROVENANCE.json").write_text(json.dumps(prov))
+    if extra_nodes:
+        nodes = json.loads((d / "nodes.json").read_text())
+        nodes.update(extra_nodes)
+        (d / "nodes.json").write_text(json.dumps(nodes))
+    rebuild_lane.rebuild(
+        root=repo, substrate=sub, descriptor=repo / ".graphy" / "tenant.json", tenant_id="core",
+        lanes=[rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+               rebuild_lane.Lane.placed("skills")],
+        container="none", log=lambda *_a, **_k: None,
+    )
+    return sub
+
+
+def test_RED_a_malformed_doc_declaration_refuses_by_name_and_a_bare_string_is_one_relation(tmp_path):
+    """Round 1 of #86's review: `"governs"` and `["governs", 3]` were dropped silently — `CHECK OK`
+    and `DOCS: none`, the empty answer standing in for could-not-tell."""
+    sub = _rebuild_with_skills(tmp_path / "string", "governs")
+    meta = json.loads((sub / ".federation_scheme_index.json").read_text())["_meta"]
+    assert meta["doc_relations"] == ["governs"] and meta["doc_schemes"] == ["skills"]
+    with pytest.raises(rebuild_lane.RebuildError, match=r"lane 'skills' PROVENANCE vocabulary.doc_relations is \['governs', 3\]"):
+        _rebuild_with_skills(tmp_path / "mixed", ["governs", 3])
+
+
+def test_RED_a_doc_lane_carrying_another_lanes_scheme_refuses_naming_both(tmp_path):
+    """Round 1 of #86's review: a skills lane that also carried a stub `core://` node owned `core`, so
+    `core` became a doc scheme and code — the seed itself — was listed under its own DOCS."""
+    stub = {"core://func/core.mod.run": {"kind": "node", "node_type": "func", "id": "core://func/core.mod.run",
+                                         "dotted": "core.mod.run", "module": "core", "role": "code"}}
+    with pytest.raises(rebuild_lane.RebuildError, match=r"lane 'skills' declares doc relations \['governs'\] but lane 'core' also owns \['core'\]"):
+        _rebuild_with_skills(tmp_path, ["governs"], extra_nodes=stub)
