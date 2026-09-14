@@ -18,6 +18,11 @@
             "type": "command",
             "command": "PYTHONPATH=\"$CLAUDE_PROJECT_DIR/engine\" python3 -m graphy.reseed capture",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/sweep.py\" --apply --quiet",
+            "timeout": 30
           }
         ]
       }

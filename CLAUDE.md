@@ -59,6 +59,7 @@ CLAUDE.md             this file — the router
 README.md             the public face: install, eat a repo, ask it things — every line run on this box
 RECON.md              the cold-start record: measured, dated, every number with its re-derive command
 standalone_check.sh   the departure gate. Run it after EVERY change to engine/. → GRAPHY_STANDALONE_OK
+sweep.py              the box sweep: every quiet session scratchpad, finished pytest tree and hand-built gallery named with size, age and why before --apply removes it; a held (/proc), fresh or still-running session is kept; SessionEnd runs --apply, the gate runs --selftest
 scrub.py              the prose scrub that never names what it scrubs: tokens HMAC'd under .private_key against .private_markers.sha256; --tree engine · --tracked (everything outside staging/) · --keygen · --hash; SCRUB SKIPPED on a box with no key
 census.sh             where the private language sits, per tracked directory → CENSUS OK is the public cut's tripwire
 burden.py             the burden invariants (burden.json): zero runtime dependencies, the extras by name, the wheel under its cap, every host and every subprocess program on the list, every tracked engine doc declared or an arm region, the scrub — the gate refuses growth by name
