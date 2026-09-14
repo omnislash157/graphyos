@@ -636,7 +636,8 @@ def test_python_m_graphy_wire_subprocess():
 
 def test_GREEN_cli_loads_no_verb_module_and_no_http_client():
     """Every verb's module is imported inside its handler: a fresh interpreter that imports
-    graphy.cli holds the import surface (ir · parity · tenant) and nothing else of graphy, and
+    graphy.cli holds the import surface (ir · parity · tenant, and _shared — stdlib only — for the source pin
+    every door-rule module takes at import, graphyos #111) and nothing else of graphy, and
     none of urllib.request · http.client · email.parser — the index's fetch pays for those only
     when a remote base is read. Checked in a subprocess so pytest's own imports are not in the way."""
     probe = ("import sys, json, graphy.cli\n"
@@ -644,7 +645,7 @@ def test_GREEN_cli_loads_no_verb_module_and_no_http_client():
              " or m in ('urllib.request', 'urllib.error', 'http.client', 'email.parser'))))")
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True).stdout
     loaded = json.loads(out)
-    assert loaded == ["graphy", "graphy.cli", "graphy.ir", "graphy.parity", "graphy.tenant"], loaded
+    assert loaded == ["graphy", "graphy._shared", "graphy.cli", "graphy.ir", "graphy.parity", "graphy.tenant"], loaded
 
 
 def test_GREEN_parser_producer_names_pin_the_minting_registry():

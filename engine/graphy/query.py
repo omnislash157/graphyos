@@ -7,6 +7,9 @@ import re
 import sys
 from dataclasses import dataclass, field
 from typing import NamedTuple, Optional
+from graphy._shared import source_sha
+
+SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 _PR_HINT = "#"
 _HEX_SHA = re.compile(r"^[0-9a-f]{7,40}$")

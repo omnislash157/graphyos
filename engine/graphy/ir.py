@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Collection, Mapping
+from graphy._shared import source_sha
+
+SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 __all__ = [
     "SCHEMA_VERSION",

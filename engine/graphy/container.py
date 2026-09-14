@@ -19,6 +19,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from graphy.native_json_graph_ir import load_graph_ir
+from graphy._shared import source_sha
+
+SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 __all__ = ["ContainerError", "have_duckdb", "emit", "emit_all", "defer", "verify", "estate", "node_forms",
            "ADJACENCY", "NODES", "RECEIPT", "INSTALL_HINT"]

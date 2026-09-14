@@ -166,6 +166,152 @@ def test_cli_doors_answer_from_the_store_and_refuse_ambiguity(tmp_path, capsys):
     assert cli.main(["descend", "get_request_handler", "--tenant-id", "doors"]) == 2
 
 
+def test_GREEN_blast_and_descend_record_and_recall(tmp_path, capsys):
+    """graphyos #111: only `walk` recorded, so every repeat of a blast or a descent paid the store again
+    and `traversals` could list walks but query nothing. Both doors now land generation-keyed parquet;
+    the repeat answers from the rows with zero reads and renders byte-identically; one door recalls
+    the stored rows by seed or by target, walks and doors alike, without a store read."""
+    import graphy.traversal as traversal
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    store, tenant, desc = _store(tmp_path)
+    argv = ["--tenant", str(desc), "--tenant-id", "doors"]
+    home, gen = traversal.home_for(tenant), store.generation()
+
+    def body(out: str) -> str:
+        return out.split("DOOR:")[0]
+
+    for door in ("blast", "descend"):
+        assert cli.main([door, SEED, *argv, "--depth", "3"]) == 0
+        first = capsys.readouterr().out
+        assert "TRAVERSAL: source=live" in first and "reads=0" not in first.split("DOOR:")[1]
+        assert cli.main([door, SEED, *argv, "--depth", "3"]) == 0
+        again = capsys.readouterr().out
+        assert f"DOOR: {door} reads=0" in again and "TRAVERSAL: source=store reads=0" in again
+        assert body(again) == body(first)                                   # the recalled answer is the answer
+    assert (home / gen / "doors").is_dir() and len(traversal.stored_doors(home, gen)) == 2
+
+    # a different depth is a different question: live again, stored beside
+    assert cli.main(["blast", SEED, *argv, "--depth", "1"]) == 0
+    assert "source=live" in capsys.readouterr().out
+    # --no-store runs live and lands nothing
+    assert cli.main(["descend", "widgets.gadget", *argv, "--no-store"]) == 0
+    assert "stored=no" in capsys.readouterr().out and len(traversal.stored_doors(home, gen)) == 3
+
+    # the stored answer equals a fresh live door, field for field
+    vocab = traversal.vocabulary(store)
+    fresh = doors.blast(store, SEED, max_depth=3)
+    recalled = traversal.load_door(home, gen, "blast", SEED, 3, vocab)
+    assert doors.render_blast(recalled) == doors.render_blast(fresh) and recalled.declined == fresh.declined
+    d_fresh, d_rec = doors.descend(store, SEED, max_depth=3), traversal.load_door(home, gen, "descend", SEED, 3, vocab)
+    assert [r.node for r in d_rec.primitives] == [r.node for r in d_fresh.primitives] == ["widgets://func/widgets.prim"]
+
+    # recall by target: every stored traversal that reached the test, one scan, zero reads
+    test_it = "widgets://func/widgets.tests.test_gadget.test_it"
+    assert cli.main(["traversals", *argv, "--target", test_it]) == 0
+    out = capsys.readouterr().out
+    assert f"RECALL target={test_it}" in out and f"blast {SEED} depth=3 rows=1" in out
+    assert "TRAVERSALS RECALL OK: 1 stored traversal(s), 1 row(s), reads=0" in out
+    # recall by seed: the blasts and the descent from the seed, and the walk rows beside them
+    assert cli.main(["walk", *argv, "--seed", "widgets://func/widgets.gadget", "--target", "widgets://func/widgets.prim"]) == 0
+    capsys.readouterr()
+    rows = traversal.recall(home, gen, seed=SEED)
+    assert {(r["kind"], r["depth"]) for r in rows} == {("blast", 3), ("blast", 1), ("descend", 3)}
+    walked = traversal.recall(home, gen, target="widgets://func/widgets.prim")
+    assert {(r["kind"], r["seed"]) for r in walked} == {("descend", SEED), ("walk", "widgets://func/widgets.gadget")}
+    assert cli.main(["traversals", *argv]) == 0
+    assert "TRAVERSALS OK: 4 stored traversal(s)" in capsys.readouterr().out
+    # a torn receipt refuses by name, never reinterpreted
+    rp = next((home / gen / "doors").glob("blast-*-d3-v*.json"))
+    rp.write_text(json.dumps({**json.loads(rp.read_text()), "depth": 9}))
+    assert cli.main(["blast", SEED, *argv, "--depth", "3"]) == 2
+    assert "refusing to reinterpret it" in capsys.readouterr().err
+
+
+def test_RED_a_redeclared_relation_is_never_recalled_stale(tmp_path):
+    """graphyos #111 review round 1: a door answer depends on what the door follows, and the generation
+    hashes nodes and edges, not the relation vocabulary. A lane that re-declares `reads_table` over the
+    same shards keeps its generation — keyed on the generation alone, the blast replayed dependents=0
+    from the store while the live door answered 1. The key carries the vocabulary; the repeat runs live."""
+    import graphy.traversal as traversal
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    undeclared = _census_store(tmp_path / "a", None)
+    home = tmp_path / "traversals"
+    stale = traversal.door(undeclared, home, "blast", TABLE, 3)
+    assert stale.source == "live" and READER not in stale.result.reached
+    declared = _census_store(tmp_path / "b", {"reads_table": ["depends"]})
+    assert declared.generation() == undeclared.generation()           # the same shards: the generation cannot tell
+    again = traversal.door(declared, home, "blast", TABLE, 3)
+    assert again.source == "live" and READER in again.result.reached
+    assert traversal.vocabulary(declared) != traversal.vocabulary(undeclared)
+    # an upgraded engine whose door rules moved, over the same store and the same declaration: live again
+    import unittest.mock
+    with unittest.mock.patch.object(doors, "SOURCE_SHA", "f" * 16):
+        assert traversal.door(declared, home, "blast", TABLE, 3).source == "live"
+    # review round 3: a long-lived process (the MCP server) whose files move on disk after import keys by
+    # the code it runs — the digest is pinned at import, never read from the disk at the first door call
+    pinned = traversal.rules_digest()
+    with unittest.mock.patch.object(Path, "read_bytes", lambda self: b"an upgraded engine on disk"):
+        assert traversal.rules_digest() == pinned
+    with unittest.mock.patch.object(doors, "SOURCE_SHA", None):
+        unread = traversal.door(declared, home, "blast", TABLE, 3)
+        assert unread.source == "live" and unread.stored is None and "unreadable" in unread.note
+    assert traversal.door(declared, home, "blast", TABLE, 3).source == "store"
+    # recall under the live vocabulary never serves the stale answer's rows
+    rows = traversal.recall(home, declared.generation(), target=READER, vocab=traversal.vocabulary(declared))
+    assert {(r["kind"], r["seed"]) for r in rows} == {("blast", TABLE)}
+    assert traversal.recall(home, declared.generation(), seed=TABLE, vocab=traversal.vocabulary(undeclared))
+    assert not traversal.recall(home, declared.generation(), target=READER, vocab=traversal.vocabulary(undeclared))
+
+
+def test_RED_a_door_answers_when_its_store_cannot_be_written(tmp_path, capsys):
+    """graphyos #111 review round 4: the traversal store is a cache. A read-only (or full) home made the
+    door compute its answer and then REFUSE with exit 2 — a verb that answered before it recorded. A
+    failed write names TRAVERSAL SKIPPED and the answer stands, on the CLI and through the same `door`."""
+    import os
+    import graphy.traversal as traversal
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    if os.geteuid() == 0:
+        pytest.skip("root writes through a read-only directory")
+    store, tenant, desc = _store(tmp_path)
+    home = traversal.home_for(tenant)
+    home.mkdir(parents=True, exist_ok=True)
+    home.chmod(0o555)
+    try:
+        o = traversal.door(store, home, "blast", SEED, 3)
+        assert o.source == "live" and o.stored is None and "could not be written" in o.note
+        assert doors.render_blast(o.result) == doors.render_blast(doors.blast(store, SEED, max_depth=3))
+        assert cli.main(["descend", SEED, "--tenant", str(desc), "--tenant-id", "doors"]) == 0
+        out = capsys.readouterr().out
+        assert "TRAVERSAL SKIPPED: the traversal store could not be written (PermissionError" in out
+        # the walk is the same cache: it crashed with a traceback on a read-only home before this rung
+        w = traversal.walk(store, home, "widgets://func/widgets.gadget", "widgets://func/widgets.prim")
+        assert w.result.found and w.stored is None and "could not be written" in w.note
+    finally:
+        home.chmod(0o755)
+    # a stored answer damaged from outside is a cache miss: answered live and rewritten, never REFUSED
+    first = traversal.door(store, home, "blast", SEED, 3)
+    assert first.stored is not None
+    first.stored.write_bytes(b"not a parquet")
+    again = traversal.door(store, home, "blast", SEED, 3)
+    assert again.source == "live" and again.stored is not None
+    assert traversal.door(store, home, "blast", SEED, 3).source == "store"
+    # the walk's cache the same way (review round 6): a damaged stored walk is re-walked, never a traceback
+    gadget, prim = "widgets://func/widgets.gadget", "widgets://func/widgets.prim"
+    traversal.walk(store, home, gadget, prim)
+    stored_walk = traversal.walk(store, home, gadget, prim)
+    assert stored_walk.source == "store"
+    stored_walk.stored.write_bytes(b"not a parquet")
+    rewalked = traversal.walk(store, home, gadget, prim)
+    assert rewalked.result.found and rewalked.source == "live" and rewalked.stored is not None
+    # an interrupted write's leftover feed (a JSON list beside the receipts) never breaks a listing
+    (home / store.generation() / "doors" / ".x.parquet.1.json").write_text("[1, 2]")
+    (home / store.generation() / ".y.parquet.1.json").write_text("[1, 2]")
+    assert traversal.stored_doors(home, store.generation()) and traversal.stored(home, store.generation())
+
+
 # ── the declared relation vocabulary (graphyos #68) ────────────────────────────────────────────
 TABLE = "pg_schema://table/pg_schema.enterprise.credit_requests"
 READER = "core://func/core.billing.charge"

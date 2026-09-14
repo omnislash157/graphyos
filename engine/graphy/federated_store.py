@@ -32,6 +32,9 @@ from graphy.native_json_graph_ir import (
     SHARD_INPUTS, WORMHOLE_SIDECAR, _detect_duplicate_json_keys, shard_input_digest,
 )
 from graphy.tenant import Tenant
+from graphy._shared import source_sha
+
+SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 SCHEMA = """
 CREATE TABLE nodes (

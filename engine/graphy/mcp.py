@@ -106,13 +106,17 @@ class Doors:
             seed = doors.resolve(c, symbol)
         except doors.DoorError as exc:
             raise ToolError(f"{which.upper()} UNANSWERABLE: {exc}") from exc
-        if which == "descend":
-            out = doors.render_descend(doors.descend(c, seed, depth), limit)
-        elif which == "blast":
-            out = doors.render_blast(doors.blast(c, seed, depth), limit)
-        else:
+        if which == "explain":
             out = doors.render_explain(doors.explain(c, seed, depth, tenant=self.tenant), limit)
-        return f"{out}\nDOOR: {which} reads={c.reads} generation={self.generation}"
+            return f"{out}\nDOOR: {which} reads={c.reads} generation={self.generation}"
+        try:                               # the same rows the CLI lands and recalls (graphyos #111)
+            o = traversal.door(self.store, traversal.home_for(self.tenant), which, seed, depth)
+        except (traversal.TraversalError, OSError) as exc:
+            raise ToolError(f"{which.upper()} REFUSED: {exc}") from exc
+        render = doors.render_descend if which == "descend" else doors.render_blast
+        trav = (f"TRAVERSAL SKIPPED: {o.note}" if o.note
+                else f"TRAVERSAL: source={o.source} reads={o.reads}" + (" stored" if o.stored else ""))
+        return f"{render(o.result, limit)}\nDOOR: {which} reads={o.reads} generation={self.generation}\n{trav}"
 
     def history(self, term: str | None = None, partner: str | None = None, window: int = 10, sessions: str | None = None,
                 symbol: str | None = None) -> str:

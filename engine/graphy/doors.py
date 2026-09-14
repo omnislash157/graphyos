@@ -24,6 +24,9 @@ from dataclasses import dataclass, field
 from graphy.cross_substrate import AGAINST, BOTH, WITH, WIRE_BUCKET, explanations_from_store
 from graphy.federated_store import relations_in
 from graphy.ir import DEPENDS, REACHES
+from graphy._shared import source_sha
+
+SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 # The DEFAULTS, not the law (graphyos #68). A store whose lanes declare their relation vocabulary
 # answers from the declaration; one whose lanes declare nothing — every shard minted before this
@@ -182,6 +185,18 @@ class Descent:
 def descend(store, seed: str, max_depth: int = 4) -> Descent:
     walked = descend_relations(store)
     reached = _bfs(store, seed, max_depth, walked, WITH)
+    # a primitive is a callee that calls nothing the store carries
+    primitives = {r.node for r in reached.values() if r.hop > 0 and not any(
+        nb.relation in walked and nb.direction in (WITH, BOTH) for nb in store.neighbours(r.node))}
+    dec = declined(store, seed, walked, WITH)
+    return descent_of(seed, max_depth, reached, primitives, dec,
+                      {r: list(getattr(store, 'relations', {}).get(r) or []) for r in dec})
+
+
+def descent_of(seed: str, max_depth: int, reached: dict[str, Reach], primitives: set[str],
+               declined: dict[str, int], declined_classes: dict[str, list[str]]) -> Descent:
+    """A Descent from what its walk found — the live door and a recalled traversal (graphyos #111)
+    build the same answer from the same rows, so the two render byte-identically."""
     by_owner: dict[str, int] = {}
     first_seen: dict[str, int] = {}
     crossings: dict[tuple[str, str], Crossing] = {}
@@ -197,15 +212,11 @@ def descend(store, seed: str, max_depth: int = 4) -> Descent:
                 c.count += 1
                 if r.hop < c.hop:
                     c.hop, c.src, c.dst, c.relation = r.hop, r.via, r.node, r.relation or ""
-    # a primitive is a callee that calls nothing the store carries, at the deepest hops first
-    primitives = [r for r in reached.values() if r.hop > 0 and not any(
-        nb.relation in walked and nb.direction in (WITH, BOTH) for nb in store.neighbours(r.node))]
-    primitives.sort(key=lambda r: (-r.hop, r.owner, r.node))
+    prims = sorted((r for r in reached.values() if r.node in primitives), key=lambda r: (-r.hop, r.owner, r.node))
     packages = sorted(first_seen, key=lambda o: (first_seen[o], o))
     return Descent(seed, reached[seed].owner, max_depth, reached, by_owner,
                    sorted(crossings.values(), key=lambda c: (c.hop, c.src_owner, c.dst_owner)),
-                   primitives, packages, (_dec := declined(store, seed, walked, WITH)),
-                   {r: list(getattr(store, 'relations', {}).get(r) or []) for r in _dec})
+                   prims, packages, dict(declined), dict(declined_classes))
 
 
 @dataclass
@@ -225,6 +236,13 @@ class Blast:
 def blast(store, seed: str, max_depth: int = 4) -> Blast:
     walked = blast_relations(store)
     reached = _bfs(store, seed, max_depth, walked, AGAINST, SEED_RELATIONS)
+    dec = declined(store, seed, walked | SEED_RELATIONS, AGAINST)
+    return blast_of(seed, max_depth, reached, dec, {r: list(getattr(store, "relations", {}).get(r) or []) for r in dec})
+
+
+def blast_of(seed: str, max_depth: int, reached: dict[str, Reach], declined: dict[str, int],
+             declined_classes: dict[str, list[str]]) -> Blast:
+    """A Blast from what its walk found — shared by the live door and a recalled traversal."""
     owner = reached[seed].owner
     by_owner: dict[str, int] = {}
     by_hop: dict[int, int] = {}
@@ -238,9 +256,7 @@ def blast(store, seed: str, max_depth: int = 4) -> Blast:
         (own if r.owner == owner else ring).append(r)
     key = lambda r: (r.hop, r.owner, r.node)  # noqa: E731
     return Blast(seed, owner, max_depth, reached, by_owner, dict(sorted(by_hop.items())),
-                 sorted(own, key=key), sorted(ring, key=key),
-                 (_dec := declined(store, seed, walked | SEED_RELATIONS, AGAINST)),
-                 {r: list(getattr(store, "relations", {}).get(r) or []) for r in _dec})
+                 sorted(own, key=key), sorted(ring, key=key), dict(declined), dict(declined_classes))
 
 
 @dataclass

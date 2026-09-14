@@ -598,14 +598,22 @@ def _cmd_door(args: argparse.Namespace) -> int:
     except doors.DoorError as exc:
         print(f"{verb} UNANSWERABLE: {exc}", file=sys.stderr)
         return 1
-    if args.door == "descend":
-        out = doors.render_descend(doors.descend(counted, seed, args.depth), args.limit)
-    elif args.door == "blast":
-        out = doors.render_blast(doors.blast(counted, seed, args.depth), args.limit)
+    if args.door == "explain":
+        print(doors.render_explain(doors.explain(counted, seed, args.depth, tenant=tenant), args.limit))
+        print(f"DOOR: {args.door} reads={counted.reads} generation={store.generation()}")
+        return 0
+    try:                                   # descend and blast land their rows and recall them (graphyos #111)
+        o = traversal.door(store, traversal.home_for(tenant), args.door, seed, args.depth, save=not args.no_store)
+    except (traversal.TraversalError, OSError) as exc:
+        print(_flatten(f"{verb} REFUSED: {exc}"), file=sys.stderr)
+        return 2
+    render = doors.render_descend if args.door == "descend" else doors.render_blast
+    print(render(o.result, args.limit))
+    print(f"DOOR: {args.door} reads={o.reads} generation={store.generation()}")
+    if o.note:
+        print(f"TRAVERSAL SKIPPED: {o.note} — the door ran live and nothing was stored")
     else:
-        out = doors.render_explain(doors.explain(counted, seed, args.depth, tenant=tenant), args.limit)
-    print(out)
-    print(f"DOOR: {args.door} reads={counted.reads} generation={store.generation()}")
+        print(f"TRAVERSAL: source={o.source} reads={o.reads}" + (f" stored={o.stored}" if o.stored else " stored=no"))
     return 0
 
 
@@ -828,6 +836,46 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
     return mcp_server.serve(tools)
 
 
+def _recall(args: argparse.Namespace, store, home, live: str) -> int:
+    """The recall door: stored rows by seed or by target, one parquet scan, zero store reads."""
+    from graphy import doors
+    from graphy import traversal
+    counted = traversal.Counting(store)
+    counted.find = store.find
+    try:
+        node = doors.resolve(counted, args.seed or args.target)
+    except doors.DoorError as exc:
+        print(f"TRAVERSALS UNANSWERABLE: {exc}", file=sys.stderr)
+        return 1
+    vocab = traversal.vocabulary(store)
+    if vocab is None:
+        print("TRAVERSALS REFUSED: the door rules' source is unreadable, so no stored door answer can be matched "
+              "to the code that computed it", file=sys.stderr)
+        return 2
+    try:
+        rows = traversal.recall(home, live, seed=node if args.seed else None, target=node if args.target else None,
+                                vocab=vocab)
+    except traversal.TraversalError as exc:
+        print(f"TRAVERSALS REFUSED: {exc}", file=sys.stderr)
+        return 2
+    groups: dict[tuple, list[dict]] = {}
+    for row in rows:
+        groups.setdefault((row["kind"], row["seed"], row["depth"]), []).append(row)
+    ask = "seed" if args.seed else "target"
+    print(f"RECALL {ask}={node} generation={live[:12]} traversals={len(groups)} rows={len(rows)}")
+    for (kind, seed, depth), rs in groups.items():
+        print(f"  {kind} {seed}" + (f" depth={depth}" if depth is not None else "") + f" rows={len(rs)}")
+        hops = [row for row in rs if row["via_src"] is not None]          # hop 0 is the seed itself
+        for row in hops[: args.limit]:
+            print(f"    hop{row['hop']} {row['node']}  {row['relation']} {row['via_src']}")
+        if len(hops) > args.limit:
+            print(f"    … {len(hops) - args.limit} more (--limit)")
+    print(f"TRAVERSALS RECALL OK: {len(groups)} stored traversal(s), {len(rows)} row(s), reads={counted.reads}"
+          if groups else f"TRAVERSALS RECALL: no traversal stored under the live generation "
+                         f"{'starts at' if args.seed else 'reaches'} {node} — run walk, descend or blast first")
+    return 0
+
+
 def _cmd_traversals(args: argparse.Namespace) -> int:
     from graphy import federated_store as fstore
     from graphy import traversal
@@ -846,8 +894,13 @@ def _cmd_traversals(args: argparse.Namespace) -> int:
         print(_flatten(f"TRAVERSALS REFUSED: {exc}"), file=sys.stderr)
         return 2
     live = store.generation()
+    if args.seed or args.target:
+        if args.replay or (args.seed and args.target):
+            print("TRAVERSALS REFUSED: a recall takes one of --seed or --target, and never --replay", file=sys.stderr)
+            return 2
+        return _recall(args, store, home, live)
     if not args.replay:
-        n = 0
+        n, vocab = 0, traversal.vocabulary(store)
         for gen_dir in sorted(p for p in home.iterdir() if p.is_dir()) if home.is_dir() else []:
             for seed, rp in traversal.stored(home, gen_dir.name).items():
                 r = json.loads(rp.read_text(encoding="utf-8"))
@@ -855,7 +908,11 @@ def _cmd_traversals(args: argparse.Namespace) -> int:
                 print(f"  {tag} {gen_dir.name[:12]}  {seed} -> {r['target']}  hops={r['hops']} "
                       f"rows={r['rows']} exhausted={r['exhausted']} reads={r['reads']}")
                 n += 1
-        print(f"TRAVERSALS OK: {n} stored walk(s) under {home} (live generation {live[:12]})")
+            for r in traversal.stored_doors(home, gen_dir.name):
+                tag = "past" if gen_dir.name != live else "live" if r.get("vocabulary") == vocab else "stale-vocab"
+                print(f"  {tag} {gen_dir.name[:12]}  {r['door']} {r['seed']}  depth={r['depth']} rows={r['rows']} reads={r['reads']}")
+                n += 1
+        print(f"TRAVERSALS OK: {n} stored traversal(s) under {home} (live generation {live[:12]})")
         return 0
     try:
         reports = traversal.replay(store, home)
@@ -2323,7 +2380,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_trav.add_argument("--tenant-id", default=None, help="the receipt name")
     p_trav.add_argument("--replay", action="store_true",
                         help="re-check every walk stored under a past generation, hop by hop, and name the broken ones")
-    p_trav.add_argument("--limit", type=int, default=20, help="broken hops to print per walk (default 20)")
+    p_trav.add_argument("--limit", type=int, default=20, help="broken hops per walk, or rows per traversal on a recall (default 20)")
+    p_trav.add_argument("--seed", default=None,
+                        help="recall: every stored row whose seed is this symbol — walks, descends and blasts — from the parquet, zero store reads")
+    p_trav.add_argument("--target", default=None,
+                        help="recall: every stored traversal under the live generation that reached this symbol, with its hop and edge")
     p_trav.add_argument("--on-stale", default="refuse", help="refuse|warn")
     p_trav.set_defaults(handler=_cmd_traversals)
 
@@ -2338,7 +2399,10 @@ def _build_parser() -> argparse.ArgumentParser:
         p_door.add_argument("--depth", type=int, default=depth, help=f"hops to walk (default {depth})")
         p_door.add_argument("--limit", type=int, default=12, help="rows to print per section (default 12)")
         p_door.add_argument("--on-stale", default="refuse", help="refuse|warn")
-        p_door.set_defaults(handler=_cmd_door, door=door)
+        if door != "explain":
+            p_door.add_argument("--no-store", action="store_true",
+                                help="run live and land no rows in the traversal store")
+        p_door.set_defaults(handler=_cmd_door, door=door, no_store=False)
 
     p_pil = sub.add_parser("pillars", help="propose a corpus's arm partition from its module graph, with the evidence per unit")
     p_pil.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")

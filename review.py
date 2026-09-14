@@ -9,7 +9,8 @@
 Every check answers a question a cold reviewer should never have to: does every command the docs
 advertise parse against the argparse it names; does every dotted symbol the docs cite exist; is
 every argparse dest read; does every path the router names sit on disk; is a template token still
-unfilled; is every sha the record's newest section names an ancestor of HEAD; did a deletion leave
+unfilled; is every sha the record's newest section names an ancestor of HEAD; does a stored answer's key
+cover every module the code that computed it imports; did a deletion leave
 a caller behind; do the pages this engine emits hold their own contract. A check that cannot run
 RAISES — a silent zero reads exactly like a clean tree — and every check is proven by use: the
 selftest seeds a fixture that trips it and one that does not, and `gate-selftest` runs that proof
@@ -786,6 +787,247 @@ def check_pages(repo: Path) -> tuple[list[Finding], int]:
     return found, len(pages)
 
 
+
+# ── a stored answer's key covers the code that computed it ───────────────────────────────────────
+
+def _module_path(repo: Path, dotted: str) -> Path | None:
+    rel = dotted.replace(".", "/")
+    for p in (repo / "engine" / f"{rel}.py", repo / "engine" / rel / "__init__.py"):
+        if p.is_file():
+            return p
+    return None
+
+
+def _literal_tuple(tree: ast.Module, name: str) -> tuple[int, list[str]] | None:
+    for node in tree.body:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets) and node.value is not None:
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError:
+                return node.lineno, []
+            return node.lineno, [str(v) for v in value]
+    return None
+
+
+def _literal_dict(tree: ast.Module, name: str) -> tuple[int, dict] | None:
+    for node in tree.body:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        if any(isinstance(t, ast.Name) and t.id == name for t in targets) and node.value is not None:
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError:
+                return node.lineno, {}
+            return node.lineno, dict(value) if isinstance(value, dict) else {}
+    return None
+
+
+def _imports(repo: Path, dotted: str) -> set[str]:
+    """Every graphy module a module can import: every Import and ImportFrom anywhere in it — top level, a
+    function body, an `if`, a `try`'s handlers — with relative imports resolved against its package, and each
+    parent package's `__init__` (importing `graphy.a.b` runs `graphy/__init__.py`). A lazy import runs when its
+    function runs, and the door functions are where this codebase imports (graphyos #111 review round 5)."""
+    p = _module_path(repo, dotted)
+    if p is None:
+        return set()
+    pkg = dotted if p.name == "__init__.py" else dotted.rpartition(".")[0]
+    out: set[str] = set()
+    for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+        if isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = pkg.split(".")[: len(pkg.split(".")) - (node.level - 1)]
+                mod = ".".join(base + ([node.module] if node.module else []))
+            else:
+                mod = node.module or ""
+            if mod.split(".")[0] != "graphy":
+                continue
+            out |= {c for c in {mod, *(f"{mod}.{a.name}" for a in node.names)} if _module_path(repo, c)}
+        elif isinstance(node, ast.Import):
+            out |= {a.name for a in node.names if a.name.split(".")[0] == "graphy" and _module_path(repo, a.name)}
+        elif (isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant)
+              and isinstance(node.args[0].value, str) and node.args[0].value.split(".")[0] == "graphy"
+              and ((isinstance(node.func, ast.Attribute) and node.func.attr == "import_module")
+                   or (isinstance(node.func, ast.Name) and node.func.id in ("import_module", "__import__")))):
+            if _module_path(repo, node.args[0].value):     # importlib.import_module("graphy.x") · __import__("graphy.x")
+                out.add(node.args[0].value)
+    parts = dotted.split(".")
+    out |= {".".join(parts[:k]) for k in range(1, len(parts)) if _module_path(repo, ".".join(parts[:k]))}
+    return out - {dotted}
+
+
+_PINNED = re.compile(r"^SOURCE_SHA\s*=\s*source_sha\(__file__\)", re.M)
+
+
+def check_cache_key_closure(repo: Path) -> list[Finding]:
+    """cache-key-closure: a module that keys stored answers by the code that computed them declares
+    `RULE_ROOTS` (where the answer is computed), `RULE_MODULES` (what its key hashes) and `RULE_EXEMPT`
+    (module → why it bears no rule; its imports are not followed). Every module the roots can import, lazily
+    or not, is in exactly one of the two; neither names a module outside the closure; every key member pins
+    `SOURCE_SHA = source_sha(__file__)` at import; every exemption carries its reason. graphyos #111 was
+    REVISED for a key that described less than its inputs through four holes — the relations, the engine's
+    rules, the disk read after import, and a lazy import this check first could not see."""
+    declarers = []
+    for p in sorted((repo / "engine" / "graphy").rglob("*.py")) if (repo / "engine" / "graphy").is_dir() else []:
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        roots, modules = _literal_tuple(tree, "RULE_ROOTS"), _literal_tuple(tree, "RULE_MODULES")
+        if roots or modules:
+            declarers.append((p, roots, modules, _literal_dict(tree, "RULE_EXEMPT")))
+    if not declarers:
+        raise CheckError("cache-key-closure found ZERO modules declaring RULE_ROOTS / RULE_MODULES — "
+                         "the stored doors key by nothing, or the scan is broken")
+    found: list[Finding] = []
+    judged = 0
+    for p, roots, modules, exempt in declarers:
+        rel = _rel(repo, p)
+        if not roots or not modules or not roots[1] or not modules[1]:
+            found.append(Finding("cache-key-closure", rel, "declares one of RULE_ROOTS / RULE_MODULES without the other, "
+                                 "or not as a literal tuple of dotted module names"))
+            continue
+        ex_line, ex = exempt if exempt else (modules[0], {})
+        for m, why in sorted(ex.items()):
+            if not isinstance(why, str) or not why.strip():
+                found.append(Finding("cache-key-closure", f"{rel}:{ex_line}", f"RULE_EXEMPT[{m!r}] carries no reason"))
+        declared = set(modules[1])
+        for m in sorted(declared & set(ex)):
+            found.append(Finding("cache-key-closure", f"{rel}:{ex_line}", f"{m} is both keyed and exempt"))
+        seen: set[str] = set()
+        todo = list(roots[1])
+        while todo:
+            m = todo.pop()
+            if m in seen:
+                continue
+            seen.add(m)
+            if _module_path(repo, m) is None:
+                found.append(Finding("cache-key-closure", f"{rel}:{roots[0]}", f"{m} is in the closure and names no module"))
+                continue
+            if m in ex:
+                continue                       # declared rule-free: its own imports are not the key's
+            todo += sorted(_imports(repo, m) - seen)
+        judged += len(seen)
+        for m in sorted(seen - declared - set(ex)):
+            found.append(Finding("cache-key-closure", f"{rel}:{modules[0]}",
+                                 f"{m} is importable from the rule roots and neither in RULE_MODULES nor RULE_EXEMPT — "
+                                 f"an edit to it would serve a stored answer the new code never computed"))
+        for m in sorted((declared | set(ex)) - seen):
+            found.append(Finding("cache-key-closure", f"{rel}:{modules[0]}",
+                                 f"{m} is declared and outside the roots' import closure — a stale declaration"))
+        for m in sorted(declared & seen):
+            mp = _module_path(repo, m)
+            if mp is not None and not _PINNED.search(mp.read_text(encoding="utf-8")):
+                found.append(Finding("cache-key-closure", _rel(repo, mp),
+                                     "does not pin `SOURCE_SHA = source_sha(__file__)` at import — "
+                                     "the key would read the disk, not the code this process runs"))
+    NOTES["cache-key-closure"] = f"{len(declarers)} declaring module(s), {judged} module(s) in the closure"
+    return found
+
+
+
+def _catches(handler: ast.ExceptHandler) -> set[str]:
+    t = handler.type
+    if t is None:
+        return {"*"}
+    names = t.elts if isinstance(t, ast.Tuple) else [t]
+    out = set()
+    for n in names:
+        if isinstance(n, ast.Name):
+            out.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            out.add("." + n.attr)
+    return out
+
+
+def _guard_holds(tr: ast.Try) -> bool:
+    """A try protects a cache write when its handlers that do NOT re-raise catch everything (bare ·
+    Exception · BaseException), or catch OSError and a driver's base `.Error` — exactly `Error`: a
+    `json.JSONDecodeError` beside OSError leaves duckdb's IOException (disk full) through."""
+    caught: set[str] = set()
+    for h in tr.handlers:
+        if any(isinstance(n, ast.Raise) for n in ast.walk(h)):
+            continue
+        caught |= _catches(h)
+    return bool(caught & {"*", "Exception", "BaseException"}) or ("OSError" in caught and ".Error" in caught)
+
+
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def check_cache_write_guarded(repo: Path) -> list[Finding]:
+    """cache-write-guarded: a module declaring `CACHE_WRITERS` names the functions that land rows in a cache.
+    Every use of one anywhere in the engine — a call, or the writer passed on as a value (`partial`, a callback),
+    by its name, an attribute, an `as` alias or `getattr(module, "name")` — sits lexically inside a `try` in the SAME scope whose handlers,
+    not re-raising, catch everything or OSError and the driver's `.Error`. A nested def or lambda starts with no
+    guard: it runs where it is called, not where it is written. A read-only or full store made `blast` compute
+    its answer and then refuse (graphyos #111 review round 4); round 6 found the first cut credited a re-raise,
+    a `JSONDecodeError`, a nested def and an alias."""
+    root = repo / "engine" / "graphy"
+    files = sorted(root.rglob("*.py")) if root.is_dir() else []
+    writers: set[str] = set()
+    for p in files:
+        hit = _literal_tuple(ast.parse(p.read_text(encoding="utf-8")), "CACHE_WRITERS")
+        if hit:
+            writers |= set(hit[1])
+    if not writers:
+        raise CheckError("cache-write-guarded found ZERO declared CACHE_WRITERS — the store's writers are undeclared, or the scan is broken")
+    found: list[Finding] = []
+    uses = 0
+    for p in files:
+        rel = _rel(repo, p)
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        names = set(writers)                      # a bare name, or an `as` alias / a plain rebinding of one
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom):
+                names |= {a.asname for a in n.names if a.name in writers and a.asname}
+        for n in ast.walk(tree):
+            if (isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+                    and ((isinstance(n.value, ast.Name) and n.value.id in names)
+                         or (isinstance(n.value, ast.Attribute) and n.value.attr in writers))):
+                names.add(n.targets[0].id)
+        alias_rhs = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Assign) and isinstance(n.value, (ast.Name, ast.Attribute))
+                     and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name) and n.targets[0].id in names}
+
+        def visit(node, guarded: bool):
+            nonlocal uses
+            if isinstance(node, _SCOPES):
+                if isinstance(node, ast.Lambda):
+                    visit(node.body, False)
+                    return
+                for child in node.body:
+                    visit(child, False)
+                for dec in node.decorator_list:
+                    visit(dec, guarded)
+                return
+            if isinstance(node, ast.Try):
+                holds = _guard_holds(node)
+                for child in node.body:
+                    visit(child, guarded or holds)
+                for child in node.handlers + node.orelse + node.finalbody:
+                    visit(child, guarded)
+                return
+            use = None
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr" and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant) and node.args[1].value in writers):
+                use = node.args[1].value                 # getattr(module, "store_x")
+            elif isinstance(node, ast.Name) and node.id in names and isinstance(node.ctx, ast.Load) and id(node) not in alias_rhs:
+                use = node.id
+            elif isinstance(node, ast.Attribute) and node.attr in writers and isinstance(node.ctx, ast.Load) and id(node) not in alias_rhs:
+                use = node.attr
+            if use is not None:
+                uses += 1
+                if not guarded:
+                    found.append(Finding("cache-write-guarded", f"{rel}:{node.lineno}",
+                                         f"{use} lands cache rows outside a try (in its own scope) whose non-re-raising handlers "
+                                         f"catch OSError and the driver's Error — a read-only or full store would cost the answer"))
+                return
+            for child in ast.iter_child_nodes(node):
+                visit(child, guarded)
+
+        visit(tree, False)
+    if not uses:
+        raise CheckError(f"cache-write-guarded found ZERO uses of {sorted(writers)} — nothing lands rows, or the scan is broken")
+    NOTES["cache-write-guarded"] = f"{len(writers)} writer(s), {uses} use(s)"
+    return found
+
+
 # ── the battery ───────────────────────────────────────────────────────────────────────────────────
 
 CHECKS = {
@@ -795,6 +1037,8 @@ CHECKS = {
     "path-literal-names-nothing": check_paths,
     "template-token": check_template_tokens,
     "sha-liveness": check_sha_liveness,
+    "cache-key-closure": check_cache_key_closure,
+    "cache-write-guarded": check_cache_write_guarded,
 }
 
 
@@ -860,6 +1104,37 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
         "sha-liveness": (
             {"RECON.md": "## 1 · x (2026-01-01)\n\nlanded at commit deadbeef0\n"},
             {"RECON.md": "## 1 · x (2026-01-01)\n\nthe store generation 24eecb50371f9e1d is not a commit\n"}),
+        "cache-key-closure": (
+            # red: e absent (a lazy import inside a root function), rel absent (a relative import), gone stale,
+            # d unpinned, an exemption with no reason, dyn absent (a literal import_module) — six findings
+            {"engine/graphy/__init__.py": "", "engine/graphy/_shared.py": "def source_sha(f):\n    return f\nSOURCE_SHA = source_sha(__file__)\n",
+             "engine/graphy/t.py": "RULE_ROOTS = ('graphy.d',)\nRULE_MODULES = ('graphy.d', 'graphy._shared', 'graphy.gone')\nRULE_EXEMPT = {'graphy': ''}\n",
+             "engine/graphy/d.py": "from graphy._shared import source_sha\nfrom .rel import z\ndef blast():\n    from graphy.e import x\n"
+                                   "    import importlib\n    importlib.import_module('graphy.dyn')\n",
+             "engine/graphy/rel.py": "", "engine/graphy/e.py": "", "engine/graphy/dyn.py": ""},
+            {"engine/graphy/__init__.py": "", "engine/graphy/_shared.py": "def source_sha(f):\n    return f\nSOURCE_SHA = source_sha(__file__)\n",
+             "engine/graphy/t.py": "RULE_ROOTS = ('graphy.d',)\nRULE_MODULES = ('graphy.d', 'graphy._shared', 'graphy.e', 'graphy.rel', 'graphy.dyn')\n"
+                                   "RULE_EXEMPT = {'graphy': 'the package re-exports; no rule'}\n",
+             "engine/graphy/d.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\nfrom .rel import z\ndef blast():\n    from graphy.e import x\n"
+                                   "    __import__('graphy.dyn')\n",
+             "engine/graphy/dyn.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\n",
+             "engine/graphy/rel.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\n", "engine/graphy/e.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\n"}),
+        "cache-write-guarded": (
+            # red: bare call · a JSONDecodeError beside OSError · a re-raise · a nested def · an alias · a partial · a getattr — seven
+            {"engine/graphy/t.py": "CACHE_WRITERS = ('store_x',)\ndef store_x():\n    pass\n",
+             "engine/graphy/u.py": "import json, functools, duckdb\nfrom graphy.t import store_x, store_x as sx\nfrom graphy import t\n"
+                                   "def a():\n    store_x()\n"
+                                   "def b():\n    try:\n        t.store_x()\n    except (OSError, json.JSONDecodeError):\n        pass\n"
+                                   "def c():\n    try:\n        store_x()\n    except (OSError, duckdb.Error):\n        raise\n"
+                                   "def d():\n    try:\n        def later():\n            store_x()\n    except Exception:\n        pass\n    later()\n"
+                                   "def e():\n    sx()\n"
+                                   "def f():\n    return functools.partial(store_x)\n"
+                                   "def g():\n    getattr(t, 'store_x')()\n"},
+            {"engine/graphy/t.py": "CACHE_WRITERS = ('store_x',)\ndef store_x():\n    pass\n",
+             "engine/graphy/u.py": "import functools, duckdb\nfrom graphy.t import store_x as sx\nfrom graphy import t\n"
+                                   "def a():\n    try:\n        t.store_x()\n    except (OSError, duckdb.Error) as exc:\n        return exc\n"
+                                   "def b():\n    try:\n        sx()\n        functools.partial(sx)()\n    except Exception:\n        pass\n"
+                                   "def c():\n    try:\n        pass\n    except OSError:\n        raise\n"}),
         "severance": (
             {"engine/graphy/a.py": "def f():\n    pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
              "engine/graphy/c.py": "from graphy import a\na.f()\nimport sqlite3\nsqlite3.connect(':memory:').g()\n"},
