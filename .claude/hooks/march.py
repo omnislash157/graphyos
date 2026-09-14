@@ -451,8 +451,39 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
             f"A rung only the operator can finish is gated, never held: a line `{GATE_TOKEN}: <gate> — <step>` "
             f"naming one of {names}, and the march moves to the next rung."
         )
+    red = ci_red()
+    if red:                                  # no cap: every stop on a red main is blocked until it is green
+        pending, tool_uses = transcript_facts(payload.get("transcript_path"))
+        if pending:                          # §125: a wait on the session's own background work never holds (round 1)
+            state.update(last_block="waiting", tool_uses=tool_uses)
+            save(state)
+            log(f"issue {issue} closed on a red main ({red}); waiting on {len(pending)} background task(s)")
+            return allow(f"issue {issue} is closed but ci on main is red at {red}; {len(pending)} background task(s) "
+                         f"are still running and their notification wakes the session")
+        state.update(blocks=int(state.get("blocks", 0)) + 1, last_block=f"ci {red}")
+        save(state)
+        log(f"issue {issue} closed on a red main: ci failed on {red}")
+        return block(
+            f"MARCH — issue {issue} is closed, but `ci` on main is RED at {red}. A rung is not landed on a red "
+            f"main: `gh run list --repo {REPO} --workflow ci --branch main --limit 1`, `python3 workflows.py --run .github/workflows/ci.yml <job>` runs every step here, read the failed job's log, fix it, run the "
+            f"gate, commit and push; the next stop on a green or pending main arms the next rung."
+        )
     unblock(issue)
     return advance(state, issue, f"issue {issue} closed")
+
+
+def ci_red() -> str | None:
+    """The head sha of main's newest `ci` run when that run FAILED, else None. Pending, green or unreadable never
+    holds the loop; a definite red does — eight rungs once closed on a red main because nothing read it (#88)."""
+    try:
+        rows = json.loads(gh("run", "list", "--workflow", "ci", "--branch", "main", "--limit", "1",
+                             "--json", "status,conclusion,headSha") or "[]")
+    except Exception as exc:  # noqa: BLE001
+        log(f"could not read ci on main: {exc}")
+        return None
+    if rows and rows[0].get("status") == "completed" and rows[0].get("conclusion") in ("failure", "timed_out", "startup_failure"):
+        return str(rows[0].get("headSha", ""))[:12] or "?"
+    return None
 
 
 def gate(state: dict, issue: int, name: str, step: str) -> int:

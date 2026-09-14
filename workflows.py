@@ -453,7 +453,73 @@ def check_dir(d: Path) -> tuple[list[str], list[str]]:
     return red, notes
 
 
+def run_job(workflow: Path, job: str, *, log=print) -> list[tuple[str, int, float]]:
+    """Run one job's steps the way a runner does, EVERY step, so a later red never hides behind the first
+    (RECON §130: the gate's red masked the receipt's for thirty-two runs). The checkout is a copy of the tracked
+    tree as it stands (working-tree bytes, no `.private_key`, which no runner has); `actions/setup-python` is a bare
+    venv first on PATH as `python` and `python3`, with pip and nothing else; every other `uses:` is named SKIPPED.
+    Returns (step, rc, seconds) per step."""
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    import time
+    doc = parse(workflow.read_text(encoding="utf-8"))
+    steps = ((doc.get("jobs") or {}).get(job) or {}).get("steps")
+    if not isinstance(steps, list):
+        raise WorkflowError(0, f"{workflow.name} has no job {job!r} with steps")
+    root = Path(subprocess.run(["git", "-C", str(workflow.parent), "rev-parse", "--show-toplevel"],
+                               capture_output=True, text=True, check=True).stdout.strip())
+    work = Path(tempfile.mkdtemp(prefix=f"ci-{job}-"))
+    tree = work / "repo"
+    listed = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, check=True).stdout.split(b"\0")
+    for rel in (r.decode() for r in listed if r):
+        src = root / rel
+        if src.is_file() and rel != ".private_key":
+            (tree / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, tree / rel)
+    subprocess.run(["git", "init", "-q"], cwd=tree, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tree, check=True)
+    subprocess.run(["git", "-c", "user.name=ci", "-c", "user.email=ci@local", "commit", "-qm", "ci"], cwd=tree, check=True)
+    env = {k: v for k, v in os.environ.items() if k not in ("VIRTUAL_ENV", "PYTHONPATH")}
+    out: list[tuple[str, int, float]] = []
+    try:
+        for i, step in enumerate(steps, 1):
+            name = step.get("name") or step.get("uses") or f"step {i}"
+            uses = str(step.get("uses") or "")
+            t0 = time.perf_counter()
+            if uses.startswith("actions/checkout"):
+                rc = 0
+            elif uses.startswith("actions/setup-python"):
+                venv = work / "setup-python"
+                rc = subprocess.run([sys.executable, "-m", "venv", str(venv)]).returncode
+                # the venv and the system directories only: a host ~/.local/bin/pytest must not stand in for a missing extra
+                env["PATH"] = os.pathsep.join([str(venv / "bin"), "/usr/local/bin", "/usr/bin", "/bin"])
+            elif uses:
+                log(f"  SKIPPED  {name}  (a `uses:` this runner does not emulate)")
+                continue
+            else:
+                rc = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", str(step["run"])], cwd=tree, env=env,
+                                    stdout=subprocess.DEVNULL if not os.environ.get("CI_LOCAL_VERBOSE") else None,
+                                    stderr=subprocess.STDOUT if not os.environ.get("CI_LOCAL_VERBOSE") else None).returncode
+            secs = time.perf_counter() - t0
+            log(f"  {'ok  ' if rc == 0 else 'RED '} rc={rc:<3} {secs:6.1f}s  {name}")
+            out.append((name, rc, secs))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return out
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) >= 4 and argv[1] == "--run":
+        wf = Path(argv[2]).resolve()
+        results = run_job(wf, argv[3])
+        red = [n for n, rc, _ in results if rc != 0]
+        if red:
+            print(f"CI LOCAL RED: {len(red)} of {len(results)} step(s) in {wf.name}:{argv[3]} — " + " · ".join(red))
+            return 1
+        print(f"CI LOCAL OK: {len(results)} step(s) in {wf.name}:{argv[3]}, every one run")
+        return 0
     d = Path(argv[1]).resolve() if len(argv) > 1 else DEFAULT_DIR
     red, notes = check_dir(d)
     for r in red:

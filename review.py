@@ -1172,6 +1172,53 @@ def check_generation_identity(repo: Path) -> list[Finding]:
     return found
 
 
+_HOST_PY = re.compile(
+    r"(?:^|[;&|(`]|\$\()\s*"                                                    # command position: line start, after ; & | ( ` $(
+    r"(?:(?:if|then|do|else|elif|while|until|exec|time|env|command|sudo|nohup|!|timeout\s+\S+|[A-Za-z_]\w*=\S*)\s+)*"
+    r"(?:((?:/usr(?:/local)?)?/bin/)|(?<![\w/.$\"-]))(python(?:3(?:\.\d+)?)?)"          # bare, or a SYSTEM path — a venv's interpreter is its own
+    r"(?:\s+-[WX]\s+\S+|\s+-[A-Za-z]+)*\s+-m\s*([A-Za-z_][\w.]*)")
+
+
+def check_host_interpreter(repo: Path) -> list[Finding]:
+    """host-interpreter: a tracked shell script (outside staging/) runs `python3 -m <module>` on the HOST interpreter
+    only for a standard-library module. Anything else is this box's site-packages standing in for the script's
+    own: the gate ran `python3 -m pytest` on the march's floor, green here where pytest is installed system-wide and
+    red on every CI runner for eight commits (found while marching #88)."""
+    import subprocess as sp
+    listed = sp.run(["git", "-C", str(repo), "ls-files", "*.sh"], capture_output=True, text=True)
+    if listed.returncode != 0:
+        raise CheckError(f"host-interpreter could not list tracked shell scripts: {listed.stderr.strip()[:200]}")
+    scripts = [repo / f for f in listed.stdout.splitlines() if f and not f.startswith("staging/")]
+    workflows = sorted((repo / ".github" / "workflows").glob("*.y*ml"))       # a `run:` body is the same host (round 1)
+    stdlib = set(sys.stdlib_module_names)
+    found: list[Finding] = []
+    for p in scripts + workflows:
+        # a workflow's interpreter is the job's own (setup-python): pip, and whatever the file pip-installs before
+        # the line, are its own; a script's host interpreter owns only the standard library
+        own = {"pip"} if p in workflows else set()
+        owns_all = False
+        for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            if p in workflows:
+                line = re.sub(r"^\s*(?:-\s+)?run:\s*\|?\s*", "", line)
+            for m in _HOST_PY.finditer(line):
+                if not owns_all and m.group(3).split(".")[0] not in stdlib | own:
+                    found.append(Finding("host-interpreter", f"{_rel(repo, p)}:{i}",
+                                         f"`{m.group(1) or ''}{m.group(2)} -m {m.group(3)}` runs on the host interpreter's site-packages — run it with the "
+                                         f"script's own interpreter (the gate's fresh venv, `$PY`), or it is green only where the host has it"))
+            if p in workflows and not owns_all:
+                for inst in re.finditer(r"\bpip\s+install\b([^&;|]*)", line):
+                    args = inst.group(1).split()
+                    if any(a in ("-e", "--editable", "-r", "--requirement") or "/" in a or "[" in a or a.strip("'\"").startswith(".")
+                           for a in args):
+                        owns_all = True             # a local tree, extras or a requirements file: its modules cannot be read off the line
+                        break
+                    own |= {re.split(r"[\[<>=!~ ]", t.strip("'\""))[0].replace("-", "_") for t in args if not t.startswith("-")}
+    NOTES["host-interpreter"] = f"{len(scripts)} tracked script(s), {len(workflows)} workflow(s)"
+    return found
+
+
 # ── the battery ───────────────────────────────────────────────────────────────────────────────────
 
 CHECKS = {
@@ -1186,6 +1233,7 @@ CHECKS = {
     "data-home-by-descriptor": check_data_home_by_descriptor,
     "cursor-exclude-by-tenant": check_cursor_exclude_by_tenant,
     "generation-identity": check_generation_identity,
+    "host-interpreter": check_host_interpreter,
 }
 
 
@@ -1309,6 +1357,19 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
             {"engine/graphy/_shared.py": "GENERATION_INFIX = '.gen-'\nGENERATION_IDENTITY = ('generation_of',)\ndef generation_of(n):\n    return n\n",
              "engine/graphy/cli.py": "from graphy._shared import generation_of\ndef fam(sub, home):\n    \"\"\"`<substrate>.gen-<token>` is its own.\"\"\"\n    return generation_of(home.name) == sub.name\n",
              "engine/graphy/cartograph.py": "def base(p):\n    return p\n"}),
+        "host-interpreter": (
+            # red: the gate's march floor · cd-chained · after then · indented · if-led · env-assigned · versioned · absolute ·
+            # a flag before -m · a timeout-led -W flag · a workflow run: — eleven
+            {"gate.sh": "#!/usr/bin/env bash\npython3 -m pytest -q x.py\ncd engine && python3 -m graphy check\nif true; then python3 -m build; fi\n"
+                        "f() {\n  python3 -m pytest\n}\nif python3 -m pytest; then :; fi\nPYTHONPATH=engine python3 -m graphy\n"
+                        "python3.12 -m pytest\n/usr/bin/python3 -m twine check\npython3 -u -m graphy\ntimeout 5 python3 -W ignore -m pytest\n",
+             ".github/workflows/ci.yml": "name: ci\non: push\njobs:\n  g:\n    steps:\n      - run: python -m pytest -q\n      - run: pip install build\n"},
+            {".github/workflows/ci.yml": "name: ci\non: push\njobs:\n  g:\n    steps:\n      - run: python -m venv .venv && .venv/bin/pip install x\n"
+                                         "      - run: |\n          python -m pip install --upgrade pip build twine\n          python -m build --outdir dist engine\n"
+                                         "      - run: pip install -e \"engine[dev,typescript]\"\n      - run: python -m pytest -q && python -m graphy --help\n",
+             "gate.sh": "#!/usr/bin/env bash\n\"$PY\" -m pytest -q x.py\npython3 -m venv v && v/bin/python -m pytest\n$HERE/.venv/bin/python -m pytest\n"
+                        "  python3 -m json.tool a\n# python3 -m pytest in a comment\n"
+                        "python3 - <<'X'\ncmd = f\"python3 -m graphy pull {n}\"\nX\n"}),
         "severance": (
             {"engine/graphy/a.py": "def f():\n    pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
              "engine/graphy/c.py": "from graphy import a\na.f()\nimport sqlite3\nsqlite3.connect(':memory:').g()\n"},

@@ -519,8 +519,9 @@ def test_RED_a_copied_checkout_never_follows_its_descriptor_into_the_original(tm
     repo = _git_repo(tmp_path)
     assert cli.main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)]) == 0
     home1 = cli.served_data_home(repo / ".graphy" / "tenant.json")
-    assert cli.main(["blast", "core.mod.run", "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "core"]) == 0
-    assert (home1 / "traversals").is_dir()
+    # the original's stored traversals, planted by hand so the floor needs no duckdb (CI's floor installs none)
+    (home1 / "traversals" / "g" / "doors").mkdir(parents=True)
+    (home1 / "traversals" / "g" / "doors" / "blast.json").write_text("{}", encoding="utf-8")
     before = sorted(p.relative_to(home1).as_posix() for p in home1.rglob("*"))
     repo2 = tmp_path / "repo2"
     shutil.copytree(repo, repo2, symlinks=True)

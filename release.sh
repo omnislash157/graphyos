@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # release — the release made mechanical, never taken.
-#   bash release.sh              build the wheel and the sdist into dist/ with the project's own
-#                                interpreter, run `twine check` on both, regenerate CHANGELOG.md
+#   bash release.sh              the cut: --build, then refuse a version PyPI already carries with different
+#                                content (reads pypi.org), then regenerate CHANGELOG.md
+#   bash release.sh --build      the offline half: versions, the wheel and sdist, `twine check` — what the receipt
+#                                measures on every push; never reads PyPI, so it is not red after a release
 #   bash release.sh --changelog  regenerate CHANGELOG.md from RECON.md's section titles only
 #   bash release.sh --check      refuse when CHANGELOG.md is not byte-identical to what RECON derives
 #   bash release.sh --published  refuse when PyPI already carries this version with different content
@@ -138,6 +140,15 @@ print(f"published          OK  ({version} on PyPI is byte-identical to dist/ by 
 PYP
 }
 
+build() {
+    versions
+    "$PY" -c "import build, twine" 2>/dev/null || { echo "RELEASE REFUSED: $PY lacks build/twine — $PY -m pip install build twine" >&2; exit 2; }
+    rm -rf "$HERE/dist"
+    "$PY" -m build --outdir "$HERE/dist" "$HERE/engine" > "$HERE/dist.log" 2>&1 || { tail -20 "$HERE/dist.log"; exit 1; }
+    rm -f "$HERE/dist.log"
+    "$PY" -m twine check "$HERE"/dist/*
+}
+
 case "${1:-}" in
     --changelog) changelog > "$HERE/CHANGELOG.md"; echo "CHANGELOG OK: $(grep -c '^- §' "$HERE/CHANGELOG.md") entries -> CHANGELOG.md"; exit 0 ;;
     --check)
@@ -146,17 +157,13 @@ case "${1:-}" in
         fi
         echo "changelog          OK"; versions; exit 0 ;;
     --published) published; exit 0 ;;
+    --build) build; echo "BUILD OK: graphyos $VERSION wheel and sdist in dist/, twine check passed"; exit 0 ;;
     "") ;;
-    *) echo "usage: release.sh [--changelog | --check | --published]" >&2; exit 2 ;;
+    *) echo "usage: release.sh [--build | --changelog | --check | --published]" >&2; exit 2 ;;
 esac
 
-versions
-"$PY" -c "import build, twine" 2>/dev/null || { echo "RELEASE REFUSED: $PY lacks build/twine — $PY -m pip install build twine" >&2; exit 2; }
-rm -rf "$HERE/dist"
-"$PY" -m build --outdir "$HERE/dist" "$HERE/engine" > "$HERE/dist.log" 2>&1 || { tail -20 "$HERE/dist.log"; exit 1; }
-rm -f "$HERE/dist.log"
-"$PY" -m twine check "$HERE"/dist/*
-published
+build
+published                     # the cut, not the receipt: a second, different $VERSION is refused before it can be uploaded (#79)
 changelog > "$HERE/CHANGELOG.md"
 ls -1 "$HERE/dist"
 echo "RELEASE OK: graphyos $VERSION built and checked in dist/; CHANGELOG.md regenerated"

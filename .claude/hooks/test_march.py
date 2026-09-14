@@ -22,6 +22,8 @@ def board(tmp_path, monkeypatch):
     calls: list[tuple] = []
     issues = {103: "OPEN", 104: "OPEN"}
     labels: dict[int, list[str]] = {103: [], 104: []}
+    runs: list[dict] = []
+    monkeypatch.setattr(march, "_TEST_RUNS", runs, raising=False)
 
     def gh(*args, timeout=15):
         calls.append(args)
@@ -30,6 +32,8 @@ def board(tmp_path, monkeypatch):
         if args[:2] == ("issue", "list"):
             return json.dumps([{"number": n, "labels": [{"name": l} for l in labels[n]]}
                                for n, s in issues.items() if s == "OPEN"])
+        if args[:2] == ("run", "list"):
+            return json.dumps(runs)
         if args[:2] == ("issue", "edit"):
             labels[int(args[2])].append(args[4])
         return ""
@@ -224,3 +228,32 @@ def test_a_background_shell_is_pending_until_notified(board, capsys, tmp_path):
     assert "decision" not in _stop("The floor is running.", capsys, transcript=t)
     _transcript(t, {"type": "queue-operation", "content": "<task-notification><task-id>b7hm0k2wk</task-id><status>completed</status>"})
     assert _stop("The floor is back.", capsys, transcript=t)["decision"] == "block"
+
+
+def test_a_rung_closed_on_a_red_main_blocks_until_main_is_green(board, capsys):
+    """Eight rungs closed while `ci` on main was red (the gate ran pytest on the host interpreter): the close
+    now reads main's newest ci run, and a definite failure blocks with the sha; green or pending marches."""
+    calls, issues, labels = board
+    runs = march._TEST_RUNS
+    issues[103] = "CLOSED"
+    runs.append({"status": "completed", "conclusion": "failure", "headSha": "f0b6e55deadbeef"})
+    out = _stop("Closed 103.", capsys)
+    assert out["decision"] == "block" and "RED at f0b6e55deadb" in out["reason"]
+    assert march.load()["issue"] == 103
+    assert _stop("Still red.", capsys)["decision"] == "block" and march.load()["issue"] == 103   # never once-and-through
+    runs[0].update(conclusion="timed_out")
+    assert _stop("Timed out.", capsys)["decision"] == "block"
+    runs[0].update(conclusion="success")
+    out = _stop("Main is green again.", capsys)
+    assert march.load()["issue"] == 104
+
+
+def test_a_red_main_never_holds_a_session_waiting_on_its_own_background_work(board, capsys, tmp_path):
+    """Review round 1 of the red-main fix: the hold ran before the §125 pending check, so a session waiting on its
+    own review round was blocked every stop instead of woken by the notification."""
+    calls, issues, labels = board
+    issues[103] = "CLOSED"
+    march._TEST_RUNS.append({"status": "completed", "conclusion": "failure", "headSha": "abc"})
+    t = _transcript(tmp_path / "t.jsonl", _launch("a1b2c3"))
+    out = _stop("Review round running.", capsys, transcript=t)
+    assert out.get("decision") != "block" and march.load()["issue"] == 103

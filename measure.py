@@ -233,7 +233,7 @@ def measure_gate() -> dict:
 
 
 def measure_wheel(py: str) -> dict:
-    rc, out, secs = _run(["bash", str(HERE / "release.sh")], env={"PYTHON": py})
+    rc, out, secs = _run(["bash", str(HERE / "release.sh"), "--build"], env={"PYTHON": py})   # offline: never PyPI (§130)
     wheels = sorted((HERE / "dist").glob("*.whl"))
     sdists = sorted((HERE / "dist").glob("*.tar.gz"))
     return {"ok": rc == 0, "seconds": secs, "wheel_bytes": wheels[0].stat().st_size if wheels else None,
