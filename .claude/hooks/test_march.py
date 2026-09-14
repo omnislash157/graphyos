@@ -257,3 +257,32 @@ def test_a_red_main_never_holds_a_session_waiting_on_its_own_background_work(boa
     t = _transcript(tmp_path / "t.jsonl", _launch("a1b2c3"))
     out = _stop("Review round running.", capsys, transcript=t)
     assert out.get("decision") != "block" and march.load()["issue"] == 103
+
+
+def test_a_declared_order_is_marched_first_and_a_closed_or_gated_rung_falls_through(board, monkeypatch):
+    calls, issues, labels = board
+    monkeypatch.setattr(march, "ORDER", march.RECOVERY / "march_order.json")
+    issues.update({122: "OPEN", 124: "OPEN", 97: "OPEN"})
+    labels.update({122: [], 124: [], 97: []})
+    assert march.next_issue() == 97                      # no order: the number sequence
+    assert march.main(["order", "122", "124", "97"]) == 0
+    assert march.load_order() == [122, 124, 97]
+    assert march.next_issue() == 122                     # the first tenant's priority
+    issues[122] = "CLOSED"
+    assert march.next_issue() == 124                     # a closed rung falls through
+    labels[124].append("operator")
+    assert march.next_issue() == 97                      # a gated one too
+    issues[97] = "CLOSED"
+    assert march.next_issue() == 103                     # then the sequence, for what the order never named
+    assert march.main(["order", "--clear"]) == 0
+    assert march.load_order() == []
+    march.ORDER.write_text("[122,", encoding="utf-8")   # a torn or hand-edited file
+    assert march.next_issue() == 103                     # the sequence, never a crash in a hook
+    assert "order ignored" in march.LOG.read_text(encoding="utf-8")   # and NAMED, never a silent fall-back
+    assert march.main(["order"]) == 1                    # bare `order` says so too, and exits 1
+    march.ORDER.write_text("[true, 122]", encoding="utf-8")
+    assert march.main(["order"]) == 1                    # a bool is not an issue number
+    with pytest.raises(SystemExit):
+        march.main(["order", "--clear", "122"])          # numbers or --clear, never both
+    assert march.main(["order", "104"]) == 0             # redeclared: readable again
+    assert march.next_issue() == 104

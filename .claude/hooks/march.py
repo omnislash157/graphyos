@@ -4,10 +4,13 @@ stop while it is open, and the moment it closes the hook arms the next one, acks
 the session's own tmux pane, and kicks the fresh context every two minutes until it acks back.
 
 Verbs (all from the repo root, python3 .claude/hooks/march.py <verb>):
-  arm --issue N | --next   arm an issue (the lowest open issue without `blocked` or `operator`, for --next)
+  arm --issue N | --next   arm an issue (for --next: the first of the declared order that is open without
+                           `blocked` or `operator`, then the lowest such number)
   ack                      the fresh context reports in; the wake loop stops kicking
   status                   the state file, the watcher pid, the live board state of the issue
   next                     print the next open unblocked issue number
+  order [N …]              declare the board's order for --next (the first tenant's priority); a rung not
+                           listed comes after, by number; bare, print it; --clear returns to the sequence
   clear                    a batch boundary on purpose: keep the issue, /clear this pane, kick until acked
   disarm                   phase hold; kill the watcher
   stop-hook                Stop hook (stdin = hook JSON): block while open, advance when closed
@@ -33,6 +36,7 @@ from pathlib import Path
 ROOT = Path(os.environ.get("CLAUDE_PROJECT_DIR") or Path(__file__).resolve().parents[2])
 RECOVERY = ROOT / ".claude" / "recovery"
 STATE = RECOVERY / "march.json"
+ORDER = RECOVERY / "march_order.json"
 LOG = RECOVERY / "march.log"
 TSEND = Path(__file__).resolve().with_name("tsend.sh")
 REPO = os.environ.get("MARCH_REPO", "omnislash157/graphyos")
@@ -178,13 +182,51 @@ def issue_state(n: int) -> str:
     return json.loads(gh("issue", "view", str(n), "--json", "state"))["state"]
 
 
+def read_order() -> tuple[list[int], str | None]:
+    """The declared order and why it cannot be read: absent is the empty order (quiet); a file that
+    is there and does not parse as a list of ints is NAMED — never a silent fall-back to the sequence.
+    One read, so a hand edit between two reads cannot raise inside a hook."""
+    try:
+        text = ORDER.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], None
+    except OSError as exc:
+        return [], f"{ORDER} unreadable: {exc.__class__.__name__}: {exc}"
+    try:
+        rows = json.loads(text)
+    except ValueError as exc:
+        return [], f"{ORDER} unreadable: {exc.__class__.__name__}: {exc}"
+    if not isinstance(rows, list) or not all(isinstance(n, int) and not isinstance(n, bool) for n in rows):
+        return [], f"{ORDER} is not a list of issue numbers"
+    return list(rows), None
+
+
+def order_error() -> str | None:
+    return read_order()[1]
+
+
+def load_order() -> list[int]:
+    """The declared order of the board (`march.py order 122 124 …`): the first tenant's priority,
+    written once, read by every `--next`. A file that cannot be read is logged by name and is the
+    empty order — never a crash in a hook."""
+    rows, err = read_order()
+    if err:
+        log(f"order ignored — {err}")
+    return rows
+
+
 def next_issue(exclude: int | None = None) -> int | None:
     rows = json.loads(gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels"))
     candidates = [
         r["number"] for r in rows
         if r["number"] != exclude and not any(l["name"] in ("blocked", OPERATOR_LABEL) for l in r.get("labels", []))
     ]
-    return min(candidates) if candidates else None
+    if not candidates:
+        return None
+    for n in load_order():                      # the declared order first: a closed or gated rung falls through
+        if n in candidates:
+            return n
+    return min(candidates)                      # then the number sequence
 
 
 def alive(pid: int | None) -> bool:
@@ -253,6 +295,31 @@ def cmd_arm(args: argparse.Namespace) -> int:
     save(state)
     log(f"armed issue {issue}")
     print(f"march: armed issue {issue} — the session will not stop while it is open")
+    return 0
+
+
+def cmd_order(args: argparse.Namespace) -> int:
+    if args.clear:
+        ORDER.unlink(missing_ok=True)
+        log("order cleared — --next follows the number sequence")
+        print("march: order cleared")
+        return 0
+    if args.issues:
+        RECOVERY.mkdir(parents=True, exist_ok=True)
+        seen: list[int] = []
+        for n in args.issues:
+            if n not in seen:
+                seen.append(n)
+        tmp = ORDER.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(seen), encoding="utf-8")
+        os.replace(tmp, ORDER)
+        log(f"order declared: {seen}")
+    err = order_error()
+    if err:
+        print(f"march: order IGNORED — {err}; --next follows the number sequence until it is redeclared")
+        return 1
+    order = load_order()
+    print("march: order " + (" ".join(f"#{n}" for n in order) if order else "— none, the number sequence"))
     return 0
 
 
@@ -588,7 +655,11 @@ def main(argv: list[str] | None = None) -> int:
                      ("stop-hook", cmd_stop_hook), ("inject", cmd_inject)):
         sub.add_parser(name).set_defaults(fn=fn)
     w = sub.add_parser("watch"); w.add_argument("pane"); w.add_argument("issue"); w.set_defaults(fn=cmd_watch)
+    o = sub.add_parser("order"); o.add_argument("issues", type=int, nargs="*"); o.add_argument("--clear", action="store_true")
+    o.set_defaults(fn=cmd_order)
     args = ap.parse_args(argv)
+    if args.verb == "order" and args.clear and args.issues:
+        ap.error("order takes numbers or --clear, never both")
     if args.verb == "arm" and not (args.issue or args.next):
         ap.error("arm needs --issue N or --next")
     try:

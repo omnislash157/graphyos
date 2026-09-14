@@ -242,7 +242,8 @@ callers go in front of the reviewer, every blocker is routed to one door — and
 
 | move | the tap (repo root) |
 |---|---|
-| arm the lowest open unblocked issue · a named one | `python3 .claude/hooks/march.py arm --next` · `--issue N` |
+| arm the next open unblocked issue · a named one | `python3 .claude/hooks/march.py arm --next` · `--issue N` |
+| declare the board's order — the first tenant's priority, read by every `--next`; a rung it never names comes after, by number; a closed or gated one falls through | `python3 .claude/hooks/march.py order 122 124 …` · bare prints it · `--clear` |
 | the fresh context reports in · a batch boundary on purpose | `python3 .claude/hooks/march.py ack` · `clear` |
 | where it stands · stop it (the operator's alone) | `python3 .claude/hooks/march.py status` · `disarm` |
 | a rung only the operator can finish: gate it and march on | a closing line `MARCH GATE: <LAW \| MONEY \| ACCOUNT \| PUBLIC \| IRREVERSIBLE> — <the exact step>` — labeled `operator`, the next rung armed; a deferral naming no gate is interrogated |
