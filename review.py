@@ -1028,6 +1028,150 @@ def check_cache_write_guarded(repo: Path) -> list[Finding]:
     return found
 
 
+def check_data_home_by_descriptor(repo: Path) -> list[Finding]:
+    """data-home-by-descriptor: a data home is a generation the descriptor names (`substrate.gen-<token>/`), never a
+    path spelled in code. A module declaring `DATA_HOME_DECLARERS` names the functions that mint the substrate's
+    name; anywhere else in the engine a path built on the literal segment `substrate` — `x / "substrate"`,
+    `Path("….graphy/substrate…")`, `.joinpath("substrate")` — reads a directory no descriptor serves. Found while
+    building #98's generations: `showcase`, `shell install` and the gate each read `.graphy/substrate/ring.json`."""
+    root = repo / "engine" / "graphy"
+    files = sorted(root.rglob("*.py")) if root.is_dir() else []
+    declarers: set[str] = set()
+    for p in files:
+        hit = _literal_tuple(ast.parse(p.read_text(encoding="utf-8")), "DATA_HOME_DECLARERS")
+        if hit:
+            declarers |= set(hit[1])
+    if not declarers:
+        raise CheckError("data-home-by-descriptor found ZERO declared DATA_HOME_DECLARERS — the substrate's name is minted nowhere, or the scan is broken")
+
+    def names_substrate(node) -> bool:
+        if isinstance(node, ast.JoinedStr):           # f"{home}/substrate/…" — review round 2 of #98
+            return any(names_substrate(v) for v in node.values)
+        return (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and "substrate" in node.value.replace("\\", "/").split("/"))
+
+    found: list[Finding] = []
+    for p in files:
+        rel = _rel(repo, p)
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+
+        def visit(node, where: str | None):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                where = where or node.name
+            hit = None
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div) and (names_substrate(node.left) or names_substrate(node.right)):
+                hit = node
+            elif isinstance(node, ast.JoinedStr) and names_substrate(node) and any(isinstance(v, ast.FormattedValue) for v in node.values):
+                hit = node
+            elif isinstance(node, ast.Call) and any(names_substrate(a) for a in node.args) and (
+                    (isinstance(node.func, ast.Name) and node.func.id in ("Path", "PurePath"))
+                    or (isinstance(node.func, ast.Attribute) and node.func.attr in ("joinpath", "Path"))):
+                hit = node
+            if hit is not None and where not in declarers:
+                found.append(Finding("data-home-by-descriptor", f"{rel}:{hit.lineno}",
+                                     f"a path built on the literal `substrate` in {where or 'module scope'} — read the data home "
+                                     f"the descriptor serves (`cli.served_data_home`), or declare the minting function in DATA_HOME_DECLARERS"))
+                return
+            for child in ast.iter_child_nodes(node):
+                visit(child, where)
+
+        visit(tree, None)
+    NOTES["data-home-by-descriptor"] = f"{len(files)} module(s), {len(declarers)} declarer(s)"
+    return found
+
+
+def check_cursor_exclude_by_tenant(repo: Path) -> list[Finding]:
+    """cursor-exclude-by-tenant: the cursor a store is built at and the drift `check` measures must agree on what is dirt,
+    so every `repo_cursor(` / `cursor_drift(` call in the engine passes `exclude=` as a call to a function the module
+    declaring `CURSOR_EXCLUDERS` names. Review round 2 of #98: rebuild excluded `(desc.parent,)` while check excluded the
+    data home, so a `substrate.gen-*` beside a gitignored `substrate/` read CHECK RED on every rebuild."""
+    root = repo / "engine" / "graphy"
+    files = sorted(root.rglob("*.py")) if root.is_dir() else []
+    excluders: set[str] = set()
+    declaring: set[Path] = set()
+    for p in files:
+        hit = _literal_tuple(ast.parse(p.read_text(encoding="utf-8")), "CURSOR_EXCLUDERS")
+        if hit:
+            excluders |= set(hit[1])
+            declaring.add(p)
+    if not excluders:
+        raise CheckError("cursor-exclude-by-tenant found ZERO declared CURSOR_EXCLUDERS — the exclusion is undeclared, or the scan is broken")
+    found: list[Finding] = []
+    calls = 0
+    for p in files:
+        if p in declaring:
+            continue                                   # the declarer composes the primitives itself
+        rel = _rel(repo, p)
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        cursor_fns = {"repo_cursor": "repo_cursor", "cursor_drift": "cursor_drift"}
+        for n in ast.walk(tree):                     # `from graphy.cartograph import repo_cursor as rc` — review round 3 of #98
+            if isinstance(n, ast.ImportFrom):
+                cursor_fns.update({a.asname: a.name for a in n.names if a.name in ("repo_cursor", "cursor_drift") and a.asname})
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            f = node.func
+            if (isinstance(f, ast.Call) and isinstance(f.func, ast.Name) and f.func.id == "getattr" and len(f.args) >= 2
+                    and isinstance(f.args[1], ast.Constant) and f.args[1].value in ("repo_cursor", "cursor_drift")):
+                name = f.args[1].value                   # getattr(cartograph, "repo_cursor")(…)
+            else:
+                name = cursor_fns.get(f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None)
+            if name not in ("repo_cursor", "cursor_drift"):
+                continue
+            calls += 1
+            exc = next((k.value for k in node.keywords if k.arg == "exclude"), None)
+            if exc is None and len(node.args) >= (2 if name == "repo_cursor" else 3):
+                exc = node.args[1 if name == "repo_cursor" else 2]
+            fn = exc.func if isinstance(exc, ast.Call) else None
+            fname = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else None
+            if fname not in excluders:
+                found.append(Finding("cursor-exclude-by-tenant", f"{rel}:{node.lineno}",
+                                     f"{name}( excludes {ast.unparse(exc) if exc is not None else 'nothing'} — ask one of "
+                                     f"{sorted(excluders)} so the build and the check agree on what is dirt"))
+    if not calls:
+        raise CheckError("cursor-exclude-by-tenant found ZERO cursor calls outside the declarer — the scan is broken")
+    NOTES["cursor-exclude-by-tenant"] = f"{calls} cursor call(s), {len(excluders)} excluder(s)"
+    return found
+
+
+def check_generation_identity(repo: Path) -> list[Finding]:
+    """generation-identity: whether a directory is a generation of a substrate is answered in ONE place — the module
+    declaring `GENERATION_IDENTITY` (`generation_name` builds the name, `generation_of` reads it). Anywhere else in the
+    engine a use of `GENERATION_INFIX`, or a string holding `.gen-` that is not a docstring, is a second spelling.
+    Review round 4 of #98: `_of_family` took a strict regex, `_excluded` a `startswith`, `generation_base` a
+    `partition`, and `refresh.plan_for` named its sibling after a generation token — the three disagreed on it."""
+    root = repo / "engine" / "graphy"
+    files = sorted(root.rglob("*.py")) if root.is_dir() else []
+    declaring = [p for p in files if _literal_tuple(ast.parse(p.read_text(encoding="utf-8")), "GENERATION_IDENTITY")]
+    if not declaring:
+        raise CheckError("generation-identity found ZERO declared GENERATION_IDENTITY — the predicate is undeclared, or the scan is broken")
+    found: list[Finding] = []
+    for p in files:
+        if p in declaring:
+            continue
+        rel = _rel(repo, p)
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        docs = {id(n.body[0].value) for n in ast.walk(tree)
+                if isinstance(n, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.body
+                and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)}
+        for n in ast.walk(tree):
+            what = None
+            if isinstance(n, ast.Name) and n.id == "GENERATION_INFIX" and isinstance(n.ctx, ast.Load):
+                what = "GENERATION_INFIX"
+            elif isinstance(n, ast.Attribute) and n.attr == "GENERATION_INFIX":
+                what = "GENERATION_INFIX"
+            elif isinstance(n, ast.alias) and n.name == "GENERATION_INFIX":
+                what = "an import of GENERATION_INFIX"
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str) and ".gen-" in n.value and id(n) not in docs:
+                what = f"the literal {n.value!r}"
+            if what:
+                found.append(Finding("generation-identity", f"{rel}:{getattr(n, 'lineno', 0)}",
+                                     f"{what} spells generation identity outside {', '.join(_rel(repo, d) for d in declaring)} — "
+                                     f"ask generation_name / generation_of"))
+    NOTES["generation-identity"] = f"{len(files)} module(s), {len(declaring)} declarer(s)"
+    return found
+
+
 # ── the battery ───────────────────────────────────────────────────────────────────────────────────
 
 CHECKS = {
@@ -1039,6 +1183,9 @@ CHECKS = {
     "sha-liveness": check_sha_liveness,
     "cache-key-closure": check_cache_key_closure,
     "cache-write-guarded": check_cache_write_guarded,
+    "data-home-by-descriptor": check_data_home_by_descriptor,
+    "cursor-exclude-by-tenant": check_cursor_exclude_by_tenant,
+    "generation-identity": check_generation_identity,
 }
 
 
@@ -1135,6 +1282,33 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
                                    "def a():\n    try:\n        t.store_x()\n    except (OSError, duckdb.Error) as exc:\n        return exc\n"
                                    "def b():\n    try:\n        sx()\n        functools.partial(sx)()\n    except Exception:\n        pass\n"
                                    "def c():\n    try:\n        pass\n    except OSError:\n        raise\n"}),
+        "data-home-by-descriptor": (
+            # red: a `/ "substrate"` join · a Path over ".graphy/substrate/ring.json" · a joinpath — three, outside the declarer
+            {"engine/graphy/cli.py": "DATA_HOME_DECLARERS = ('_eat_run',)\ndef _eat_run(home):\n    return home / 'substrate'\n",
+             "engine/graphy/gate.py": "from pathlib import Path\ndef main(repo):\n    a = repo / '.graphy' / 'substrate' / 'ring.json'\n"
+                                      "    b = Path('.graphy/substrate/ring.json')\n    c = open(f'{repo}/substrate/ring.json')\n    return repo.joinpath('substrate')\n"},
+            {"engine/graphy/cli.py": "DATA_HOME_DECLARERS = ('_eat_run',)\ndef _eat_run(home):\n    return home / 'substrate'\n",
+             "engine/graphy/gate.py": "def main(desc, served):\n    print('no tenant under .graphy/substrate')\n    return served(desc) / 'ring.json'\n"}),
+        "cursor-exclude-by-tenant": (
+            # red: a bare tuple · no exclude at all · a positional tuple to cursor_drift · an alias · a getattr — five
+            {"engine/graphy/cartograph.py": "CURSOR_EXCLUDERS = ('cursor_exclude',)\ndef repo_cursor(r, exclude=()):\n    return r\n"
+                                            "def cursor_drift(c, r, exclude=()):\n    return repo_cursor(r, exclude)\ndef cursor_exclude(d, h):\n    return (h,)\n",
+             "engine/graphy/rebuild.py": "from graphy.cartograph import repo_cursor, cursor_drift\ndef run(root, desc):\n"
+                                         "    repo_cursor(root, exclude=(desc.parent,))\n    repo_cursor(root)\n    cursor_drift('c', root, (desc,))\n"
+                                         "from graphy.cartograph import repo_cursor as rc\nfrom graphy import cartograph\n"
+                                         "def other(root):\n    rc(root)\n    getattr(cartograph, 'cursor_drift')('c', root)\n"},
+            {"engine/graphy/cartograph.py": "CURSOR_EXCLUDERS = ('cursor_exclude',)\ndef repo_cursor(r, exclude=()):\n    return r\n"
+                                            "def cursor_drift(c, r, exclude=()):\n    return repo_cursor(r, exclude)\ndef cursor_exclude(d, h):\n    return (h,)\n",
+             "engine/graphy/rebuild.py": "from graphy import cartograph\nfrom graphy.cartograph import repo_cursor\ndef run(root, desc, sub):\n"
+                                         "    repo_cursor(root, exclude=cartograph.cursor_exclude(desc, sub))\n    cartograph.cursor_drift('c', root, cartograph.cursor_exclude(desc, sub))\n"}),
+        "generation-identity": (
+            # red: an imported infix used in startswith · a literal '.gen-' partition · a sibling named after the token — three
+            {"engine/graphy/_shared.py": "GENERATION_INFIX = '.gen-'\nGENERATION_IDENTITY = ('generation_of',)\ndef generation_of(n):\n    return n\n",
+             "engine/graphy/cli.py": "from graphy._shared import GENERATION_INFIX\ndef fam(sub, home):\n    return home.name.startswith(sub.name + GENERATION_INFIX)\n",
+             "engine/graphy/cartograph.py": "def base(p):\n    return p.name.partition('.gen-')[0]\n"},
+            {"engine/graphy/_shared.py": "GENERATION_INFIX = '.gen-'\nGENERATION_IDENTITY = ('generation_of',)\ndef generation_of(n):\n    return n\n",
+             "engine/graphy/cli.py": "from graphy._shared import generation_of\ndef fam(sub, home):\n    \"\"\"`<substrate>.gen-<token>` is its own.\"\"\"\n    return generation_of(home.name) == sub.name\n",
+             "engine/graphy/cartograph.py": "def base(p):\n    return p\n"}),
         "severance": (
             {"engine/graphy/a.py": "def f():\n    pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
              "engine/graphy/c.py": "from graphy import a\na.f()\nimport sqlite3\nsqlite3.connect(':memory:').g()\n"},

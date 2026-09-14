@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 import json
+import os
 import re
 import shlex
 import shutil
@@ -1813,40 +1813,13 @@ def _eat_again(args: argparse.Namespace, repo: Path, package: str) -> str:
     return " ".join(argv)
 
 
-SERVED_PREFIX = ".mesh_store_"
-
-
-def staged_descriptor(desc: Path) -> Path:
-    """Where a re-eat writes the next descriptor while the served one keeps naming the last good store."""
-    desc = Path(desc)
-    return desc.with_name(f".{desc.name}.next")
-
-
-def land_descriptor(staged: Path, desc: Path, tenant_id: str) -> None:
-    """The next descriptor replaces the served one in one rename, once build has landed its store; a
-    store no roster names any more is removed (a held file on a platform that cannot unlink it stays
-    until the next rebuild — garbage, never an answer: no descriptor names it)."""
-    os.replace(staged, desc)
-    tenant = _load_tenant(str(desc))
-    from graphy import federated_store as fstore
-    (Path(tenant.data_home) / fstore.REBUILD_MARKER).unlink(missing_ok=True)
-    live = fstore.store_path_for(_roster(tenant), tenant=tenant).name
-    for f in Path(tenant.data_home).glob(f"{SERVED_PREFIX}*"):
-        if not f.name.startswith(live):
-            try:
-                f.unlink()
-            except OSError:
-                pass
-
-
 def _clear_substrate(sub: Path) -> None:
     """A re-eat starts from the previous substrate's shards, never from nothing: each
     ``<slug>_graph/`` keeps exactly nodes.json · edges.json · PROVENANCE.json — the splice the
     re-mint reads (``smash.mint``), so only the files whose bytes moved are parsed — and the
-    stored walks keep their directory, so they diff against the new generation. The served store
-    and the ring receipt stay too, so a door opened mid-rebuild finds the last good store, named
-    STALE, until build replaces it (graphyos #98). Everything else under the substrate (the
-    registry, the journal, the resolver's sidecars, the parquet, the atlas) is rebuilt."""
+    stored walks keep their directory, so they diff against the new generation. Everything
+    else under the substrate (the registry, the journal, the resolver's sidecars, the store,
+    the parquet, the atlas) is a build product and is rebuilt."""
     from graphy import journal
     from graphy import traversal
     from graphy import smash as smash_lane
@@ -1862,36 +1835,163 @@ def _clear_substrate(sub: Path) -> None:
                         shutil.rmtree(f, ignore_errors=True) if f.is_dir() else f.unlink(missing_ok=True)
             elif entry.is_dir():
                 shutil.rmtree(entry, ignore_errors=True)
-            elif entry.name.startswith(SERVED_PREFIX) or entry.name == smash_lane.RING_NAME:
-                continue                      # served until build replaces it; the ring until smash rewrites it
             else:
                 entry.unlink(missing_ok=True)
     if kept.is_dir():
         sub.mkdir(parents=True, exist_ok=True)
         shutil.move(str(kept), str(sub / traversal.DIRNAME))
-    if any(sub.glob(f"{SERVED_PREFIX}*")):      # a store is served: a door opened now is told a rebuild is in flight
-        from datetime import datetime, timezone
-        from graphy.federated_store import REBUILD_MARKER
-        (sub / REBUILD_MARKER).write_text(datetime.now(timezone.utc).isoformat(timespec="seconds") + "\n", encoding="utf-8")
+
+
+from graphy._shared import generation_name, generation_of  # noqa: E402 — stdlib only
+# The one place a substrate is named by path; every other reader asks the descriptor which generation it
+# serves (review.py `data-home-by-descriptor`, graphyos #98).
+DATA_HOME_DECLARERS = ("_eat_run",)
+_SPLICE = ("nodes.json", "edges.json", "PROVENANCE.json")
+
+
+def served_data_home(desc: Path) -> Path | None:
+    """The data home the served descriptor names, or None when there is no readable descriptor."""
+    try:
+        return Path(json.loads(Path(desc).read_text(encoding="utf-8"))["data_home"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _spelled(path: Path) -> Path:
+    """One spelling for a substrate or a generation: the parent resolved, the leaf as named — a symlinked
+    ``substrate`` stays ``<home>/substrate`` while its generations are real siblings beside it (review round 3)."""
+    p = Path(path).expanduser()
+    return p.absolute().parent.resolve() / p.name
+
+
+def _of_family(sub: Path, home: Path) -> bool:
+    """``home`` is ``sub`` or one of its generations — never another checkout's data home a copied descriptor names."""
+    sub, home = _spelled(sub), _spelled(home)
+    return home == sub or (home.parent == sub.parent and generation_of(home.name) == sub.name)
+
+
+def stage_generation(sub: Path, desc: Path, *, whole=()) -> tuple[Path, Path, Path | None]:
+    """A rebuild never touches the data home a door is serving (graphyos #98). The next generation
+    is built in a fresh sibling ``<substrate>.gen-<token>/`` beside it, seeded from the served data
+    home: every ``<slug>_graph/`` copied as the three files the splice reads (``smash.mint``), and a lane
+    named in ``whole`` copied whole — from ``sub`` when a producer placed it there, the placement directory's
+    only role. Nothing else in ``sub`` is an input: a pre-generation substrate kept for a reader would otherwise
+    bring back the lanes the last landing pruned (review round 3). The served home is followed only when it is ``sub`` or
+    one of its generations: a descriptor copied from another checkout names that checkout's home, which
+    is never this tenant's to read (review round 2). The next descriptor is staged beside the served one.
+    A copy that fails removes the partial stage. Returns (stage, staged descriptor, served home)."""
+    sub, desc = _spelled(sub), Path(desc)
+    prev = served_data_home(desc) if desc.is_file() else None
+    prev = _spelled(prev) if prev is not None else None
+    if prev is not None and not _of_family(sub, prev):
+        prev = None
+    if prev is None and sub.is_dir():
+        prev = sub                                    # a substrate built before generations existed
+    token = f"{time.strftime('%Y%m%dT%H%M%S', time.gmtime())}-{os.getpid()}-{os.urandom(3).hex()}"
+    stage = sub.with_name(generation_name(sub.name, token))
+    stage.mkdir(parents=True)
+    whole = {str(w) for w in whole}
+    sources = ([prev] if prev is not None and prev.is_dir() else []) + ([sub] if sub.is_dir() and sub != prev else [])
+    try:
+        for src in sources:
+            placement = src != prev
+            for entry in sorted(src.glob("*_graph")):
+                if not entry.is_dir() or not (entry / "PROVENANCE.json").is_file():
+                    continue
+                if placement and entry.name not in whole:
+                    continue
+                dst = stage / entry.name
+                shutil.rmtree(dst, ignore_errors=True)
+                if entry.name in whole:
+                    shutil.copytree(entry, dst)
+                else:
+                    dst.mkdir()
+                    for name in _SPLICE:
+                        if (entry / name).is_file():
+                            shutil.copy2(entry / name, dst / name)
+    except BaseException:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+    staged = desc.with_name(f".{desc.name}.next")
+    staged.unlink(missing_ok=True)
+    return stage, staged, prev
+
+
+def land_generation(stage: Path, staged: Path, desc: Path, prev: Path | None, sub: Path, *, keep=()) -> None:
+    """The staged descriptor replaces the served one in one rename, once build has landed the store in
+    the stage. The stored traversals move with it (a cache: a move that fails costs a re-walk). The
+    generation just replaced is KEPT — a door that read the old descriptor a moment before the rename is
+    still opening it, and on a 177k-node roster that open takes seconds (review round 2) — and every
+    generation older than it is removed, best effort: a store a live door holds on a platform that cannot
+    unlink it stays until a later landing, garbage no descriptor names. Raises only when the rename fails;
+    after it the landing has happened, and a discard that fails is named, never raised."""
+    from graphy import traversal
+    if prev is not None and (prev / traversal.DIRNAME).is_dir() and not (stage / traversal.DIRNAME).exists():
+        try:
+            shutil.move(str(prev / traversal.DIRNAME), str(stage / traversal.DIRNAME))
+        except OSError:
+            pass
+    os.replace(staged, desc)
+    try:
+        discard_generations(sub, live=stage, previous=prev, keep=keep)
+    except OSError as exc:
+        print(f"graphy: landed {stage.name}; older generations not removed ({type(exc).__name__}: {exc}) — "
+              f"the next landing removes them", file=sys.stderr)
+
+
+def discard_generations(sub: Path, *, live: Path | None, previous: Path | None = None, keep=()) -> None:
+    """Remove every generation of ``sub`` but ``live`` and ``previous``, and clear ``sub`` down to ``keep``
+    unless it is one of those two — best effort."""
+    sub = _spelled(sub)
+    spared = {_spelled(x) for x in (live, previous) if x is not None}
+    if sub.parent.is_dir():
+        for d in sub.parent.iterdir():
+            d = _spelled(d)
+            if d != sub and d not in spared and _of_family(sub, d) and d.is_dir() and not d.is_symlink():
+                shutil.rmtree(d, ignore_errors=True)
+    if sub.is_dir() and sub not in spared:
+        keep = {str(k) for k in keep}
+        for entry in list(sub.iterdir()):
+            if entry.name in keep:
+                continue
+            try:
+                shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+            except OSError:
+                pass
+        try:
+            sub.rmdir()
+        except OSError:
+            pass
 
 
 def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, producer: str) -> int:
-    from graphy import journal
-    from graphy import smash as smash_lane
     home = Path(args.home).expanduser().resolve() if args.home else repo / ".graphy"
     sub = home / "substrate"
     desc = home / "tenant.json"
     home.mkdir(parents=True, exist_ok=True)
     if not args.home:
         (home / ".gitignore").write_text("*\n", encoding="utf-8")   # rebuilt, never tracked by the eaten repo
+    stage, staged, prev = stage_generation(sub, desc)
+    try:
+        return _eat_stage(args, repo, package, corpus, producer, home, sub, desc, stage, staged, prev)
+    finally:
+        if served_data_home(desc) != stage:          # not landed: the served generation stands untouched
+            shutil.rmtree(stage, ignore_errors=True)
+            staged.unlink(missing_ok=True)
+
+
+def _eat_stage(args: argparse.Namespace, repo: Path, package: str, corpus: Path, producer: str, home: Path,
+               sub: Path, desc: Path, stage: Path, staged: Path, prev: Path | None) -> int:
+    from graphy import smash as smash_lane
+    served, sub = sub, stage
     t0 = getattr(args, "_t0", None) or time.perf_counter()
     # What THIS lane minted last time, read BEFORE _clear_substrate wipes ring.json. A lane in the
     # previous ring and not the new one is a dependency this eat dropped — its own to prune, which
     # is what the pruning was for. A lane in NEITHER ring was minted by something else and is not
     # this ring's to remove at all. The engine CAN tell them apart, so it does (graphyos #70).
     prev_live: set[str] = set()
-    prev_ring = sub / smash_lane.RING_NAME
-    if prev_ring.is_file():
+    prev_ring = prev / smash_lane.RING_NAME if prev is not None else None
+    if prev_ring is not None and prev_ring.is_file():
         try:
             _pr = json.loads(prev_ring.read_text(encoding="utf-8"))
             # …and only when that ring was THIS package's. A previous eat of a DIFFERENT package
@@ -1901,9 +2001,6 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
                 prev_live = {f"{m['slug']}_graph" for m in _pr["minted"].values()}
         except (OSError, ValueError, KeyError, TypeError):
             prev_live = set()        # an unreadable previous ring claims nothing, so nothing is "mine"
-    _clear_substrate(sub)
-    staged = staged_descriptor(desc)
-    staged.unlink(missing_ok=True)       # the served descriptor stays until build lands (graphyos #98)
 
     print(f"EAT: {package} at {corpus} -> {home}")
     rc = main(["smash", "--package", package, "--site-packages", args.site_packages,
@@ -1928,7 +2025,7 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         shown = " · ".join(foreign[:8]) + (f" · … {len(foreign) - 8} more" if len(foreign) > 8 else "")
         print(f"EAT REFUSED: {len(foreign)} lane(s) here were not minted by {package}'s import ring, "
               f"now or last time, and eat does not delete a lane it did not mint: {shown}. NOTHING "
-              f"WAS DELETED — those shards stand and {package} is minted beside them. Another package "
+              f"WAS DELETED — those shards and the served store stand. Another package "
               f"or producer put them there; if they really are stale, `{_eat_again(args, repo, package)} --force` "
               f"prunes them and names each one.", file=sys.stderr)
         return 2
@@ -1947,8 +2044,8 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
     with_history = eat_history(repo, sub, home, package)
     if with_history:
         lanes.append(f"--lane={HISTORY_SLUG}_graph:static-dep")
-    from graphy.cartograph import repo_cursor
-    cursor, dirty = repo_cursor(repo, exclude=(home,))   # the working tree's dirt joins the cursor (graphyos #39)
+    from graphy.cartograph import cursor_exclude, repo_cursor
+    cursor, dirty = repo_cursor(repo, exclude=cursor_exclude(desc, sub))   # the working tree's dirt joins the cursor (graphyos #39)
     if cursor is None:
         cursor = "sha256:" + hashlib.sha256((sub / f"{package}_graph" / "edges.json").read_bytes()).hexdigest()
     elif dirty:
@@ -1968,14 +2065,20 @@ def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, p
         print(f"EAT REFUSED: {exc}", file=sys.stderr)
         return 2
     for step in (["converge", "--tenant", str(staged), "--tenant-id", package, "--resolve"],
-                 ["build", "--tenant", str(staged), "--tenant-id", package, "--container", "none"],
-                 ["check", "--tenant", str(desc), "--tenant-id", package]):
-        if step[0] == "check":
-            land_descriptor(staged, desc, package)
+                 ["build", "--tenant", str(staged), "--tenant-id", package, "--container", "none"]):
         rc = main(step)
         if rc != 0:
             print(f"EAT FAILED at {step[0]}", file=sys.stderr)
             return rc
+    try:
+        land_generation(stage, staged, desc, prev, served)
+    except OSError as exc:
+        print(f"EAT FAILED at landing: {type(exc).__name__}: {exc} — the served store stands", file=sys.stderr)
+        return 2
+    rc = main(["check", "--tenant", str(desc), "--tenant-id", package])
+    if rc != 0:
+        print("EAT FAILED at check", file=sys.stderr)
+        return rc
     deps = [s for s in ring["minted"] if s != package]
     seed = f"{package}://module/{package}"
     target = _walk_target(sub, package, deps)

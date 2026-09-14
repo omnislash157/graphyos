@@ -1,7 +1,7 @@
 # graphy — this repo is a substrate
 
 This repo was eaten by graphy: its package and every package it imports are minted into shards
-under `.graphy/substrate/`, resolved through the code's own scope, compiled into one store, with
+under `.graphy/substrate.gen-…/` (the generation `.graphy/tenant.json` names), resolved through the code's own scope, compiled into one store, with
 parquet beside every shard. **Prose is context, code is law.** A walk answers; a doc stores no
 truth. Walk before you edit: the gate blocks an edit to a symbol the store knows until a walk from
 that symbol is stored under the live generation, and prints the walk to run.

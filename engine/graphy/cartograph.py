@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from graphy.tenant import Tenant, TenantError, cli_tenant
-from graphy._shared import source_sha
+from graphy._shared import generation_of, source_sha
 
 SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
@@ -78,7 +78,7 @@ def working_tree_dirt(repo_root: Path, exclude: Iterable[Path] = ()) -> tuple[li
             i += 1
         rel_s = rel.decode("utf-8", "surrogateescape")
         full = root / rel_s
-        if any(r == full or r in full.parents for r in roots):
+        if any(_excluded(full, r) for r in roots):
             continue
         paths.append(rel_s)
     h = hashlib.sha256()
@@ -109,15 +109,42 @@ def repo_cursor(repo_root: Path | None, exclude: Iterable[Path] = ()) -> tuple[s
     return f"git:{head}+{digest.hex()[:16]}", len(paths)
 
 
-def tenant_exclude(descriptor: Path, tenant: Tenant) -> tuple[Path, ...]:
-    """What the cursor never counts as dirt: the tenant's own products — its data home, journal,
-    join keys, the descriptor, and the home the eat wrote when the data home sits inside it."""
-    home = Path(descriptor).resolve().parent
-    data_home = Path(tenant.data_home).resolve()
-    out = [data_home, Path(tenant.journal), Path(tenant.join_keys), Path(descriptor)]
-    if home == data_home.parent:
-        out.append(home)
+# Every cursor's exclusion comes from one of these, so the store that is built and the check that audits it
+# never disagree on what is dirt (review.py `cursor-exclude-by-tenant`, graphyos #98 round 2).
+CURSOR_EXCLUDERS = ("cursor_exclude", "tenant_exclude")
+
+
+def generation_base(path: Path) -> Path:
+    """``<substrate>.gen-<token>`` → ``<substrate>``; any other path is its own base."""
+    p = Path(path)
+    base = generation_of(p.name)
+    return p.with_name(base) if base else p
+
+
+def _excluded(full: Path, root: Path) -> bool:
+    """Under ``root``, or under a generation of it: excluding a substrate excludes every ``<substrate>.gen-*``
+    beside it, the stage being built and a held one a platform could not remove included."""
+    if root == full or root in full.parents:
+        return True
+    return any(a.parent == root.parent and generation_of(a.name) == root.name for a in (full, *full.parents))
+
+
+def cursor_exclude(descriptor: Path, data_home: Path, *, journal=None, join_keys=None) -> tuple[Path, ...]:
+    """What the cursor never counts as dirt: the tenant's own products — every generation of its data home,
+    its journal and join keys, the descriptor and the staged one beside it, and the home the eat wrote when the
+    data home sits inside it. `rebuild`, `eat`, `check` and `showcase` all ask here."""
+    desc = Path(descriptor).resolve()
+    base = generation_base(Path(data_home).resolve())
+    out = [base, desc, desc.with_name(f".{desc.name}.next")]
+    out += [Path(x) for x in (journal, join_keys) if x]
+    if desc.parent == base.parent:
+        out.append(desc.parent)
     return tuple(out)
+
+
+def tenant_exclude(descriptor: Path, tenant: Tenant) -> tuple[Path, ...]:
+    """`cursor_exclude` for a declared tenant."""
+    return cursor_exclude(descriptor, tenant.data_home, journal=tenant.journal, join_keys=tenant.join_keys)
 
 
 def cursor_drift(cursor: str, repo_root: Path, exclude: Iterable[Path] = ()) -> str | None:

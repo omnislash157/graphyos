@@ -16,7 +16,7 @@ from graphy.shell import install as shell_install
 def _eaten_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     (repo / ".graphy" / "substrate").mkdir(parents=True)
-    (repo / ".graphy" / "tenant.json").write_text(json.dumps({"tenants": {}}), encoding="utf-8")
+    (repo / ".graphy" / "tenant.json").write_text(json.dumps({"data_home": str(repo / ".graphy" / "substrate")}), encoding="utf-8")
     (repo / ".graphy" / "substrate" / "ring.json").write_text(json.dumps({"root": "acme"}), encoding="utf-8")
     return repo
 

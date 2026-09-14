@@ -61,3 +61,22 @@ def _ast_edge_salience(relation: str) -> float:
 
 def _shim_adj_for_activate(unified_adj: dict) -> dict:
     return {k: [(n, s, w) for (n, s, w, _r) in vs] for k, vs in unified_adj.items()}
+
+
+GENERATION_INFIX = ".gen-"   # <substrate>.gen-<token>: one generation of a data home (graphyos #98)
+# The one spelling of generation identity: every module asks these, never the infix (review.py `generation-identity`,
+# review round 4 of #98 — three predicates had disagreed, and a refresh sibling was named after a token).
+GENERATION_IDENTITY = ("generation_name", "generation_of")
+
+
+def generation_name(base: str, token: str) -> str:
+    """The directory name of one generation of the substrate named ``base``."""
+    return f"{base}{GENERATION_INFIX}{token}"
+
+
+def generation_of(name: str) -> str | None:
+    """The substrate a directory name is a generation of, or None: exactly ``<base>.gen-<token>`` with a token of
+    ``[0-9A-Za-z-]``. A refresh sibling's dotted release (``substrate.gen-x.2.0``) is not a generation."""
+    import re
+    m = re.fullmatch(r"(.+?)" + re.escape(GENERATION_INFIX) + r"([0-9A-Za-z-]+)", name)
+    return m.group(1) if m else None

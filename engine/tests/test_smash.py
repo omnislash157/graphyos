@@ -357,7 +357,8 @@ def test_GREEN_eat_again_keeps_the_shards_parses_nothing_and_prunes_a_shard_the_
     assert cli.main(["eat", "--repo", str(repo), "--site-packages", str(sp)]) == 0
     out = capsys.readouterr().out
     assert "EAT OK: alpha + 2 ring shard(s)" in out and "(5 of 5 files parsed" in out
-    sub = repo / ".graphy" / "substrate"
+    served = lambda: cli.served_data_home(repo / ".graphy" / "tenant.json")
+    sub = served()
     assert sorted(d.name for d in sub.glob("*_graph")) == ["alpha_graph", "beta_graph", "gamma_graph"]
     before = {d.name: _shard_bytes(d) for d in sub.glob("*_graph")}
     assert (sub / "alpha_graph" / "wormhole_edges.json").is_file()
@@ -367,6 +368,7 @@ def test_GREEN_eat_again_keeps_the_shards_parses_nothing_and_prunes_a_shard_the_
     assert cli.main(["eat", "--repo", str(repo), "--site-packages", str(sp)]) == 0
     out = capsys.readouterr().out
     assert parsed == [] and "(0 of " in out
+    sub = served()
     assert {d.name: _shard_bytes(d) for d in sub.glob("*_graph")} == before
     assert (sub / "alpha_graph" / "wormhole_edges.json").is_file()   # converge ran again over the kept shard
     # alpha stops importing gamma: the gamma shard is pruned, the ring names three
@@ -375,6 +377,7 @@ def test_GREEN_eat_again_keeps_the_shards_parses_nothing_and_prunes_a_shard_the_
     assert cli.main(["eat", "--repo", str(repo), "--site-packages", str(sp)]) == 0
     out = capsys.readouterr().out
     assert len(parsed) == 1 and "(1 of " in out
+    sub = served()
     assert not (sub / "gamma_graph").exists() and (sub / "beta_graph").is_dir()
 
 

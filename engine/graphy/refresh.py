@@ -156,9 +156,11 @@ def plan_for(tenant: Tenant, descriptor: Path, package: str, prov: dict, release
              site_packages: Path | None = None) -> Plan:
     """The sibling's paths, all derived from the current descriptor: ``<data_home>.<release>``
     beside the current substrate, ``<descriptor stem>.<release>.json`` beside the descriptor,
-    the venv inside the sibling."""
+    the venv inside the sibling. The current substrate is named by its base, never by the generation the descriptor
+    serves, so the sibling keeps one name across landings (review round 4 of #98)."""
+    from graphy.cartograph import generation_base
     slug = smash_lane.slug_for(package)
-    home = Path(tenant.data_home)
+    home = generation_base(Path(tenant.data_home))
     sibling = home.with_name(f"{home.name}.{release}")
     desc = Path(descriptor)
     return Plan(package=package, slug=slug, distribution=prov["corpus"].get("distribution") or package,

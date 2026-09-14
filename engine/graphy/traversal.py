@@ -195,6 +195,15 @@ def _chain(prev: dict, node: str) -> list[str]:
     return out
 
 
+def _make_under(home: Path, d: Path) -> None:
+    """Create ``d`` under the traversal home, never the data home above it: a door still holding a
+    generation a rebuild has since discarded must not recreate it to cache an answer (graphyos #98) —
+    the OSError reaches the cache-write guard, which answers live and names TRAVERSAL SKIPPED."""
+    if not Path(home).parent.is_dir():
+        raise FileNotFoundError(f"the data home {Path(home).parent} is gone — a newer generation replaced it")
+    d.mkdir(parents=True, exist_ok=True)
+
+
 def store_walk(home: Path, store, seed: str, target: str, prev: dict, hops: int,
                exhausted: bool, stopped_by: str | None, reads: int) -> dict:
     """Write one walk's rows and its receipt. Hop per node is the depth of its chain — ``prev``
@@ -202,7 +211,7 @@ def store_walk(home: Path, store, seed: str, target: str, prev: dict, hops: int,
     duckdb = _duckdb()
     generation = store.generation()
     pq, rp = _paths(home, generation, seed)
-    pq.parent.mkdir(parents=True, exist_ok=True)
+    _make_under(home, pq.parent)
     hop: dict[str, int] = {}
     on_path = set(_chain(prev, target)) if target in prev else {seed}
     rows = []
@@ -439,7 +448,7 @@ def store_door(home: Path, generation: str, which: str, result, reads: int, voca
     owner — and a receipt carrying what the rows cannot: the declined counts and their classes."""
     duckdb = _duckdb()
     pq, rp = _door_paths(home, generation, which, result.seed, result.depth, vocab)
-    pq.parent.mkdir(parents=True, exist_ok=True)
+    _make_under(home, pq.parent)
     prims = {r.node for r in getattr(result, "primitives", ())}
     rows = [(which, result.seed, result.depth, i, r.hop, r.node, r.via, r.relation, r.owner, r.node in prims, generation)
             for i, r in enumerate(result.reached.values())]

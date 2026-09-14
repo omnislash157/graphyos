@@ -26,3 +26,4 @@ tenants/*/tenant.json
 # beside the current one until the operator promotes it. Rebuilt, never tracked.
 tenants/*/substrate.*/
 tenants/*/tenant.*.json
+tenants/*/.tenant.json.next

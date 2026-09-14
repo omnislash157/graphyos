@@ -53,8 +53,10 @@ def main(argv: list[str] | None = None) -> int:
     text = ti.get("old_string") or ti.get("content") or "".join(e.get("old_string", "") for e in ti.get("edits", []))
     repo = Path(os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd()).resolve()
     desc = Path(os.environ.get("GRAPHY_TENANT") or repo / ".graphy" / "tenant.json")
-    ring = desc.parent / "substrate" / "ring.json"
-    if not desc.is_file() or not ring.is_file():
+    from graphy.cli import served_data_home
+    served = served_data_home(desc)
+    ring = served / "ring.json" if served is not None else None
+    if ring is None or not ring.is_file():
         return 0
     from graphy import cli, traversal, federated_store as fstore
     tenant = cli._load_tenant(str(desc))

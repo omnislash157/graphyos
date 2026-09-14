@@ -10,8 +10,12 @@ it was the only thing that looked like a rebuild, and it prunes (graphyos #70, #
 
 The sequence is the same one ``eat`` runs, with the lane set opened up:
 
-    clear (keeping placed lanes) → smash each minted lane → history → init
-      → scheme index → converge --resolve → build → check
+    stage (a sibling generation seeded from the served one, placed lanes whole) → smash each minted
+      lane → history → init → scheme index → converge --resolve → build → land → check
+
+The served data home is never written: the next generation is built in ``<substrate>.gen-<token>/``
+and lands in one rename of the descriptor, so a door opened at any step opens the last good store,
+fresh, and a rebuild that fails or is interrupted discards its stage (graphyos #98).
 
 **A placed lane is the point.** The engine does not run a tenant's producer: `cartograph` carries no
 build-lane runner and the engine never runs a shell, so a foreign emitter stays the tenant's to
@@ -31,13 +35,14 @@ was being copied.
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = ["Lane", "RebuildError", "clear_substrate", "rebuild", "repo_cursor"]
 
-from graphy.cartograph import repo_cursor            # re-exported: a tenant needs it and it was not public
+from graphy.cartograph import cursor_exclude, repo_cursor            # re-exported: a tenant needs it and it was not public
 from graphy.cross_substrate import DocDeclarationError
 
 
@@ -168,12 +173,33 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
             f"foreign producer — run it first, then declare the lane placed"
         )
 
-    sub.mkdir(parents=True, exist_ok=True)
-    kept = clear_substrate(sub, keep=[l.dirname for l in placed])
-    staged = cli_lane.staged_descriptor(desc)
-    staged.unlink(missing_ok=True)        # the served descriptor names the last good store until build lands (graphyos #98)
-    if kept:
-        log(f"REBUILD: {len(kept)} placed lane(s) kept across the clear: " + " · ".join(kept))
+    # The served data home is never touched: the next generation is staged beside it and lands in one
+    # descriptor rename after build (graphyos #98). A rebuild that fails before then discards its stage.
+    kept = sorted(l.dirname for l in placed)
+    stage, staged, prev = cli_lane.stage_generation(sub, desc, whole=kept)
+    try:
+        receipt = _rebuild_stage(root=root, served=sub, sub=stage, desc=desc, staged=staged, prev=prev,
+                                 tenant_id=tenant_id, lanes=lanes, placed=placed, minted=minted,
+                                 join_keys=join_keys, journal=journal, cursor=cursor, policy=policy,
+                                 container=container, history=history, history_package=history_package,
+                                 resolve=resolve, check=check, log=log, cli_lane=cli_lane)
+    except BaseException:
+        if cli_lane.served_data_home(desc) != stage:  # not landed: the served generation stands untouched
+            shutil.rmtree(stage, ignore_errors=True)
+            staged.unlink(missing_ok=True)
+        raise
+    receipt["seconds"] = round(time.perf_counter() - t0, 2)
+    log(f"REBUILD OK: {len(receipt['lanes'])} lane(s) — {len(minted)} minted · {len(placed)} placed"
+        f"{' · history' if receipt['history'] else ''} · cursor {receipt['cursor'][:24]}… ({receipt['seconds']}s)")
+    return receipt
+
+
+def _rebuild_stage(*, root, served, sub, desc, staged, prev, tenant_id, lanes, placed, minted, join_keys,
+                   journal, cursor, policy, container, history, history_package, resolve, check, log,
+                   cli_lane) -> dict:
+    if placed:
+        log(f"REBUILD: {len(placed)} placed lane(s) carried into the next generation: "
+            + " · ".join(sorted(l.dirname for l in placed)))
 
     for lane in minted:
         rc = cli_lane.main(["smash", "--package", lane.package, "--site-packages", lane.site_packages,
@@ -198,7 +224,7 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
         declared.append(f"--lane={cli_lane.HISTORY_SLUG}_graph:static-dep")
 
     if cursor is None:
-        cursor, dirty = repo_cursor(root, exclude=(desc.parent,))
+        cursor, dirty = repo_cursor(root, exclude=cursor_exclude(desc, sub, journal=journal, join_keys=join_keys))
         if cursor is None:
             raise RebuildError(
                 f"rebuild: {root} is not a git checkout, so there is no cursor to pin the store to. "
@@ -230,11 +256,15 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
         rc = cli_lane.main(step)
         if rc != 0:
             raise RebuildError(f"rebuild: {step[0]} failed (exit {rc})")
-    cli_lane.land_descriptor(staged, desc, tenant_id)
+    try:
+        cli_lane.land_generation(sub, staged, desc, prev, served, keep=[l.dirname for l in placed])
+    except OSError as exc:
+        raise RebuildError(f"rebuild: the next generation could not land ({type(exc).__name__}: {exc}) "
+                           f"— the served store stands") from exc
     if check:
         rc = cli_lane.main(["check", "--tenant", str(desc), "--tenant-id", tenant_id])
         if rc != 0:
-            raise RebuildError(f"rebuild: check failed (exit {rc})")
+            raise RebuildError(f"rebuild: check failed (exit {rc}) — the next generation landed at {sub}")
 
     receipt = {
         "tenant_id": tenant_id,
@@ -245,8 +275,5 @@ def rebuild(*, root, substrate, descriptor, tenant_id: str, lanes, join_keys=Non
         "minted": sorted(l.slug for l in minted),
         "placed": sorted(l.slug for l in placed),
         "history": with_history,
-        "seconds": round(time.perf_counter() - t0, 2),
     }
-    log(f"REBUILD OK: {len(receipt['lanes'])} lane(s) — {len(minted)} minted · {len(placed)} placed"
-        f"{' · history' if with_history else ''} · cursor {cursor[:24]}… ({receipt['seconds']}s)")
     return receipt

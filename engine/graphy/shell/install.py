@@ -67,8 +67,10 @@ def install(repo: str | Path, python: str | None = None, *, log=print, harness: 
         raise ShellError(f"no wiring for harness {', '.join(unknown)} — the ones that exist: {', '.join(HARNESSES)}")
     repo = Path(repo).expanduser().resolve()
     desc = repo / ".graphy" / "tenant.json"
-    ring = repo / ".graphy" / "substrate" / "ring.json"
-    if not desc.is_file() or not ring.is_file():
+    from graphy.cli import served_data_home
+    served = served_data_home(desc)
+    ring = served / "ring.json" if served is not None else None
+    if ring is None or not ring.is_file():
         raise ShellError(f"no eaten tenant under {repo / '.graphy'} — run `graphy eat --repo {repo} "
                          f"--site-packages <its venv's site-packages>` first")
     tid = json.loads(ring.read_text(encoding="utf-8"))["root"]
@@ -112,8 +114,8 @@ def remint_history(repo: Path, tid: str, *, log=print) -> str:
     from graphy import cli
     from graphy import smash as smash_lane
     home = repo / ".graphy"
-    sub = home / "substrate"
-    if not (sub / f"{cli.HISTORY_SLUG}_graph" / smash_lane.PROVENANCE_NAME).is_file():
+    sub = cli.served_data_home(home / "tenant.json")
+    if sub is None or not (sub / f"{cli.HISTORY_SLUG}_graph" / smash_lane.PROVENANCE_NAME).is_file():
         return "none (`graphy eat .` mints it beside the code shard when the repo is a git checkout)"
     if not cli.eat_history(repo, sub, home, tid, log=log):
         return "skipped"

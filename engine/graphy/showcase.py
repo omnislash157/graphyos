@@ -216,7 +216,7 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
     (its cursor drifted, graphyos #39), propose, draw, compose, check.
     ``no_provision`` is handed to the eat: nothing of the repo's runs, the ring is empty (graphyos #35)."""
     from graphy import federated_store as fstore
-    from graphy.cli import _load_tenant, _roster, _graphy_command, main as cli_main
+    from graphy.cli import _load_tenant, _roster, _graphy_command, served_data_home, main as cli_main
     log = log or (lambda *_: None)
     t0 = time.perf_counter()
     if target.startswith(("http://", "https://", "git@")):
@@ -235,9 +235,12 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
     desc = home / "tenant.json"
     stale = None
     if desc.is_file():                                   # graphyos #39: a store behind the working tree is re-eaten
-        from graphy.cartograph import cursor_drift
+        from graphy.cartograph import cursor_drift, cursor_exclude
         try:
-            stale = cursor_drift(json.loads(desc.read_text(encoding="utf-8")).get("cursor", ""), repo, exclude=(home,))
+            served = served_data_home(desc)
+            stale = (f"the descriptor at {desc} names no data_home" if served is None else
+                     cursor_drift(json.loads(desc.read_text(encoding="utf-8")).get("cursor", ""), repo,
+                                  exclude=cursor_exclude(desc, served)))
         except (OSError, ValueError, AttributeError) as exc:
             stale = f"the descriptor at {desc} is unreadable ({exc})"
         if stale:
@@ -247,7 +250,10 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
         rc = (eat or (lambda r: cli_main(argv)))(repo)
         if rc != 0:
             raise ShowcaseError(f"eat exited {rc} for {repo}")
-    ring = json.loads((home / "substrate" / "ring.json").read_text(encoding="utf-8"))
+    served = served_data_home(desc)
+    if served is None:
+        raise ShowcaseError(f"the descriptor at {desc} names no data_home — eat did not land")
+    ring = json.loads((served / "ring.json").read_text(encoding="utf-8"))
     package = ring["root"]
     tenant = _load_tenant(str(desc))
     roster = _roster(tenant)

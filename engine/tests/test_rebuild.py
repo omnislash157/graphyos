@@ -86,7 +86,10 @@ def test_GREEN_a_code_lane_and_a_foreign_lane_rebuild_through_the_public_entry_p
     desc = json.loads((repo / ".graphy" / "tenant.json").read_text(encoding="utf-8"))
     assert "pg_schema_graph" in desc["build_lanes"] and "core_graph" in desc["build_lanes"]
 
-    index = json.loads((sub / ".federation_scheme_index.json").read_text(encoding="utf-8"))
+    served = Path(desc["data_home"])
+    assert served == Path(receipt["substrate"]) and served != sub     # a generation beside the substrate (graphyos #98)
+    assert (served / "pg_schema_graph" / "emitter_receipt.json").is_file()
+    index = json.loads((served / ".federation_scheme_index.json").read_text(encoding="utf-8"))
     assert index["pg_schema"]["own"] == ["pg_schema"]      # schemes read from the placed lane's own edges
 
     out = capsys.readouterr().out
@@ -257,7 +260,8 @@ def test_GREEN_a_doc_lane_that_declares_its_relation_is_listed_under_explain_doc
                rebuild_lane.Lane.placed("skills")],
         container="none", log=lambda *_a, **_k: None,
     )
-    meta = json.loads((sub / ".federation_scheme_index.json").read_text(encoding="utf-8"))["_meta"]
+    served = Path(json.loads((repo / ".graphy" / "tenant.json").read_text())["data_home"])
+    meta = json.loads((served / ".federation_scheme_index.json").read_text(encoding="utf-8"))["_meta"]
     capsys.readouterr()
     assert cli.main(["explain", "core.mod.run", "--tenant", str(repo / ".graphy" / "tenant.json"),
                      "--tenant-id", "core"]) == 0
@@ -289,7 +293,7 @@ def _rebuild_with_skills(tmp_path: Path, vocab_doc, extra_nodes: dict | None = N
                rebuild_lane.Lane.placed("skills")],
         container="none", log=lambda *_a, **_k: None,
     )
-    return sub
+    return Path(json.loads((repo / ".graphy" / "tenant.json").read_text())["data_home"])
 
 
 def test_RED_a_malformed_doc_declaration_refuses_by_name_and_a_bare_string_is_one_relation(tmp_path):
@@ -311,79 +315,295 @@ def test_RED_a_doc_lane_carrying_another_lanes_scheme_refuses_naming_both(tmp_pa
         _rebuild_with_skills(tmp_path, ["governs"], extra_nodes=stub)
 
 
-def test_GREEN_store_stays_servable_through_a_rebuild(tmp_path, capsys, monkeypatch):
-    """graphyos #98: the rebuild's clear removed the served store, the descriptor and the ring, so a door
-    opened at any step before build landed refused `no compiled store` — a session that starts inside the
-    window loses the door for its life. Now every step finds the last good store: served, named STALE,
-    under warn; refused as STALE under refuse (never a silent stale answer, #97); the next descriptor lands
-    in one rename after build, and a store no roster names any more is pruned."""
+def _plugin_door(repo: Path):
+    """What the shipped Claude Code plugin runs against a repo — its argv read from `.claude-plugin/plugin.json`,
+    `${CLAUDE_PROJECT_DIR}` filled — stopped at the moment it would serve: (rc, the generation it opened)."""
+    from graphy import cli
+    from graphy import mcp as mcp_server
+    manifest = json.loads((Path(__file__).parents[2] / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    argv = [a.replace("${CLAUDE_PROJECT_DIR}", str(repo)) for a in manifest["mcpServers"]["graphy"]["args"]]
+    served: list[str] = []
+    real = mcp_server.serve
+    mcp_server.serve = lambda tools: (served.append(tools.generation), 0)[1]
+    try:
+        rc = cli._REAL_MAIN(argv) if hasattr(cli, "_REAL_MAIN") else cli.main(argv)
+    finally:
+        mcp_server.serve = real
+    return rc, (served[0] if served else None)
+
+
+def _generations(repo: Path) -> list[str]:
+    return sorted(p.name for p in (repo / ".graphy").iterdir() if ".gen-" in p.name)
+
+
+@pytest.mark.parametrize("lane", ["rebuild", "eat"])
+def test_GREEN_store_stays_servable_through_a_rebuild(tmp_path, capsys, monkeypatch, lane):
+    """graphyos #98: the rebuild's clear removed the served store, so a door started inside the window
+    refused — and a client connects its servers once, so that session lost the door for its life. The
+    next generation is now staged beside the served data home and lands in one descriptor rename after
+    build: the door the plugin ships (default `--on-stale refuse`) opens the last good store FRESH at every
+    step, because nothing it reads is touched; a store held open across the whole rebuild still answers;
+    the generation it served is discarded after the landing, and no stage or staged descriptor is left."""
     from graphy import cli
     from graphy import federated_store as fs
-    from graphy import mcp as mcp_server
     repo = _git_repo(tmp_path)
     sub = repo / ".graphy" / "substrate"
-    sub.mkdir(parents=True)
-    _place_foreign_lane(sub)
     desc = repo / ".graphy" / "tenant.json"
 
-    def lanes():
-        out = [rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
-               rebuild_lane.Lane.placed("pg_schema")]
-        return out
+    def run(**kw):
+        if lane == "eat":
+            assert cli.main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)]) == 0
+        else:
+            sub.mkdir(parents=True, exist_ok=True)
+            _place_foreign_lane(sub)
+            rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", container="none",
+                                 lanes=[rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+                                        rebuild_lane.Lane.placed("pg_schema")], log=lambda *a: None, **kw)
 
-    rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", lanes=lanes(),
-                         container="none", log=lambda *a: None)
-    first = sorted(p.name for p in sub.glob(".mesh_store_*"))
-    assert first
-    # a roster that no longer exists left a store behind: the next landing prunes it
-    orphan = sub / ".mesh_store_000000000000.sqlite"
-    orphan.write_bytes(b"")
+    run()
+    rc, first = _plugin_door(repo)
+    assert rc == 0 and first
+    held = fs.SQLiteStore(fs.store_path_for(cli._roster(cli._load_tenant(str(desc))), tenant=cli._load_tenant(str(desc))))
+    held_gen = held.generation()
+    old_home = cli.served_data_home(desc)
+    # a door that read the descriptor a moment before the landing: it opens the generation that descriptor names
+    before_rename = tmp_path / "read_before_the_rename.json"
+    before_rename.write_bytes(desc.read_bytes())
 
-    seen: list[tuple[str, str, str]] = []
-
-    def probe(step: str) -> None:
-        d, tid = cli.repo_tenant(repo)
-        t = cli._load_tenant(str(d))
-        tools = mcp_server.open_tools(t, tid, cli._roster(t), on_stale="warn")
-        seen.append((step, "warn", tools.generation))
-        try:
-            fs.open_for(cli._roster(t), tenant=t, tenant_id=tid, on_stale="refuse")
-            seen.append((step, "refuse", "fresh"))
-        except fs.StoreError as exc:
-            assert "STALE" in str(exc), exc
-            seen.append((step, "refuse", "STALE"))
-
-    real_main, real_clear = cli.main, rebuild_lane.clear_substrate
+    seen: list[tuple[str, int, str | None]] = []
+    real_main = cli.main
+    monkeypatch.setattr(cli, "_REAL_MAIN", real_main, raising=False)
 
     def main(argv):
-        probe(f"before {argv[0]}")
+        if argv[0] in ("smash", "init", "converge", "build", "check"):
+            seen.append((f"before {argv[0]}", *_plugin_door(repo)))
+        if argv[0] == "check":                     # landed: the previous generation is still whole (review round 2)
+            t = cli._load_tenant(str(before_rename))
+            fs.open_for(cli._roster(t), tenant=t, tenant_id="core", on_stale="refuse").close()
         return real_main(argv)
 
-    def clear(*a, **k):
-        kept = real_clear(*a, **k)
-        probe("after clear")
-        return kept
+    monkeypatch.setattr(cli, "main", main)
+    (repo / "core" / "extra.py").write_text("def more():\n    return 3\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "two"], cwd=repo, check=True)
+    if lane == "eat":
+        assert real_main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)]) == 0
+    else:
+        run()
+    monkeypatch.setattr(cli, "main", real_main)
+
+    steps = [s for s, _, _ in seen]
+    assert {"before smash", "before init", "before converge", "before build", "before check"} <= set(steps), steps
+    before_land = [x for x in seen if x[0] != "before check"]
+    assert all(rc == 0 and gen == first for _, rc, gen in before_land), seen   # the shipped door serves, fresh, every step
+    rc, after = _plugin_door(repo)
+    assert rc == 0 and after and after != first                                 # the next generation landed
+    assert held.generation() == held_gen and held.find("core.mod.run")          # a door held across it still answers
+    new_home = cli.served_data_home(desc)
+    assert new_home != old_home and old_home.is_dir()                           # the replaced generation is kept whole
+    assert _generations(repo) == sorted([old_home.name, new_home.name])
+    assert not (repo / ".graphy" / ".tenant.json.next").exists()
+    if lane == "rebuild":
+        assert (sub / "pg_schema_graph" / "emitter_receipt.json").is_file()     # the placement stays for the producer
+    # the next landing removes the generation older than the one it replaces
+    (repo / "core" / "later.py").write_text("def later():\n    return 4\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "three"], cwd=repo, check=True)
+    run()
+    assert not old_home.exists() and _generations(repo) == sorted([new_home.name, cli.served_data_home(desc).name])
+    from graphy import doors, traversal
+    if traversal.have_duckdb():
+        # the held door's cache has nowhere to land: the discarded generation is never recreated to hold one
+        out = traversal.door(held, old_home / traversal.DIRNAME, "blast", doors.resolve(held, "core.mod.run"), 1)
+        assert out.source == "live" and out.stored is None and "is gone" in (out.note or ""), out
+        assert not old_home.exists()
+    held.close()
+
+
+@pytest.mark.parametrize("at", ["smash", "build"])
+def test_RED_an_interrupted_rebuild_never_touches_the_served_store(tmp_path, capsys, monkeypatch, at):
+    """Round 1 of #98's review: the marker design left `.rebuild_in_flight` behind a ^C, so a torn substrate
+    was served under warn forever with a false reason. A rebuild interrupted at any step now leaves the served
+    generation exactly as it was — FRESH under refuse — and removes its own stage and staged descriptor."""
+    from graphy import cli
+    from graphy import federated_store as fs
+    repo = _git_repo(tmp_path)
+    sub = repo / ".graphy" / "substrate"
+    desc = repo / ".graphy" / "tenant.json"
+    sub.mkdir(parents=True)
+    _place_foreign_lane(sub)
+    lanes = lambda: [rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+                     rebuild_lane.Lane.placed("pg_schema")]
+    rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", lanes=lanes(),
+                         container="none", log=lambda *a: None)
+    before = desc.read_bytes()
+    home = cli.served_data_home(desc)
+    real_main = cli.main
+
+    def main(argv):
+        if argv[0] == at:
+            raise KeyboardInterrupt
+        return real_main(argv)
 
     monkeypatch.setattr(cli, "main", main)
-    monkeypatch.setattr(rebuild_lane, "clear_substrate", clear)
-    (repo / "core" / "extra.py").write_text("def more():\n    return 3\n", encoding="utf-8")
-    rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", lanes=lanes(),
-                         container="none", log=lambda *a: None, cursor="sha256:" + "1" * 64)
+    (repo / "core" / "mod.py").write_text("def run():\n    return 2\n", encoding="utf-8")
+    with pytest.raises(KeyboardInterrupt):
+        rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", lanes=lanes(),
+                             container="none", log=lambda *a: None, cursor="sha256:" + "2" * 64)
     monkeypatch.setattr(cli, "main", real_main)
-    probe("after rebuild")
-
-    steps = [s for s, mode, _ in seen if mode == "warn"]
-    assert steps[0] == "after clear" and "before smash" in steps and "before build" in steps and "before check" in steps
-    assert all(gen for _, mode, gen in seen if mode == "warn")            # a store at every step
-    assert ("after clear", "refuse", "STALE") in seen                      # named, never served silently
-    assert seen[-1] == ("after rebuild", "refuse", "fresh")
-    warn_gens = [gen for _, mode, gen in seen if mode == "warn"]
-    assert warn_gens[0] != warn_gens[-1]                                   # the new generation landed
-    assert not orphan.exists() and not (repo / ".graphy" / ".tenant.json.next").exists()
-    assert not (sub / fs.REBUILD_MARKER).exists()
-    # with no rebuild in flight, an unreadable input is a torn substrate: refused even under warn
-    (sub / "registry.json").unlink()
+    assert desc.read_bytes() == before and cli.served_data_home(desc) == home
+    assert _generations(repo) == [home.name] and not (repo / ".graphy" / ".tenant.json.next").exists()
     t = cli._load_tenant(str(desc))
-    with pytest.raises(fs.StoreError, match="registry"):
-        fs.open_for(cli._roster(t), tenant=t, tenant_id="core", on_stale="warn")
-    assert "STALE" in capsys.readouterr().err
+    fs.open_for(cli._roster(t), tenant=t, tenant_id="core", on_stale="refuse").close()   # FRESH, never STALE
+    assert "STALE" not in capsys.readouterr().err
+
+
+@pytest.mark.durable
+def test_DURABLE_a_generation_lands_while_a_door_holds_the_served_store(tmp_path):
+    """Round 1 of #98's review, B3: SQLite opens a store without FILE_SHARE_DELETE on Windows, so an
+    `os.replace` over a store a running `graphy mcp` holds fails with a sharing violation — the marker
+    design moved that failure to the end of the rebuild. The landing replaces only the descriptor; the
+    held store is left where it is (garbage no descriptor names) and removed by the next landing once
+    nothing holds it. Marked durable so the windows-latest job proves it where it matters."""
+    import sqlite3
+    from graphy import cli
+    sub = tmp_path / ".graphy" / "substrate"
+    desc = tmp_path / ".graphy" / "tenant.json"
+    old = sub.with_name("substrate.gen-old")
+    (old / "core_graph").mkdir(parents=True)
+    for name in ("nodes.json", "edges.json", "PROVENANCE.json"):
+        (old / "core_graph" / name).write_text("{}", encoding="utf-8")
+    db = old / ".mesh_store_0.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE t (x)")
+    con.execute("INSERT INTO t VALUES (1)")
+    con.commit()
+    con.close()
+    desc.write_text(json.dumps({"data_home": str(old)}), encoding="utf-8")
+    held = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    assert held.execute("SELECT x FROM t").fetchall() == [(1,)]
+    stage, staged, prev = cli.stage_generation(sub, desc)
+    assert prev == old and (stage / "core_graph" / "nodes.json").is_file()
+    staged.write_text(json.dumps({"data_home": str(stage)}), encoding="utf-8")
+    cli.land_generation(stage, staged, desc, prev, sub)                 # never raises over a held store
+    assert cli.served_data_home(desc) == stage and not staged.exists()
+    assert held.execute("SELECT x FROM t").fetchall() == [(1,)]         # the held door still answers
+    held.close()
+    cli.discard_generations(sub, live=stage)
+    assert not old.exists() and stage.is_dir()
+
+
+def test_RED_rebuild_and_check_agree_on_dirt_when_the_substrate_sits_apart_from_the_descriptor(tmp_path):
+    """Review round 2 of #98, B2: rebuild excluded the descriptor's directory while check excluded the data home,
+    so with the substrate under `data/` and only `data/substrate/` gitignored, the untracked `substrate.gen-*`
+    was dirt to one and not the other — every rebuild read CHECK RED STALE. Both ask `cartograph.cursor_exclude`."""
+    repo = _git_repo(tmp_path)
+    (repo / ".gitignore").write_text("data/substrate/\ntenant/\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "ignore"], cwd=repo, check=True)
+    sub, desc = repo / "data" / "substrate", repo / "tenant" / "tenant.json"
+    desc.parent.mkdir()
+    for _ in range(2):
+        receipt = rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", container="none",
+                                       lanes=[rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core")],
+                                       log=lambda *a: None)
+        assert "+" not in receipt["cursor"], receipt["cursor"]          # the stage is never dirt
+
+
+def test_RED_a_copied_checkout_never_follows_its_descriptor_into_the_original(tmp_path, capsys):
+    """Review round 2 of #98, B3: `cp -r repo repo2` carries a descriptor whose absolute data_home is repo's;
+    eating repo2 seeded its stage from repo's shards, read repo's ring for #70 ownership and moved repo's stored
+    traversals away. A served home outside this substrate's own generations is never followed."""
+    import shutil
+    from graphy import cli
+    repo = _git_repo(tmp_path)
+    assert cli.main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)]) == 0
+    home1 = cli.served_data_home(repo / ".graphy" / "tenant.json")
+    assert cli.main(["blast", "core.mod.run", "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "core"]) == 0
+    assert (home1 / "traversals").is_dir()
+    before = sorted(p.relative_to(home1).as_posix() for p in home1.rglob("*"))
+    repo2 = tmp_path / "repo2"
+    shutil.copytree(repo, repo2, symlinks=True)
+    (repo2 / "core" / "mod.py").write_text("def run():\n    return 2\n", encoding="utf-8")
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "two"], cwd=repo2, check=True)
+    assert cli.main(["eat", str(repo2), "--package", "core", "--site-packages", str(repo2)]) == 0
+    home2 = cli.served_data_home(repo2 / ".graphy" / "tenant.json")
+    assert home2.parent == repo2 / ".graphy"
+    assert sorted(p.relative_to(home1).as_posix() for p in home1.rglob("*")) == before   # the original is untouched
+    capsys.readouterr()
+    assert cli.main(["check", "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "core"]) == 0
+
+
+def test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane(tmp_path, capsys):
+    """Review round 3 of #98, B1: the first landing from a pre-generation layout keeps `substrate/` whole for a
+    reader still opening it, and the next stage overlaid every shard in it — a lane that landing had pruned came
+    back, neither ring named it, and every later eat refused as if another producer had put it there. The
+    placement directory supplies only the placed lanes a rebuild names."""
+    import shutil
+    from graphy import cli
+    repo = _git_repo(tmp_path)
+    home, desc = repo / ".graphy", repo / ".graphy" / "tenant.json"
+    sub = home / "substrate"
+    eat = lambda: cli.main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)])
+    assert eat() == 0
+    g0 = cli.served_data_home(desc)
+    g0.rename(sub)                                                       # the layout every tenant had before #98
+    desc.write_text(desc.read_text(encoding="utf-8").replace(str(g0), str(sub)), encoding="utf-8")
+    ring = json.loads((sub / "ring.json").read_text(encoding="utf-8"))
+    ring["minted"]["dep"] = dict(ring["minted"]["core"], slug="dep")    # a dependency the last ring named
+    (sub / "ring.json").write_text(json.dumps(ring), encoding="utf-8")
+    shutil.copytree(sub / "core_graph", sub / "dep_graph")
+    assert eat() == 0
+    assert "EAT DROPPED (1): dep_graph" in capsys.readouterr().out
+    assert eat() == 0, capsys.readouterr().err                          # never refused over the pruned lane
+    assert sorted(p.name for p in cli.served_data_home(desc).glob("*_graph")) == ["core_graph", "history_graph"]
+
+
+def test_RED_a_symlinked_substrate_keeps_one_generation_back_and_no_more(tmp_path):
+    """Review round 3 of #98, B2: family membership compared fully resolved paths, so with `substrate` a symlink
+    no generation was ever its own — every rebuild seeded from the old substrate, carried no traversals, and left
+    one more full copy of the store on disk. The substrate is spelled with its parent resolved and its leaf as named."""
+    from graphy import cli
+    repo = _git_repo(tmp_path)
+    real = tmp_path / "real_substrate"
+    real.mkdir()
+    (repo / ".graphy").mkdir()
+    sub, desc = repo / ".graphy" / "substrate", repo / ".graphy" / "tenant.json"
+    sub.symlink_to(real)
+    _place_foreign_lane(sub)
+    for n in range(4):
+        if n:
+            (repo / "core" / f"x{n}.py").write_text(f"def f{n}():\n    return {n}\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+            subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", str(n)], cwd=repo, check=True)
+        rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", container="none", log=lambda *a: None,
+                             lanes=[rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+                                    rebuild_lane.Lane.placed("pg_schema")])
+    gens = sorted(p.name for p in (repo / ".graphy").iterdir() if ".gen-" in p.name)
+    assert len(gens) == 2 and cli.served_data_home(desc).name in gens, gens
+    assert (real / "pg_schema_graph" / "emitter_receipt.json").is_file()     # the producer's placement stands
+
+
+def test_RED_a_refresh_sibling_keeps_its_name_across_landings_and_is_never_a_generation(tmp_path):
+    """Review round 4 of #98: `refresh.plan_for` named its sibling after the served data home, now
+    `substrate.gen-<token>`, so the sibling's name moved on every landing and a forced refresh orphaned the last one
+    — which `_of_family` never discarded while `_excluded` hid it from the cursor and `generation_base` called it a
+    generation. One predicate (`_shared.generation_of`) answers all three, and the sibling is named by the base."""
+    from graphy import cartograph, refresh
+    sub, desc = tmp_path / "substrate", tmp_path / "tenant.json"
+
+    def land():
+        stage, staged, prev = cli.stage_generation(sub, desc)
+        staged.write_text(json.dumps({"data_home": str(stage)}), encoding="utf-8")
+        cli.land_generation(stage, staged, desc, prev, sub)
+        return stage
+
+    from graphy import cli
+    plans = []
+    for _ in range(3):
+        home = land()
+        plans.append(refresh.plan_for(type("T", (), {"data_home": home}), desc, "pkg", {"corpus": {"version": "1.0"}}, "2.0").data_home)
+    assert {p.name for p in plans} == {"substrate.2.0"}
+    dotted = tmp_path / "substrate.gen-x.2.0"                     # a sibling spelled after a token, as the old plan did
+    assert not cli._of_family(sub, dotted) and not cartograph._excluded(dotted / "venv" / "x", sub)
+    assert cartograph.generation_base(dotted) == dotted

@@ -721,7 +721,7 @@ def test_GREEN_eat_no_provision_runs_nothing_of_the_repo_and_mints_an_empty_ring
     assert called == [], "the repo was provisioned under --no-provision"
     assert not (repo / ".graphy" / "venv").exists()
     assert not list((repo / ".graphy" / "no-ring").iterdir()), "the empty ring holds something"
-    ring = json.loads((repo / ".graphy" / "substrate" / "ring.json").read_text())
+    ring = json.loads((_served(repo) / "ring.json").read_text())
     assert ring["root"] == "solo" and list(ring["minted"]) == ["solo"]
     # RED: the two ways of naming the ring contradict, and the refusal comes before anything lands
     (repo / ".graphy").rename(repo / ".was")
@@ -957,7 +957,7 @@ def test_GREEN_eat_binds_the_archive_to_every_ring_shard_not_the_root_alone(tmp_
     _session_file(repo / ".claude" / "recovery" / "sessions", 1, "--- [1] USER\n\nwhy does sib.c.g return 2\n\n--- [1] ASSISTANT\n\nsee solo.b.f\n")
     assert cli.main(["eat", str(repo), "--package", "solo", "--site-packages", str(repo)]) == 0
     capsys.readouterr()
-    sub = repo / ".graphy" / "substrate"
+    sub = _served(repo)
     assert (sub / "sib_graph" / "nodes.json").is_file(), "the ring never minted the sibling"
     prov = json.loads((sub / "history_graph" / "PROVENANCE.json").read_text())
     assert [Path(c).name for c in prov["corpus"]["code"]] == ["solo_graph"], "a commit touches the repo's own shard only"
@@ -978,9 +978,9 @@ def test_GREEN_eat_mints_the_history_shard_beside_the_code_and_the_walk_reaches_
     out = capsys.readouterr().out
     assert "HISTORY OK: 1 commit(s) · 1 session(s)" in out and "2 exchange(s) · 2 mention(s)" in out and "CHECK OK" in out
     assert "history_graph" in json.loads(Path(desc).read_text())["build_lanes"]
-    nodes = json.loads((repo / ".graphy" / "substrate" / "history_graph" / "nodes.json").read_text())
+    nodes = json.loads((_served(repo) / "history_graph" / "nodes.json").read_text())
     assert "history://exchange/abcdef01-0000-0000-0000-000000000001/1/user" in nodes
-    index = json.loads((repo / ".graphy" / "substrate" / ".federation_scheme_index.json").read_text())
+    index = json.loads((_served(repo) / ".federation_scheme_index.json").read_text())
     assert "history" in index and "solo" in index["history"]["out"], "the scheme index never learned the history shard"
     assert cli.main(["explain", "solo.b.f", "--tenant", desc, "--tenant-id", "solo"]) == 0
     assert "mentions       history://exchange/" in capsys.readouterr().out
@@ -1020,7 +1020,7 @@ def test_GREEN_eat_skips_the_history_shard_by_name_on_a_directory_that_is_not_a_
     assert "HISTORY SKIPPED: " in out and "not a git checkout" in out and "EAT OK" in out
     lanes = json.loads((repo / ".graphy" / "tenant.json").read_text())["build_lanes"]
     assert list(lanes) == ["solo_graph"]
-    assert not (repo / ".graphy" / "substrate" / "history_graph").exists()
+    assert not (_served(repo) / "history_graph").exists()
 
 
 def test_GREEN_the_usage_line_lists_every_verb_the_parser_registers():
@@ -1054,8 +1054,13 @@ def _two_package_repo(tmp_path):
     return repo
 
 
+def _served(repo):
+    """The data home the eaten repo's descriptor serves: a generation beside `.graphy/substrate` (graphyos #98)."""
+    return cli.served_data_home(repo / ".graphy" / "tenant.json")
+
+
 def _lanes(repo):
-    return sorted(d.name for d in (repo / ".graphy" / "substrate").glob("*_graph"))
+    return sorted(d.name for d in _served(repo).glob("*_graph"))
 
 
 def test_RED_eat_refuses_to_delete_a_lane_it_did_not_mint_and_force_is_the_deliberate_path(tmp_path, capsys):
@@ -1076,8 +1081,9 @@ def test_RED_eat_refuses_to_delete_a_lane_it_did_not_mint_and_force_is_the_delib
     assert "NOTHING WAS DELETED" in err
     # the advice is this eat again, so a monorepo is not sent back into the several-packages refusal (graphyos #84)
     assert f"`graphy eat {repo} --package pkg_b --site-packages {repo} --force`" in err
-    # both lanes stand: the refusal is not a rollback, it is a deletion that did not happen
-    assert _lanes(repo) == ["history_graph", "pkg_a_graph", "pkg_b_graph"]
+    # the served generation stands untouched: pkg_b was staged beside it and the stage is discarded (graphyos #98)
+    assert _lanes(repo) == ["history_graph", "pkg_a_graph"]
+    assert sorted(p.name for p in (repo / ".graphy").iterdir() if ".gen-" in p.name) == [_served(repo).name]
 
     assert cli.main(["eat", str(repo), "--package", "pkg_b", "--site-packages", str(repo), "--force"]) == 0
     out = capsys.readouterr().out

@@ -85,7 +85,7 @@ def test_GREEN_showcase_re_eats_a_dirty_working_tree(tmp_path, monkeypatch):
     home.mkdir()
     (home / ".gitignore").write_text("*\n")
     cursor, _ = carto.repo_cursor(repo, exclude=(home,))
-    (home / "tenant.json").write_text(json.dumps({"cursor": cursor}))
+    (home / "tenant.json").write_text(json.dumps({"cursor": cursor, "data_home": str(home / "substrate.gen-x")}))
     try:
         showcase.showcase(str(repo))
     except (showcase.ShowcaseError, OSError):

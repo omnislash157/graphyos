@@ -184,12 +184,12 @@ producer, a resolver and a locator, and those are the ones that exist.
 `eat` prints every step as it lands and ends with what you do next:
 
 ```text
-MINT OK: httpx 538 nodes / 2548 edges -> …/.graphy/substrate/httpx_graph
-MINT OK: httpcore 539 nodes / 2251 edges -> …/.graphy/substrate/httpcore_graph
+MINT OK: httpx 538 nodes / 2548 edges -> …/.graphy/substrate.gen-…/httpx_graph
+MINT OK: httpcore 539 nodes / 2251 edges -> …/.graphy/substrate.gen-…/httpcore_graph
 …
-RING: 7 shard(s) · stdlib skipped 62 · unresolved brotli, click, h2, … -> …/.graphy/substrate/ring.json
+RING: 7 shard(s) · stdlib skipped 62 · unresolved brotli, click, h2, … -> …/.graphy/substrate.gen-…/ring.json
 RESOLVE OK: httpx 1658 label(s) -> … edge(s) (import … · local … · reexport … · self … · super …)
-BUILD OK: compiled 2522 nodes / … edges -> …/.graphy/substrate/.mesh_store_….sqlite
+BUILD OK: compiled 2522 nodes / … edges -> …/.graphy/substrate.gen-…/.mesh_store_….sqlite
 CONTAINER PENDING: 7 shard(s) — graphy estate emits them on the first ask, graphy container --emit writes them now
 CHECK OK: descriptor valid; store fresh; journal readable for all declared graphs; container fresh for 0/7 shard(s), 7 pending until the estate asks
 EAT OK: httpx + 6 ring shard(s) -> /path/to/repo/.graphy
@@ -204,7 +204,7 @@ EAT OK: httpx + 6 ring shard(s) -> /path/to/repo/.graphy
 graphy walk --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx \
     --seed httpx://module/httpx --target certifi://module/certifi
 #   WALK PATH: hops=2 steps=httpx://module/httpx -> httpx://module/httpx._config -> certifi://module/certifi
-#   TRAVERSAL: source=live reads=15 stored=…/.graphy/substrate/traversals/<generation>/<seed>.parquet
+#   TRAVERSAL: source=live reads=15 stored=…/.graphy/substrate.gen-…/traversals/<generation>/<seed>.parquet
 # run it again: source=store reads=0 — the walk is kept as rows; a walk from another seed that
 # crosses this one splices through it, and after the repo moves `graphy traversals --replay`
 # names the hops that no longer hold

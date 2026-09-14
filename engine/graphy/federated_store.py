@@ -737,9 +737,6 @@ def resume(store, cursor, max_depth: int = 6, max_nodes: int = 250_000) -> PathR
     return _finish(store, _advance(store, replay, max_depth, max_nodes))
 
 
-REBUILD_MARKER = ".rebuild_in_flight"   # written by a re-eat's clear, removed when its descriptor lands (graphyos #98)
-
-
 def open_for(substrates: list[str], *, tenant: Tenant | None = None,
              tenant_id: str | None = None,
              db_path: str | Path | None = None,
@@ -767,35 +764,18 @@ def open_for(substrates: list[str], *, tenant: Tenant | None = None,
             f"    Build it:  {_repair_hint(substrates, tenant, tenant_id, p)}")
     store = SQLiteStore(p)
 
-    served_gen = store.generation()
+    live_input_digest = _compute_input_digest(substrates, tenant=tenant)
+    if live_input_digest == store._input_digest:
+        return store
+
     try:
-        live_input_digest = _compute_input_digest(substrates, tenant=tenant)
-        if live_input_digest == store._input_digest:
-            return store
         live_gen = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id).generation()
-    except (StoreError, OSError, ValueError) as exc:
-        # the inputs cannot be read whole: COULD NOT TELL, never fresh. A torn substrate refuses, even
-        # under warn. A rebuild in flight (its marker, written by the clear and removed when the next
-        # descriptor lands) is the one case the last good store is still the answer: STALE by name —
-        # served under warn, refused otherwise (graphyos #98; #97 never a silent stale answer)
-        marker = Path(tenant.data_home) / REBUILD_MARKER
-        if not marker.is_file():
-            store.close()
-            raise
-        try:
-            since = marker.read_text(encoding="utf-8").strip()
-        except OSError:
-            since = "?"
-        why = (f"a rebuild has been in flight since {since} ({type(exc).__name__}: {str(exc).splitlines()[0][:160]}) "
-               f"— build replaces it when it lands")
-        if on_stale == "warn":
-            print(f"graphy.federated_store: store for {sorted(substrates)} is STALE — serving generation "
-                  f"{served_gen}; {why}", file=sys.stderr)
-            return store
-        store.close()
+    except (OSError, ValueError) as exc:
         raise StoreError(
-            f"compiled store for roster {sorted(substrates)} at {p} is STALE: generation {served_gen}; {why}.\n"
-            f"    Serve it meanwhile with --on-stale warn, or wait for the rebuild") from exc
+            f"inputs for roster {sorted(substrates)} changed AND the live shards cannot "
+            f"be materialized to compare generations ({type(exc).__name__}: {exc}) — "
+            f"refusing to serve") from exc
+    served_gen = store.generation()
     if live_gen == served_gen:
         return store
 
