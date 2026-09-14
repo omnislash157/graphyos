@@ -227,3 +227,81 @@ def test_GREEN_blast_on_a_store_function_returns_the_components_that_call_it(tmp
     assert "svapp://module/svapp.lib.components.Carousel" in out
     assert "svapp://func/svapp.lib.Widget.go" in out
     assert "svapp://module/svapp.routes.+page_svelte" in out
+
+
+def test_GREEN_a_rune_is_state_and_every_write_to_it_is_an_edge_bound_through_scope(tmp_path):
+    """`let x = $state(…)` is a `state` node; an assignment, compound assignment or `++` to it is
+    `writes` from the function, method or component doing it, bound by the resolver through scope:
+    local, `this.` and imports. A parameter or local that shadows the name writes nothing, and a
+    plain `let` is no state at all (graphyos #85)."""
+    from graphy import cli
+    repo = tmp_path / "runes"
+    lib = repo / "src" / "lib"
+    lib.mkdir(parents=True)
+    (repo / "package.json").write_text(json.dumps({"name": "runes", "version": "0.0.1"}))
+    (lib / "settings.svelte.ts").write_text(
+        "export const settings = $state({ dark: false });\nexport class Counter {\n  count = $state(0);\n"
+        "  inc() { this.count++; }\n  reset(count: number) { count = 0; }\n}\n")
+    (lib / "Carousel.svelte").write_text(
+        "<script lang=\"ts\">\n  import { settings } from './settings.svelte';\n  let activeIndex = $state(0);\n"
+        "  let total = 0;\n  $effect(() => { activeIndex = Math.min(activeIndex, 9); });\n"
+        "  function select(i: number) {\n    activeIndex = i;\n    total += 1;\n    settings.dark = !settings.dark;\n  }\n"
+        "  function shadowed(activeIndex: number) { activeIndex = 3; }\n</script>\n")
+    nodes, edges, _ = ts.mint_records(repo / "src", "runes")
+    state = {n["id"]: (n["line"], n["rune"]) for n in nodes.values() if n["node_type"] == "state"}
+    assert state == {"runes://state/runes.lib.Carousel.activeIndex": (3, "$state"),
+                     "runes://state/runes.lib.settings_svelte.settings": (1, "$state"),
+                     "runes://state/runes.lib.settings_svelte.Counter.count": (3, "$state")}
+    assert validate_graph(nodes, edges, ts.TYPESCRIPT_AST_VOCABULARY) >= 0
+    writes = {(e["src"], e["dst_repr"], e["line"]) for e in edges if e["edge_type"] == "writes"}
+    assert ("runes://func/runes.lib.Carousel.select", "activeIndex", 7) in writes
+    assert ("runes://module/runes.lib.Carousel", "activeIndex", 5) in writes      # inside $effect's arrow
+    assert ("runes://method/runes.lib.settings_svelte.Counter.inc", "this.count", 4) in writes
+    assert not any(s.endswith((".shadowed", ".reset")) for s, _, _ in writes), "a shadowing parameter writes nothing"
+
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    import io, contextlib
+    t = ["--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "runes"]
+    def door(*argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert cli.main(list(argv) + t) == 0
+        return buf.getvalue()
+    out = door("blast", "Carousel.activeIndex")
+    assert "dependents=2" in out and "runes.lib.Carousel.select" in out and "shadowed" not in out
+    assert "runes.lib.settings_svelte.Counter.inc" in door("blast", "Counter.count")
+    assert "runes://state/runes.lib.settings_svelte.settings" in door("descend", "Carousel.select")   # across the import
+    assert "runes.lib.Carousel.select" in door("blast", "settings_svelte.settings")
+
+
+def test_GREEN_a_write_is_bound_through_lexical_scope_and_destructuring_is_a_write(tmp_path):
+    """The adversarial review's specimens (graphyos #85). A block's `let`/`const`, a `for` loop's
+    variable and a `catch` parameter shadow a rune for their own subtree only, so writing them is not
+    a write to state; a destructuring assignment and a bare `for (x of …)` target are writes."""
+    src = tmp_path / "sc" / "src"
+    src.mkdir(parents=True)
+    (src / "A.svelte").write_text(
+        "<script>\n"                                                          # 1
+        "  let count = $state(0);\n  let a = $state(1), b = $state(2);\n"      # 2, 3
+        "  if (true) { let count = 5; count = 6; }\n"                          # 4  shadowed
+        "  for (let count = 0; count < 3; count++) {}\n"                       # 5  shadowed
+        "  for (let count of [1]) { count = 9; }\n"                            # 6  shadowed
+        "  try {} catch (count) { count = 1; }\n"                              # 7  shadowed
+        "  [a, b] = [b, a];\n"                                                 # 8  writes a, b
+        "  function h() { for (const count of [1]) {} { let count = 0; } count = 7; }\n"   # 9 writes
+        "  function k() { if (a) { let count = 1; count = 2; } }\n"            # 10 shadowed
+        "  function t() { ({ count } = { count: 1 }); }\n"                     # 11 writes
+        "  function u() { for (count of [1]) {} }\n"                           # 12 writes
+        "  function v() { let count; { count = 1; } }\n"                       # 13 shadowed
+        "  $effect(() => { [1].forEach((count) => { count++; }); });\n"        # 14 shadowed
+        "  const fe = function count() { count = 8; };\n"                     # 15 count is the function
+        "</script>\n")
+    (src / "t.svelte.ts").write_text(
+        "export class T {\n  count = $state(0);\n"
+        "  a() { [1].forEach(function () { this.count = 1; }); }\n"              # 3 `this` is not T
+        "  b() { const o = { m() { this.count = 2; } }; }\n"                     # 4 `this` is o
+        "  c() { [1].forEach(() => { this.count = 3; }); }\n}\n")               # 5 an arrow keeps T
+    nodes, edges, _ = ts.mint_records(src, "sc")
+    writes = {(e["src"].rsplit(".", 1)[-1], e["dst_repr"], e["line"]) for e in edges if e["edge_type"] == "writes"}
+    assert writes == {("A", "a", 8), ("A", "b", 8), ("h", "count", 9), ("t", "count", 11), ("u", "count", 12),
+                      ("c", "this.count", 5)}

@@ -271,9 +271,12 @@ def test_GREEN_the_shipped_producers_declare_exactly_the_families_the_doors_hard
     what doors.py used to hardcode, so an eaten repo answers byte-identically before and after."""
     from graphy.adapters.typescript_ast import TYPESCRIPT_AST_VOCABULARY
     from graphy.ir import DEPENDS, PYTHON_AST_VOCABULARY, REACHES
-    for vocab in (PYTHON_AST_VOCABULARY, TYPESCRIPT_AST_VOCABULARY):
-        assert vocab.types_in(DEPENDS) == doors.BLAST_RELATIONS, vocab.producer
-        assert vocab.types_in(REACHES) == doors.DESCEND_RELATIONS, vocab.producer
+    assert PYTHON_AST_VOCABULARY.types_in(DEPENDS) == doors.BLAST_RELATIONS
+    assert PYTHON_AST_VOCABULARY.types_in(REACHES) == doors.DESCEND_RELATIONS
+    # typescript_ast declares one word past the defaults, and only where it mints it: a write to a
+    # rune's state (graphyos #85). A shard minted before carries no `writes`, so it answers as it did.
+    assert TYPESCRIPT_AST_VOCABULARY.types_in(DEPENDS) == doors.BLAST_RELATIONS | {"writes"}
+    assert TYPESCRIPT_AST_VOCABULARY.types_in(REACHES) == doors.DESCEND_RELATIONS | {"writes"}
 
 
 def test_GREEN_a_door_names_the_relations_it_declined_and_stays_silent_on_an_honest_zero(tmp_path):

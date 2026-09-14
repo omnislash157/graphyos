@@ -23,15 +23,33 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from graphy.adapters._receipt import Receipt
-from graphy.ir import PYTHON_AST_RELATIONS, EDGE_TYPES, NODE_TYPES, Vocabulary
+from graphy.ir import DEPENDS, PYTHON_AST_RELATIONS, REACHES, EDGE_TYPES, NODE_TYPES, Vocabulary
 
 __all__ = ["build_ir", "mint_records", "walk_files", "is_package_dir", "TYPESCRIPT_AST_VOCABULARY", "NODE_STANDARD",
            "ProducerUnavailable", "slug_of_specifier"]
 
 # The same nine words, so the same meanings: a consumer must not be able to tell the language
-# from the door it opens (graphyos #68).
-TYPESCRIPT_AST_VOCABULARY = Vocabulary(node_types=NODE_TYPES, edge_types=EDGE_TYPES,
-                                       producer="typescript_ast", relations=PYTHON_AST_RELATIONS)
+# from the door it opens (graphyos #68). Two more, declared here and nowhere else: a reactive
+# binding is a `state` node, and an assignment to one is `writes` — blast on the state names every
+# writer, descend from a writer arrives at the state (graphyos #85).
+TYPESCRIPT_AST_VOCABULARY = Vocabulary(node_types=tuple(NODE_TYPES) + ("state",),
+                                       edge_types=tuple(EDGE_TYPES) + ("writes",),
+                                       producer="typescript_ast",
+                                       relations={**PYTHON_AST_RELATIONS, "writes": (DEPENDS, REACHES)})
+
+# Svelte 5's runes: compiler keywords, never imported, so no scope can bind them — the producer
+# names them, exactly, the way NODE_STANDARD names Node's built-ins. A `state` or `derived` rune's
+# declarator is a state node; the rest are calls like any other. Lifecycle functions (onMount,
+# onDestroy) are imports from `svelte`, resolved by the ring, and never belong here. Svelte 4's
+# `$:` statements and `$store` subscriptions are another syntax and are not read.
+SVELTE_RUNES = {
+    "$state": "state", "$state.raw": "state",
+    "$derived": "derived", "$derived.by": "derived",
+    "$props": "props", "$bindable": "props",
+    "$effect": "effect", "$effect.pre": "effect", "$effect.root": "effect",
+    "$inspect": "debug", "$host": "host",
+}
+_STATE_RUNES = ("state", "derived")
 
 # Node's built-in modules: the ecosystem's standard library, the producer's to name.
 NODE_STANDARD = frozenset({
@@ -371,11 +389,21 @@ def _decorators(node, src: bytes) -> Iterator[str]:
                 yield r
 
 
-def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes) -> Iterator[dict]:
+def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes, runes: bool = False) -> Iterator[dict]:
     body = cls.child_by_field_name("body")
     if body is None:
         return
     for m in body.named_children:
+        if runes and m.type == "public_field_definition":
+            name_node, rune = m.child_by_field_name("name"), _state_rune(m.child_by_field_name("value"), src)
+            if name_node is not None and rune:
+                dotted = f"{class_dotted}.{_text(name_node, src)}"
+                sid = _node_id("state", dotted)
+                yield {"kind": "node", "node_type": "state", "id": sid, "name": _text(name_node, src), "dotted": dotted,
+                       "file": file_rel, "line": m.start_point[0] + 1, "docstring": "", "rune": rune,
+                       "container_class": class_dotted.rsplit(".", 1)[-1]}
+                yield {"kind": "edge", "edge_type": "contains", "src": class_id, "dst": sid}
+            continue
         if m.type not in ("method_definition", "method_signature", "abstract_method_signature"):
             continue
         name_node = m.child_by_field_name("name")
@@ -397,10 +425,13 @@ def _walk_class(cls, class_dotted: str, class_id: str, file_rel: str, src: bytes
         if mbody is not None:
             for call, line in _calls_in(mbody, src):
                 yield {"kind": "edge", "edge_type": "calls", "src": mid, "dst_repr": call, "line": line}
+            if runes:
+                for label, line in _writes_in(_Wrap([mbody]), src, frozenset(_scope_of(m, src))):
+                    yield {"kind": "edge", "edge_type": "writes", "src": mid, "dst_repr": label, "line": line}
 
 
 def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: bytes,
-                 resolve_import, component: bool = False) -> Iterator[dict]:
+                 resolve_import, component: bool = False, runes: bool = False) -> Iterator[dict]:
     for raw in tree.root_node.named_children:
         stmt = _unwrap_export(raw)
         t = stmt.type
@@ -469,7 +500,7 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
                 yield {"kind": "edge", "edge_type": "inherits", "src": cid, "dst_repr": base, "line": stmt.start_point[0] + 1}
             for d in _decorators(raw, src):
                 yield {"kind": "edge", "edge_type": "decorates", "src_repr": d, "dst": cid, "line": stmt.start_point[0] + 1}
-            yield from _walk_class(stmt, dotted, cid, file_rel, src)
+            yield from _walk_class(stmt, dotted, cid, file_rel, src, runes)
             continue
         if t in ("lexical_declaration", "variable_declaration", "expression_statement"):
             for spec, names, line in _requires_in(stmt, src):
@@ -498,6 +529,22 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
         elif t in ("lexical_declaration", "variable_declaration"):
             for name_node, fn in _func_of_lexical(stmt):
                 funcs.append((_text(name_node, src), fn, stmt))
+        if runes and t in ("lexical_declaration", "variable_declaration"):
+            for d in stmt.named_children:
+                if d.type != "variable_declarator":
+                    continue
+                name_node, rune = d.child_by_field_name("name"), _state_rune(d.child_by_field_name("value"), src)
+                if rune and name_node is not None and name_node.type == "identifier":
+                    name = _text(name_node, src)
+                    sid = _node_id("state", f"{module_dotted}.{name}")
+                    yield {"kind": "node", "node_type": "state", "id": sid, "name": name, "dotted": f"{module_dotted}.{name}",
+                           "file": file_rel, "line": stmt.start_point[0] + 1, "docstring": "", "rune": rune,
+                           "container_class": None}
+                    yield {"kind": "edge", "edge_type": "contains", "src": module_id, "dst": sid}
+        if runes and not funcs and t not in ("function_declaration", "generator_function_declaration",
+                                              "import_statement", "class_declaration", "abstract_class_declaration"):
+            for label, line in _writes_in(_Wrap([stmt]), src):
+                yield {"kind": "edge", "edge_type": "writes", "src": module_id, "dst_repr": label, "line": line}
         if component and not funcs and t not in ("function_declaration", "generator_function_declaration"):
             # A component's top level runs per instance: its calls are the component's own, the way a
             # function body's are the function's — `onMount(() => load())` included.
@@ -515,6 +562,9 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
             yield {"kind": "edge", "edge_type": "contains", "src": module_id, "dst": fid}
             body = fn.child_by_field_name("body")
             if body is not None:
+                if runes:
+                    for label, line in _writes_in(_Wrap([body]), src, frozenset(_scope_of(fn, src))):
+                        yield {"kind": "edge", "edge_type": "writes", "src": fid, "dst_repr": label, "line": line}
                 if body.type == "statement_block":
                     for call, line in _calls_in(body, src):
                         yield {"kind": "edge", "edge_type": "calls", "src": fid, "dst_repr": call, "line": line}
@@ -526,6 +576,206 @@ def _walk_module(tree, module_id: str, module_dotted: str, file_rel: str, src: b
 class _Wrap:
     def __init__(self, children):
         self.named_children = children
+
+
+def _state_rune(value, src: bytes) -> str | None:
+    """The rune a declarator's value calls, when it declares state (``$state(0)``, ``$derived.by(f)``)."""
+    v = value
+    while v is not None and v.type in ("parenthesized_expression", "as_expression", "satisfies_expression",
+                                        "non_null_expression") and v.named_children:
+        v = v.named_children[0]
+    if v is None or v.type != "call_expression":
+        return None
+    fn = v.child_by_field_name("function")
+    r = _expr_repr(fn, src) if fn is not None else None
+    return r if r is not None and SVELTE_RUNES.get(r) in _STATE_RUNES else None
+
+
+_FUNCTION_LIKE = ("function_declaration", "generator_function_declaration", "function_expression", "function",
+                  "arrow_function", "generator_function", "method_definition")
+
+
+def _bound_names(pattern, src: bytes) -> Iterator[str]:
+    """Every identifier a parameter or declarator pattern binds (``{a, b: c}``, ``[x, ...y]``, ``z = 1``)."""
+    stack = [pattern]
+    while stack:
+        n = stack.pop()
+        if n.type in ("identifier", "shorthand_property_identifier_pattern"):
+            yield _text(n, src)
+        elif n.type == "pair_pattern":
+            v = n.child_by_field_name("value")
+            if v is not None:
+                stack.append(v)
+        elif n.type not in _FUNCTION_LIKE and n.type not in ("type_annotation", "property_identifier"):
+            if n.type in ("assignment_pattern", "object_assignment_pattern"):
+                left = n.child_by_field_name("left")
+                if left is not None:
+                    stack.append(left)
+                continue
+            stack.extend(n.named_children)
+
+
+def _kind(node) -> str | None:
+    """The declaration keyword a ``for … in/of`` carries (``let`` · ``const`` · ``var``), or None."""
+    for i, c in enumerate(node.children):
+        if node.field_name_for_child(i) == "kind":
+            return c.type
+    return None
+
+
+def _hoisted(fn, src: bytes) -> set[str]:
+    """The names a function binds for its whole body: its parameters and every ``var`` under it,
+    nested functions left to their own scope. ``let``, ``const``, a class or a function declaration
+    belongs to its block, and `_block_names` adds it where that block opens."""
+    names: set[str] = set()
+    if fn.type in ("function_expression", "function", "generator_function"):
+        own = fn.child_by_field_name("name")                # `function count() { count = 8 }`: count is the function
+        if own is not None:
+            names.add(_text(own, src))
+    params = fn.child_by_field_name("parameters") or fn.child_by_field_name("parameter")
+    if params is not None:
+        for p in (params.named_children if params.type == "formal_parameters" else [params]):
+            pat = p.child_by_field_name("pattern") or p
+            names.update(_bound_names(pat, src))
+    body = fn.child_by_field_name("body")
+    stack = list(body.named_children) if body is not None and body.type == "statement_block" else []
+    while stack:
+        n = stack.pop()
+        if n.type in _FUNCTION_LIKE or n.type in ("class_declaration", "class", "abstract_class_declaration"):
+            continue
+        if n.type == "variable_declaration":
+            for d in n.named_children:
+                pat = d.child_by_field_name("name") if d.type == "variable_declarator" else None
+                if pat is not None:
+                    names.update(_bound_names(pat, src))
+        elif n.type == "for_in_statement" and _kind(n) == "var":
+            left = n.child_by_field_name("left")
+            if left is not None:
+                names.update(_bound_names(left, src))
+        stack.extend(n.named_children)
+    return names
+
+
+def _block_names(block, src: bytes) -> set[str]:
+    """The names a block binds for itself: its own ``let``/``const`` declarators, classes and function
+    declarations (a module is strict, so a function declared in a block belongs to the block)."""
+    names: set[str] = set()
+    items = list(block.named_children)
+    if block.type == "switch_body":                      # `case 1: let z` belongs to the switch body
+        items = [c for case in block.named_children for c in case.named_children]
+    for n in items:
+        if n.type == "lexical_declaration":
+            for d in n.named_children:
+                pat = d.child_by_field_name("name") if d.type == "variable_declarator" else None
+                if pat is not None:
+                    names.update(_bound_names(pat, src))
+        elif n.type in ("class_declaration", "abstract_class_declaration", "function_declaration",
+                        "generator_function_declaration"):
+            nm = n.child_by_field_name("name")
+            if nm is not None:
+                names.add(_text(nm, src))
+    return names
+
+
+def _scope_of(fn, src: bytes) -> set[str]:
+    """The names bound for a function's whole body: the hoisted ones and its body block's own."""
+    body = fn.child_by_field_name("body")
+    own = _block_names(body, src) if body is not None and body.type == "statement_block" else set()
+    return _hoisted(fn, src) | own
+
+
+def _write_targets(target) -> Iterator[Any]:
+    """The assignable leaves of an assignment's left side: a destructuring pattern
+    (``[a, this.b] = …`` · ``({a, b: o.c, d = 1, ...e} = …)``) yields each element it writes."""
+    stack = [target]
+    while stack:
+        n = stack.pop()
+        if n.type in ("array_pattern", "object_pattern", "rest_pattern"):
+            stack.extend(n.named_children)
+        elif n.type in ("assignment_pattern", "object_assignment_pattern"):
+            left = n.child_by_field_name("left")
+            if left is not None:
+                stack.append(left)
+        elif n.type == "pair_pattern":
+            value = n.child_by_field_name("value")
+            if value is not None:
+                stack.append(value)
+        else:
+            yield n
+
+
+def _write_label(target, src: bytes, shadow) -> str | None:
+    """The binding an assignment target writes: ``x`` · ``x.a.b`` and ``x[0]`` write ``x`` ·
+    ``this.count.n`` writes ``this.count``. A name the enclosing scope rebinds writes nothing here."""
+    chain = []
+    n = target
+    while n.type in ("member_expression", "subscript_expression", "parenthesized_expression", "non_null_expression"):
+        if n.type == "member_expression":
+            prop = n.child_by_field_name("property")
+            chain.append(_text(prop, src) if prop is not None else None)
+            n = n.child_by_field_name("object")
+        elif n.type == "subscript_expression":
+            chain.append(None)
+            n = n.child_by_field_name("object")
+        else:
+            n = n.named_children[0] if n.named_children else None
+        if n is None:
+            return None
+    if n.type == "this":
+        return f"this.{chain[-1]}" if chain and chain[-1] and "this" not in shadow else None
+    if n.type in ("identifier", "shorthand_property_identifier_pattern"):
+        name = _text(n, src)
+        return None if name in shadow else name
+    return None
+
+
+def _writes_in(node, src: bytes, shadow=frozenset()) -> Iterator[tuple[str, int]]:
+    """Every assignment, compound assignment, ``++``/``--`` and bare ``for (x of …)`` target under
+    ``node``, as (label, line). The shadow is lexical: a function adds its parameters and hoisted
+    ``var``s, a block its own ``let``/``const``/declarations, a ``for`` its loop variables and a
+    ``catch`` its parameter, each for its own subtree only (graphyos #85)."""
+    stack = [(c, frozenset(shadow)) for c in node.named_children]
+    while stack:
+        n, sh = stack.pop()
+        t = n.type
+        if t in ("class_declaration", "class", "abstract_class_declaration"):
+            continue                                        # a class's methods are their own nodes
+        targets = []
+        if t in _FUNCTION_LIKE:
+            sh = sh | _hoisted(n, src)
+            if t != "arrow_function" and not (t == "method_definition" and n.parent is not None
+                                              and n.parent.type == "class_body"):
+                sh = sh | {"this"}                          # a function or object method rebinds `this`
+        elif t in ("statement_block", "switch_body"):
+            sh = sh | _block_names(n, src)
+        elif t == "for_statement":
+            init = n.child_by_field_name("initializer")
+            if init is not None and init.type in ("lexical_declaration", "variable_declaration"):
+                sh = sh | {x for d in init.named_children if d.type == "variable_declarator"
+                           for x in _bound_names(d.child_by_field_name("name"), src)}
+        elif t == "for_in_statement":
+            left = n.child_by_field_name("left")
+            if left is not None:
+                if _kind(n):
+                    sh = sh | set(_bound_names(left, src))
+                else:
+                    targets.append(left)                    # for (x of xs): every turn writes x
+        elif t == "catch_clause":
+            param = n.child_by_field_name("parameter")
+            if param is not None:
+                sh = sh | set(_bound_names(param, src))
+        elif t in ("assignment_expression", "augmented_assignment_expression"):
+            targets.append(n.child_by_field_name("left"))
+        elif t == "update_expression":
+            targets.append(n.child_by_field_name("argument"))
+        for target in targets:
+            if target is None:
+                continue
+            for leaf in _write_targets(target):
+                label = _write_label(leaf, src, sh)
+                if label:
+                    yield label, n.start_point[0] + 1
+        stack.extend((c, sh) for c in n.named_children)
 
 
 def _module_for_specifier(spec: str, file: Path, root: Path, package: str, modules: dict[str, str]) -> str | None:
@@ -614,7 +864,8 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
                        "loc": src.count(b"\n") + 1, "docstring": ""}
             records = [mod_rec] + list(_walk_module(
                 tree, module_id, module_dotted, file_rel, code,
-                lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules), component))
+                lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules), component,
+                component or f.name.endswith((".svelte.ts", ".svelte.js"))))
             n_recs, e_recs = [], []
             for rec in records:
                 if rec["kind"] == "node":

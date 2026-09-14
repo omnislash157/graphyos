@@ -246,6 +246,11 @@ This project is one thing, so the rules are few.
 - The done token is the production run: a lane is done when `quickstart.sh` or the tenant's
   `rebuild.sh` proves it on a real repo, timed, in `RECON.md`. A test is a floor, never the proof.
 - Commit to `main` when the operator rules or agrees; agreed is intent to commit and push.
+- **The review is the junction, not the token.** A green token can be falsified; a third party
+  auditing the diff against the build checklist cannot be skipped. At every junction — an issue's
+  work done, a blocker fixed — the adversarial review runs, and when it clears (every blocker fixed
+  or eliminated), commit and push both repos without waiting to be told. No review, no commit,
+  however green the gate reads.
 - No auto-generated docs in git. A fan-out compiled by `graphy fanout` is a build product. The one
   exception is the marked region inside an arm file (`graphy arms`): the walk's inventory beside the
   operator's prose, verified on every ring-minted rebuild, so drift between the two is named and never absorbed.
