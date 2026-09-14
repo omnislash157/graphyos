@@ -39,8 +39,6 @@ REPO = os.environ.get("MARCH_REPO", "omnislash157/graphyos")
 
 CLEAR_DELAY = float(os.environ.get("MARCH_CLEAR_DELAY", "5"))
 CADENCE = float(os.environ.get("MARCH_CADENCE", "120"))
-MAX_KICKS = int(os.environ.get("MARCH_MAX_KICKS", "30"))
-MAX_BLOCKS = int(os.environ.get("MARCH_MAX_BLOCKS", "4"))
 GATE_TOKEN = "MARCH GATE"
 OPERATOR_LABEL = "operator"
 # A hold is a handhold for entropy: the loop never stops on a rung that needs the operator. It gates
@@ -414,15 +412,13 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
     wrong = bad_gate(message)
     quote = None if wrong else punt_of(message)
     if (wrong or quote) and state.get("last_block") != "question":
-        blocks = int(state.get("blocks", 0)) + 1
-        if blocks <= MAX_BLOCKS:
-            state.update(blocks=blocks, last_block="question")
-            save(state)
-            if wrong:
-                log(f"bad gate on issue {issue}: {wrong}")
-                return block(BAD_GATE.format(got=wrong, gates=gates, names=names))
-            log(f"deferral without a gate on issue {issue}: {quote}")
-            return block(INTERROGATION.format(quote=quote, gates=gates, names=names, issue=issue, label=OPERATOR_LABEL))
+        state.update(blocks=int(state.get("blocks", 0)) + 1, last_block="question")
+        save(state)
+        if wrong:
+            log(f"bad gate on issue {issue}: {wrong}")
+            return block(BAD_GATE.format(got=wrong, gates=gates, names=names))
+        log(f"deferral without a gate on issue {issue}: {quote}")
+        return block(INTERROGATION.format(quote=quote, gates=gates, names=names, issue=issue, label=OPERATOR_LABEL))
     try:
         live = issue_state(issue)
     except Exception as exc:  # noqa: BLE001
@@ -442,20 +438,13 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
         if tool_uses > int(state.get("tool_uses", 0)):
             state["blocks"] = 0            # a turn that called a tool made progress; the cap counts stalls only
         state["tool_uses"] = tool_uses
+        # no cap: the loop never limits itself — an open issue with no background work is always blocked
         blocks = int(state.get("blocks", 0)) + 1
-        if blocks > MAX_BLOCKS:
-            kill_watcher(state)
-            state.update(phase="hold", held_at=now(), held_because=f"{blocks - 1} stalled blocks and issue {issue} still open")
-            save(state)
-            log(f"hold on issue {issue}: block cap")
-            return allow(f"issue {issue} is still open after {blocks - 1} continuations with no tool call and "
-                         f"no background work; holding. Closing it marches the next rung; "
-                         f"`march.py arm --issue {issue}` re-arms.")
         state.update(blocks=blocks, last_block="open")
         save(state)
-        log(f"blocked stop on issue {issue} ({blocks}/{MAX_BLOCKS})")
+        log(f"blocked stop on issue {issue} ({blocks} stalled)")
         return block(
-            f"MARCH — issue {issue} is still OPEN on the board ({blocks}/{MAX_BLOCKS} stalled continuations). "
+            f"MARCH — issue {issue} is still OPEN on the board ({blocks} stalled continuation(s)). "
             f"The loop does not stop on an open issue. Keep marching: run its done check, then review "
             f"rounds until one reads SHIP (rung-discipline §2.6), land the evidence, commit and push, then "
             f"`gh issue close {issue} --repo {REPO} --comment <evidence>`. "
@@ -544,23 +533,19 @@ def cmd_inject(_: argparse.Namespace) -> int:
 
 def cmd_watch(args: argparse.Namespace) -> int:
     target, issue = args.pane, int(args.issue)
-    log(f"watcher up for issue {issue} on {target}: clear in {CLEAR_DELAY}s, cadence {CADENCE}s, max {MAX_KICKS}")
+    log(f"watcher up for issue {issue} on {target}: clear in {CLEAR_DELAY}s, cadence {CADENCE}s, kicks until acked")
     time.sleep(CLEAR_DELAY)
     tsend(target, "/clear")
-    for k in range(1, MAX_KICKS + 1):
+    k = 0
+    while True:                            # no kick cap: the watcher kicks until the fresh context acks
+        k += 1
         time.sleep(CADENCE)
         state = load()
         if state.get("issue") != issue or state.get("phase") != "clearing":
             log(f"watcher done after {k - 1} kicks: phase={state.get('phase')} issue={state.get('issue')}")
             return 0
         tsend(target, wake_text(issue))
-        log(f"kick {k}/{MAX_KICKS}")
-    state = load()
-    if state.get("issue") == issue and state.get("phase") == "clearing":
-        state.update(phase="hold", held_at=now(), held_because=f"no ack after {MAX_KICKS} kicks")
-        save(state)
-    log("watcher gave up — hold")
-    return 1
+        log(f"kick {k}")
 
 
 def main(argv: list[str] | None = None) -> int:

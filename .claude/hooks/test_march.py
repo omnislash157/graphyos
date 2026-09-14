@@ -95,11 +95,11 @@ def test_a_deferral_is_questioned_on_a_continuation_turn_but_never_twice_in_a_ro
     assert march.load()["blocks"] == 3                                          # and every question counts
 
 
-def test_a_malformed_gate_is_bounded_by_the_cap(board, capsys, monkeypatch):
-    monkeypatch.setattr(march, "MAX_BLOCKS", 4)
+def test_a_malformed_gate_never_holds_the_loop(board, capsys):
     for _ in range(10):
         out = _stop("The doc line reads:\nMARCH GATE: <LAW | MONEY> — <the exact step>", capsys, active=True)
-    assert "decision" not in out and march.load()["phase"] == "hold"            # round 3, B2: no wedge
+        assert out["decision"] == "block"                                        # no cap: the loop never limits itself
+    assert march.load()["phase"] == "working"
 
 
 def test_a_gate_after_a_cap_hold_still_gates_and_marches(board, capsys):
@@ -169,7 +169,6 @@ def _tool_call() -> dict:
 
 def test_a_wait_on_a_live_background_review_never_counts_toward_the_cap(board, capsys, tmp_path, monkeypatch):
     """#107: four 'still waiting' stops in 19 s while review round 1 ran capped the loop into hold."""
-    monkeypatch.setattr(march, "MAX_BLOCKS", 4)
     t = _transcript(tmp_path / "t.jsonl", _launch("a21c424ac991b3c9b"))
     for _ in range(10):
         out = _stop("Review round 1 is still running.", capsys, active=True, transcript=t)
@@ -188,17 +187,18 @@ def test_a_notified_task_is_no_longer_pending_and_a_quoted_id_launches_nothing(b
     assert out["decision"] == "block" and march.load()["blocks"] == 1
 
 
-def test_a_turn_that_called_a_tool_resets_the_cap(board, capsys, tmp_path, monkeypatch):
-    monkeypatch.setattr(march, "MAX_BLOCKS", 2)
+def test_a_turn_that_called_a_tool_resets_the_stall_count(board, capsys, tmp_path):
     t = tmp_path / "t.jsonl"
     for _ in range(6):
         _transcript(t, _tool_call())
         out = _stop("Fixed a blocker; the gate is running.", capsys, active=True, transcript=t)
         assert out["decision"] == "block"
     assert march.load()["phase"] == "working"
-    for _ in range(3):
-        out = _stop("Nothing to do.", capsys, active=True, transcript=t)              # a true stall still holds
-    assert "decision" not in out and march.load()["phase"] == "hold"
+    for _ in range(12):
+        out = _stop("Nothing to do.", capsys, active=True, transcript=t)              # a true stall is blocked, never held
+        assert out["decision"] == "block"
+    state = march.load()
+    assert state["phase"] == "working" and state["blocks"] == 13                    # 1 from the last tool turn + 12 stalls
 
 
 def test_an_issue_closed_during_a_cap_hold_marches_the_next_rung(board, capsys):
