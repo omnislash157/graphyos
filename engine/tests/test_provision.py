@@ -3,6 +3,7 @@ pip and npm injected; the proof is the three cold eats in RECON."""
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import sysconfig
 from pathlib import Path
@@ -129,6 +130,66 @@ def test_GREEN_package_json_repo_gets_npm_install(tmp_path, monkeypatch):
     monkeypatch.setattr(provision.shutil, "which", lambda name: None)
     pv2 = provision.provision(repo, "typescript_ast")
     assert not pv2.installed and "npm is not on PATH" in pv2.how
+
+
+def test_RED_an_installed_node_modules_is_never_reinstalled_unasked(tmp_path, monkeypatch):
+    """graphyos #87: eat ran `npm install` into a first client's already-installed lockfile tree, a write into a
+    directory nobody nominated. An installed tree is read as it stands; eat installs only when node_modules is
+    absent or the lockfiles moved since its OWN install, and says it is about to write, naming --no-provision."""
+    repo = tmp_path / "js"
+    repo.mkdir()
+    (repo / "package.json").write_text(json.dumps({"name": "js"}))
+    (repo / "package-lock.json").write_text('{"lockfileVersion": 3}')
+    monkeypatch.setattr(provision.shutil, "which", lambda name: "/usr/bin/npm")
+    calls, logged = [], []
+
+    def runner(cmd, cwd=None, timeout=0):
+        calls.append(cmd)
+        (repo / "node_modules").mkdir(exist_ok=True)
+        return 0, ""
+
+    # the user's own install: never touched
+    (repo / "node_modules").mkdir()
+    pv = provision.provision(repo, "typescript_ast", runner=runner, log=logged.append)
+    assert calls == [] and pv.installed and "already installed, not by graphy" in pv.how
+    # absent: installed, announced first with the escape named, and pinned by a receipt
+    (repo / "node_modules").rmdir()
+    provision.provision(repo, "typescript_ast", runner=runner, log=logged.append)
+    assert len(calls) == 1 and any("about to write" in l and "--no-provision" in l for l in logged)
+    assert (repo / ".graphy" / provision.NPM_RECEIPT_NAME).is_file()
+    # the same lockfile: skipped; a moved lockfile under eat's own install: installed again
+    pv = provision.provision(repo, "typescript_ast", runner=runner)
+    assert len(calls) == 1 and "installed by this eat" in pv.how
+    (repo / "package-lock.json").write_text('{"lockfileVersion": 3, "packages": {}}')
+    provision.provision(repo, "typescript_ast", runner=runner)
+    assert len(calls) == 2
+    # graphy's own install fails after npm made the directory: the claim stands pending and the next eat retries
+    (repo / ".graphy" / provision.NPM_RECEIPT_NAME).unlink()
+    shutil.rmtree(repo / "node_modules")
+    failing = lambda cmd, cwd=None, timeout=0: (calls.append(cmd), (repo / "node_modules").mkdir(exist_ok=True), (1, "npm ERR! network"))[2]
+    pv = provision.provision(repo, "typescript_ast", runner=failing)
+    assert not pv.installed and len(calls) == 3
+    pv = provision.provision(repo, "typescript_ast", runner=runner)
+    assert len(calls) == 4 and "npm install into" in pv.how
+
+
+def test_RED_a_failure_line_is_the_last_line_when_both_streams_share_a_pipe(tmp_path):
+    """graphyos #87: piped, stdout is block-buffered and stderr is not, so `EAT FAILED` printed in the middle of the
+    table before it. A real eat refused after its mint (a lane it did not mint, #70), both streams into one pipe."""
+    import subprocess
+    import sys
+    repo = tmp_path / "repo"
+    for pkg in ("pkg_a", "pkg_b"):
+        (repo / pkg).mkdir(parents=True)
+        (repo / pkg / "__init__.py").write_text("def f():\n    return 1\n")
+    env = {**__import__("os").environ, "PYTHONPATH": str(Path(cli.__file__).parents[1])}
+    run = lambda pkg: subprocess.run([sys.executable, "-m", "graphy", "eat", str(repo), "--package", pkg, "--site-packages", str(repo)],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, timeout=300)
+    assert run("pkg_a").returncode == 0
+    out = run("pkg_b")
+    lines = [l for l in out.stdout.splitlines() if l.strip()]
+    assert out.returncode == 2 and any(l.startswith("MINT OK") for l in lines), out.stdout
+    assert lines[-1].startswith("EAT REFUSED"), lines[-3:]
 
 
 def test_RED_eat_refuses_without_a_repo_and_accepts_a_positional(tmp_path, capsys, monkeypatch):

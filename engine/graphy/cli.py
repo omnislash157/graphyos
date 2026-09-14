@@ -1697,12 +1697,12 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
     try:
         meta = json.loads((repo / "package.json").read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        sys.stdout.flush(); print(f"EAT REFUSED: {repo / 'package.json'} unreadable ({exc})", file=sys.stderr)
+        print(f"EAT REFUSED: {repo / 'package.json'} unreadable ({exc})", file=sys.stderr)
         return 2
     name = args.package or (meta.get("name") if isinstance(meta.get("name"), str) else None) or repo.name
     package = smash_lane.slug_for_specifier(name)
     if not package:
-        sys.stdout.flush(); print(f"EAT REFUSED: {name!r} cannot name a shard — the slug grammar is [a-z0-9_]+", file=sys.stderr)
+        print(f"EAT REFUSED: {name!r} cannot name a shard — the slug grammar is [a-z0-9_]+", file=sys.stderr)
         return 2
     corpus = None
     src_field = meta.get("source")
@@ -1717,7 +1717,7 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
                 corpus = cand
                 break
     if corpus is None:
-        sys.stdout.flush(); print(f"EAT REFUSED: no TypeScript source under {repo} (src/ or the package.json `source`)", file=sys.stderr)
+        print(f"EAT REFUSED: no TypeScript source under {repo} (src/ or the package.json `source`)", file=sys.stderr)
         return 2
     return _eat_run(args, repo, package, corpus, "typescript_ast")
 
@@ -1728,11 +1728,11 @@ def _cmd_eat(args: argparse.Namespace) -> int:
     from graphy import container
     target = args.repo or args.repo_pos
     if not target:
-        sys.stdout.flush(); print("EAT REFUSED: name the codebase to eat — `graphy eat .` for the one you stand in", file=sys.stderr)
+        print("EAT REFUSED: name the codebase to eat — `graphy eat .` for the one you stand in", file=sys.stderr)
         return 2
     repo = Path(target).expanduser().resolve()
     if not repo.is_dir():
-        sys.stdout.flush(); print(f"EAT REFUSED: not a directory: {repo}", file=sys.stderr)
+        print(f"EAT REFUSED: not a directory: {repo}", file=sys.stderr)
         return 2
     args._t0 = time.perf_counter()
     args._site_packages_given = args.site_packages               # before provisioning fills it in
@@ -1747,7 +1747,7 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         if args.package:
             matches = [c for c in candidates if c.name == args.package]
             if not matches:
-                sys.stdout.flush(); print(f"EAT REFUSED: no package {args.package!r} under {repo} or {repo / 'src'} "
+                print(f"EAT REFUSED: no package {args.package!r} under {repo} or {repo / 'src'} "
                       f"(found: {[c.name for c in candidates] or 'none'})", file=sys.stderr)
                 return 2
             corpus = matches[0]
@@ -1766,7 +1766,7 @@ def _cmd_eat(args: argparse.Namespace) -> int:
                 where = "; ".join(f"{h}: {', '.join(c.name for c in candidates if str(c.parent) == h)}" for h in homes)
                 ring = (f" — they sit in {len(homes)} directories ({where}), and --site-packages is one directory "
                         f"as the ring: a sibling in the other is named unresolved, never minted")
-            sys.stdout.flush(); print(f"EAT REFUSED: {'no' if not candidates else len(candidates)} importable package(s) under {repo}"
+            print(f"EAT REFUSED: {'no' if not candidates else len(candidates)} importable package(s) under {repo}"
                   f"{' — ' + ', '.join(c.name for c in candidates) if candidates else ''}; name one with --package{ring}",
                   file=sys.stderr)
             return 2
@@ -1776,7 +1776,7 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         # flag runs nothing — the ring is read from an empty directory, so the package is minted
         # from its source alone and every import it makes is left unresolved by name (graphyos #35).
         if args.site_packages:
-            sys.stdout.flush(); print("EAT REFUSED: --no-provision and --site-packages contradict — the first reads an empty ring, "
+            print("EAT REFUSED: --no-provision and --site-packages contradict — the first reads an empty ring, "
                   "the second the install you name", file=sys.stderr)
             return 2
         empty = (Path(args.home).expanduser().resolve() if args.home else repo / ".graphy") / "no-ring"
@@ -1789,7 +1789,7 @@ def _cmd_eat(args: argparse.Namespace) -> int:
         try:
             pv = provision_lane.provision(repo, producer, log=print)
         except RuntimeError as exc:
-            sys.stdout.flush(); print(f"EAT REFUSED: {exc}", file=sys.stderr)
+            print(f"EAT REFUSED: {exc}", file=sys.stderr)
             return 2
         print(f"PROVISION {'OK' if pv.installed else 'PARTIAL'}: {pv.how} ({time.perf_counter() - t_prov:.1f}s)")
         args.site_packages = str(pv.site)
@@ -2021,7 +2021,6 @@ def _eat_stage(args: argparse.Namespace, repo: Path, package: str, corpus: Path,
     dropped = [d for d in doomed if d in prev_live]      # this lane's own, a dependency it stopped importing
     foreign = [d for d in doomed if d not in prev_live]  # minted by something else: never this ring's to delete
     if foreign and not getattr(args, "force", False):
-        sys.stdout.flush()
         shown = " · ".join(foreign[:8]) + (f" · … {len(foreign) - 8} more" if len(foreign) > 8 else "")
         print(f"EAT REFUSED: {len(foreign)} lane(s) here were not minted by {package}'s import ring, "
               f"now or last time, and eat does not delete a lane it did not mint: {shown}. NOTHING "
@@ -2705,7 +2704,34 @@ def _profiled(argv: list[str] | None, prof_dir: str) -> int:
     return rc
 
 
+class _StderrAfterStdout:
+    """stderr that flushes stdout before every write. Piped, stdout is block-buffered and stderr is not, so a
+    failure line landed in the middle of the table printed before it (graphyos #87, a first client's Windows
+    `EAT FAILED at build`). Every verb's failure goes through this, so none can arrive out of order."""
+
+    def __init__(self, err):
+        self._err = err
+
+    def write(self, text):
+        try:
+            sys.stdout.flush()
+        except (OSError, ValueError):
+            pass
+        return self._err.write(text)
+
+    def __getattr__(self, name):
+        return getattr(self._err, name)
+
+
 def main(argv: list[str] | None = None) -> int:
     import os
     prof_dir = os.environ.get("GRAPHY_PROFILE_DIR")
-    return _profiled(argv, prof_dir) if prof_dir else _main(argv)
+    if isinstance(sys.stderr, _StderrAfterStdout):
+        return _profiled(argv, prof_dir) if prof_dir else _main(argv)
+    err = sys.stderr
+    sys.stderr = _StderrAfterStdout(err)
+    try:
+        return _profiled(argv, prof_dir) if prof_dir else _main(argv)
+    finally:
+        if isinstance(sys.stderr, _StderrAfterStdout):
+            sys.stderr = err

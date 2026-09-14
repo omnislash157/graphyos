@@ -95,11 +95,31 @@ def provision(repo: str | Path, producer: str, *, python: str | None = None, tim
             return Provisioned(nm, "no package.json — the ring is the root shard alone", False)
         if shutil.which("npm") is None:
             return Provisioned(nm, "npm is not on PATH — the ring is whatever node_modules already holds", False)
+        # An installed tree is the user's: eat never writes into a node_modules it did not nominate. It installs only
+        # when node_modules is absent, or when the lockfiles moved since ITS OWN install (the receipt), and says so
+        # first, naming --no-provision (graphyos #87: a first client's lockfile tree was re-installed unasked).
+        declared = _declaration(repo, _NPM_DECLARATION_FILES)
+        receipt = repo / ".graphy" / NPM_RECEIPT_NAME
+        try:
+            claim = json.loads(receipt.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            claim = None                  # no claim: a tree that is present is the user's
+        mine = claim.get("declaration") if isinstance(claim, dict) else None
+        if nm.is_dir() and (claim is None or mine == declared):
+            why = ("installed by this eat from these lockfiles" if mine is not None else "already installed, not by graphy")
+            return Provisioned(nm, f"npm install skipped — {nm} is {why}; the ring is what it holds "
+                                   f"(delete it to re-install)", True)
         cmd = ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"]
-        log(f"PROVISION: {' '.join(cmd)}  (in {repo})")
+        log(f"PROVISION: about to write {nm} — {' '.join(cmd)}  (in {repo}); `--no-provision` reads the tree as it stands")
+        # the claim is written BEFORE the act: an install that fails or is killed leaves a pending claim no declaration
+        # matches, so the next eat retries it rather than calling a half-written tree the user's (#87 review round 1)
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        receipt.write_text(json.dumps({"declaration": None, "pending": cmd}, indent=2) + "\n", encoding="utf-8")
         rc, tail = run(cmd, cwd=repo, timeout=timeout)
         if rc != 0:
-            return Provisioned(nm, f"npm install failed ({tail or 'no output'}) — the ring is whatever node_modules already holds", False)
+            return Provisioned(nm, f"npm install failed ({tail or 'no output'}) — the ring is whatever node_modules already holds; "
+                                   f"the next eat retries it", False)
+        receipt.write_text(json.dumps({"declaration": declared, "command": cmd}, indent=2) + "\n", encoding="utf-8")
         return Provisioned(nm, f"npm install into {nm}", True)
 
     venv = repo / ".graphy" / "venv"
@@ -133,14 +153,16 @@ def provision(repo: str | Path, producer: str, *, python: str | None = None, tim
 
 
 RECEIPT_NAME = "provision.json"
+NPM_RECEIPT_NAME = "npm_provision.json"
 _DECLARATION_FILES = ("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt")
+_NPM_DECLARATION_FILES = ("package.json", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml")
 
 
-def _declaration(repo: Path) -> dict[str, str]:
+def _declaration(repo: Path, names=_DECLARATION_FILES) -> dict[str, str]:
     """What the pip install read: the sha256 of each declaration file the repo carries. The
     receipt beside the venv pins it; a re-eat under the same declaration skips the install."""
     out: dict[str, str] = {}
-    for name in _DECLARATION_FILES:
+    for name in names:
         f = repo / name
         if f.is_file():
             out[name] = hashlib.sha256(f.read_bytes()).hexdigest()
