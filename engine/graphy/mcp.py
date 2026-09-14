@@ -3,9 +3,12 @@ speaks the Model Context Protocol (Claude Code, Cursor, Claude Desktop, …).
 
     graphy mcp --tenant <descriptor> --tenant-id <name>
 
-Six tools — hunt · descend · blast · walk · draw · explain — each the same walk the CLI verb runs,
-returning the same text. The store is opened once at startup and its generation is pinned for
-the session; every answer carries it. Zero dependencies: the protocol is newline-delimited
+Seven tools — hunt · descend · blast · walk · draw · explain · history — each the same walk the CLI
+verb runs, returning the same text. The store is opened at startup and every answer carries the generation it
+was read from; before every tool call the server asks whether a fresh `graphy <verb> --tenant` would
+still open that store (a stat of every input, the store file and the descriptor) and, when not, opens
+what the CLI would open now — refusing STALE in the CLI's words when the CLI would (graphyos #97).
+Zero dependencies: the protocol is newline-delimited
 JSON-RPC 2.0 over stdin/stdout, and this module speaks the three methods a tool server needs
 (initialize · tools/list · tools/call) plus ping. Nothing here writes; a walk lands its rows in
 the traversal store exactly as `graphy walk` does.
@@ -15,10 +18,12 @@ from __future__ import annotations
 import io
 import json
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
 from graphy import __version__, doors, traversal
 from graphy import federated_store as fstore
+from graphy.tenant import TenantError
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 SERVER_INFO = {"name": "graphy", "version": __version__}      # the package's own, never a second copy (graphyos #43)
@@ -74,9 +79,46 @@ class ToolError(RuntimeError):
 class Doors:
     """The seven tools over one opened store."""
 
-    def __init__(self, store, tenant, tenant_id: str):
+    def __init__(self, store, tenant, tenant_id: str, roster: list[str], on_stale: str = "refuse",
+                 descriptor: str | Path | None = None):
         self.store, self.tenant, self.tenant_id = store, tenant, tenant_id
+        self.roster, self.on_stale = list(roster), on_stale
+        self.descriptor = Path(descriptor) if descriptor is not None else None
         self.generation = store.generation()
+        self._fresh_at: tuple | None = None        # the input signature the served store was opened under
+
+    def _assert_fresh(self, which: str) -> None:
+        """One contract, two faces (graphyos #97): what a fresh CLI invocation would open now, this call
+        answers from. While every input's stat — the shards, the index, the registry, the store file, the
+        descriptor — is what it was when the served store was opened, the call is served as is. When any
+        moved, the server does exactly what `graphy <verb> --tenant` does and nothing less: the descriptor
+        re-read, the roster derived, `open_for` on a fresh connection (which refuses STALE in the CLI's
+        words, or warns), the old store closed once the new one is open. Never a check on a held store —
+        round 1 found `graphy build` at the store's own path (the refusal's own advice, and `shell
+        install`'s re-mint) leaving a held handle on the unlinked file, refusing forever; and a roster
+        narrowed in the descriptor in place never followed. A refusal leaves the server as it was and the
+        next call tries again (the signature is recorded only on a successful open). A read, never a write."""
+        from graphy.cli import _load_tenant, _roster
+        if self._fresh_at is not None and self._signature(self.store.path, self.roster, self.tenant) == self._fresh_at:
+            return
+        try:
+            tenant = _load_tenant(str(self.descriptor)) if self.descriptor is not None else self.tenant
+            roster = _roster(tenant) if self.descriptor is not None else self.roster
+            path = fstore.store_path_for(roster, tenant=tenant)
+            sig = self._signature(path, roster, tenant)           # before the open: a write after it moves the next call
+            store = fstore.open_for(roster, tenant=tenant, tenant_id=self.tenant_id, on_stale=self.on_stale)
+        except (fstore.StoreError, TenantError, AttributeError, TypeError, KeyError, OSError) as exc:
+            raise ToolError(fstore.refused(which.upper(), exc)) from exc   # the CLI's catch set, its line
+        was = self.generation
+        self.store.close()
+        self.store, self.tenant, self.roster, self.generation = store, tenant, roster, store.generation()
+        self._fresh_at = sig
+        if self.generation != was:
+            print(f"graphy mcp: {self.descriptor or 'the tenant'} now serves {tenant.data_home} — reopened on "
+                  f"generation {self.generation} (was {was})", file=sys.stderr)
+
+    def _signature(self, store_path, roster: list[str], tenant) -> tuple:
+        return fstore.input_signature(store_path, roster, tenant=tenant, descriptor=self.descriptor)
 
     def close(self) -> None:
         """The server's one store, released when the server stops: a long-lived process that kept
@@ -196,6 +238,7 @@ class Doors:
         fn: Callable[..., str] | None = {t["name"]: getattr(self, t["name"]) for t in TOOLS}.get(name)
         if fn is None:
             raise ToolError(f"unknown tool {name!r}; the tools are {', '.join(t['name'] for t in TOOLS)}")
+        self._assert_fresh(name)
         try:
             return fn(**(arguments or {}))
         except TypeError as exc:
@@ -270,6 +313,9 @@ def serve(tools: Doors, inp: io.TextIOBase | None = None, out: io.TextIOBase | N
         tools.close()                      # the server's store lives exactly as long as its input (graphyos #124)
 
 
-def open_tools(tenant, tenant_id: str, roster: list[str], on_stale: str = "refuse") -> Doors:
+def open_tools(tenant, tenant_id: str, roster: list[str], on_stale: str = "refuse",
+               descriptor: str | Path | None = None) -> Doors:
+    """The server's doors over the store `open_for` accepts now. `descriptor` is the file the tenant was
+    loaded from; given, every tool call follows it (a landing renames it onto a new generation)."""
     store = fstore.open_for(roster, tenant=tenant, tenant_id=tenant_id, on_stale=on_stale)
-    return Doors(store, tenant, tenant_id)
+    return Doors(store, tenant, tenant_id, roster, on_stale=on_stale, descriptor=descriptor)

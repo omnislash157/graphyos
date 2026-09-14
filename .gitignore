@@ -41,4 +41,5 @@ adoption.json
 
 # the gallery — a build product (gallery.sh)
 gallery/
+.claude/worktrees/
 staging/

@@ -6,7 +6,7 @@
 `cli` is every verb, one handler each, refusing by name before it reads anything; `shell` bolts the hooks and the gate onto an eaten repo. The walk crowns `cli` over the whole package — every other unit is its foundation — which is what a thin CLI over a library should look like.
 
 <!-- graphy:arm CLI generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=5577b094d4cc145b cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:98870fc304846c389b46eff15593556c74844d21fd22811a51d7051834f48c8f -->
+     store=6168578d3cf543b9 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:98870fc304846c389b46eff15593556c74844d21fd22811a51d7051834f48c8f -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.

@@ -271,12 +271,10 @@ def _cmd_walk(args: argparse.Namespace) -> int:
         store = fstore.open_for(substrates, tenant=tenant, tenant_id=args.tenant_id,
                                 on_stale=args.on_stale)
     except fstore.StoreError as exc:
-        print(_flatten(f"WALK REFUSED: {exc} — rebuild the store with `graphy build`"),
-              file=sys.stderr)
+        print(fstore.refused('WALK', exc), file=sys.stderr)
         return 2
     except (AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"WALK REFUSED: {exc} — rebuild the store with `graphy build`"),
-              file=sys.stderr)
+        print(fstore.refused('WALK', exc), file=sys.stderr)
         return 2
     with store:
         try:
@@ -325,7 +323,7 @@ def _cmd_bridge(args: argparse.Namespace) -> int:
             print(f"BRIDGE REFUSED: {exc}", file=sys.stderr)
             return 2
         except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-            print(_flatten(f"BRIDGE REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+            print(fstore.refused('BRIDGE', exc), file=sys.stderr)
             return 2
         counted = [bridge_lane.Side(s.tenant_id, s.tenant, traversal.Counting(s.store)) for s in sides]
         res = bridge_lane.cross(counted, list(args.join), args.seed, args.target,
@@ -372,7 +370,7 @@ def _cmd_arms(args: argparse.Namespace) -> int:
     try:
         store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"ARMS REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        print(fstore.refused('ARMS', exc), file=sys.stderr)
         return 2
     with store:
         tenant_dir = args.tenant_dir or f"tenants/{Path(tenant.root).name}"
@@ -462,7 +460,7 @@ def _cmd_draw(args: argparse.Namespace) -> int:
     try:
         store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"DRAW REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        print(fstore.refused('DRAW', exc), file=sys.stderr)
         return 2
     with store:
         counted = traversal.Counting(store)
@@ -597,7 +595,7 @@ def _cmd_door(args: argparse.Namespace) -> int:
         store = fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id,
                                 on_stale=args.on_stale)
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"{verb} REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        print(fstore.refused(verb, exc), file=sys.stderr)
         return 2
     with store:
         counted = traversal.Counting(store)
@@ -699,7 +697,7 @@ def _cmd_pillars(args: argparse.Namespace) -> int:
     try:
         store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"PILLARS REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        print(fstore.refused('PILLARS', exc), file=sys.stderr)
         return 2
     with store:
         try:
@@ -838,9 +836,10 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         print(f"MCP REFUSED: {exc}", file=sys.stderr)
         return 2
     try:
-        tools = mcp_server.open_tools(tenant, args.tenant_id, _roster(tenant), on_stale=args.on_stale)
+        tools = mcp_server.open_tools(tenant, args.tenant_id, _roster(tenant), on_stale=args.on_stale,
+                                      descriptor=args.tenant)   # followed per call: a landing renames it (graphyos #97)
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"MCP REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        print(fstore.refused('MCP', exc), file=sys.stderr)
         return 2
     print(f"graphy mcp: serving tenant {args.tenant_id!r} generation {tools.generation} on stdio "
           f"({', '.join(t['name'] for t in mcp_server.TOOLS)})", file=sys.stderr)
@@ -1329,7 +1328,7 @@ def _cmd_timeline(args: argparse.Namespace) -> int:
     try:
         store = fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
     except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
-        print(_flatten(f"HISTORY REFUSED: {exc} — rebuild the store with `graphy build`"), file=sys.stderr)
+        print(fstore.refused('HISTORY', exc), file=sys.stderr)
         return 2
     with store:
         from graphy import timeline as timeline_lane          # after every refusal: lightning says so on stderr when rg is absent

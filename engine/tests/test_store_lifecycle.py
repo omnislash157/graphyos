@@ -126,6 +126,28 @@ def test_a_verb_leaves_no_store_open_when_the_library_doors_return(eaten, tracke
     _assert_all_closed(tracked, "mcp.serve")
 
 
+def test_the_mcp_server_closes_the_store_it_reopened_from(tmp_path, tracked):
+    """graphyos #97: the server reopens on what the CLI would open when an input moved; the store it
+    served before is closed the moment the new one is open — one handle at a time, and none after close."""
+    from graphy import mcp
+    repo = _git_repo(tmp_path)
+    eat = ["eat", str(repo), "--package", "core", "--site-packages", str(repo)]
+    assert cli.main(eat) == 0
+    desc = repo / ".graphy" / "tenant.json"
+    tenant = cli._load_tenant(str(desc))
+    tools = mcp.open_tools(tenant, "core", cli._roster(tenant), descriptor=desc)
+    old = tools.store
+    (repo / "core" / "later.py").write_text("def later():\n    return 2\n", encoding="utf-8")
+    assert cli.main(eat) == 0
+    del tracked[:]
+    assert "core.later" in tools.call("hunt", {"symbol": "later"})
+    assert tools.store is not old and _closed(old._db), "the store served before the reopen is still open"
+    held = [c for c in tracked if not _closed(c)]
+    assert len(held) == 1, f"{len(held)} connection(s) held after the reopen; the new store alone is expected"
+    tools.close()
+    _assert_all_closed(tracked, "mcp reopen then close")
+
+
 def _stale(repo: Path) -> None:
     """Move the served shard past the store: one more node in nodes.json, the digest no longer matches."""
     nodes_path = cli.served_data_home(repo / ".graphy" / "tenant.json") / "core_graph" / "nodes.json"

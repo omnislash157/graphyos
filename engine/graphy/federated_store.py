@@ -327,6 +327,7 @@ class SQLiteStore:
         p = Path(db_path)
         if not p.is_file():
             raise StoreError(f"no compiled store at {p} — build it with `compile_store`")
+        self.path = p                              # what a freshness check names and stats (graphyos #97)
         self._db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
         # A store the constructor refuses is a store nobody holds: every raise below — no generation row,
         # a foreign format, no digest — is the advertised `recompile`, which on Windows cannot replace a
@@ -783,36 +784,79 @@ def open_for(substrates: list[str], *, tenant: Tenant | None = None,
     # traceback, and the recompile every refusal below advertises could not replace the file on
     # Windows (graphyos #124; round 1 found the digest's own refusal outside the first guard).
     try:
-
-        live_input_digest = _compute_input_digest(substrates, tenant=tenant)
-        if live_input_digest == store._input_digest:
-            return store
-
-        try:
-            live_gen = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id).generation()
-        except (OSError, ValueError) as exc:
-            raise StoreError(
-                f"inputs for roster {sorted(substrates)} changed AND the live shards cannot "
-                f"be materialized to compare generations ({type(exc).__name__}: {exc}) — "
-                f"refusing to serve") from exc
-        served_gen = store.generation()
-        if live_gen == served_gen:
-            return store
-
-        if on_stale == "warn":
-            print(f"graphy.federated_store: store for {sorted(substrates)} is STALE — serving generation "
-                  f"{served_gen} while the live shards digest to {live_gen}.\n"
-                  f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}",
-                  file=sys.stderr)
-            return store
-        raise StoreError(
-            f"compiled store for roster {sorted(substrates)} at {p} is STALE: it serves "
-            f"generation {served_gen} but the live shards digest to {live_gen}.\n"
-            f"    A query never rebuilds one (walk-kernel Rung 4: no query-time writes).\n"
-            f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}")
+        check_fresh(store, substrates, tenant=tenant, tenant_id=tenant_id, on_stale=on_stale)
+        return store
     except BaseException:
         store.close()
         raise
+
+
+def check_fresh(store: SQLiteStore, substrates: list[str], *, tenant: Tenant, tenant_id: str,
+                on_stale: str = "refuse") -> None:
+    """The one freshness contract, on every face: the live inputs digested against the row the store
+    was compiled with, and when they moved, the live generation against the served one. Returns on a
+    fresh store; on a stale one refuses (`StoreError`, the words every verb prints) or, under `warn`,
+    says so on stderr and returns. `open_for` runs it once per CLI invocation; the MCP server runs it
+    per tool call, so a process that outlives a rebuild refuses the way a fresh process would instead
+    of answering confidently from the generation it booted on (graphyos #97). Never writes."""
+    p = store.path
+    live_input_digest = _compute_input_digest(substrates, tenant=tenant)
+    if live_input_digest == store._input_digest:
+        return
+
+    try:
+        live_gen = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id).generation()
+    except (OSError, ValueError) as exc:
+        raise StoreError(
+            f"inputs for roster {sorted(substrates)} changed AND the live shards cannot "
+            f"be materialized to compare generations ({type(exc).__name__}: {exc}) — "
+            f"refusing to serve") from exc
+    served_gen = store.generation()
+    if live_gen == served_gen:
+        return
+
+    if on_stale == "warn":
+        print(f"graphy.federated_store: store for {sorted(substrates)} is STALE — serving generation "
+              f"{served_gen} while the live shards digest to {live_gen}.\n"
+              f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}",
+              file=sys.stderr)
+        return
+    raise StoreError(
+        f"compiled store for roster {sorted(substrates)} at {p} is STALE: it serves "
+        f"generation {served_gen} but the live shards digest to {live_gen}.\n"
+        f"    A query never rebuilds one (walk-kernel Rung 4: no query-time writes).\n"
+        f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}")
+
+
+def refused(verb: str, exc: BaseException) -> str:
+    """The one line every face prints when the store it would open refuses — the CLI verbs on stderr,
+    the MCP server as the tool's error text (graphyos #97: one contract, two faces, one copy of the
+    words). Flattened to one line: a refusal names its rebuild and a client reads it whole."""
+    import re
+    return re.sub(r"[ \t]*\r?\n[ \t]*", " ", f"{verb} REFUSED: {exc} — rebuild the store with `graphy build`")
+
+
+def input_signature(store_path: str | Path, substrates: list[str], *, tenant: Tenant,
+                    descriptor: str | Path | None = None) -> tuple:
+    """The cheap stat in front of `check_fresh` for a long-lived reader: (size, mtime_ns, inode) of every
+    file the digest reads — each shard's inputs, the scheme index, the override registry — of the
+    store file itself, and of the tenant descriptor when the reader was booted from one (a landing
+    renames it onto a new generation). Equal signatures skip the hash; a moved one runs it. Never a
+    verdict: an absent file is a marker here and the refusal is `check_fresh`'s, in its own words."""
+    data_home = Path(tenant.data_home)
+    paths = [Path(store_path), data_home / _INDEX_INPUT_KEY, Path(tenant.join_keys)]
+    if descriptor is not None:
+        paths.append(Path(descriptor))
+    for s in sorted(substrates):
+        paths.extend(data_home / f"{s}_graph" / name for name in SHARD_INPUTS)
+    sig = []
+    for path in paths:
+        try:
+            st = os.stat(path)                     # follows a symlinked shard the way the digest's read does
+            sig.append((str(path), st.st_size, st.st_mtime_ns, st.st_ino))
+        except OSError:
+            sig.append((str(path), None))
+    return tuple(sig)
 
 
 def _repair_hint(substrates, tenant, tenant_id: str, p) -> str:
