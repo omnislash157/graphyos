@@ -483,6 +483,7 @@ def run_job(workflow: Path, job: str, *, log=print) -> list[tuple[str, int, floa
     subprocess.run(["git", "-c", "user.name=ci", "-c", "user.email=ci@local", "commit", "-qm", "ci"], cwd=tree, check=True)
     env = {k: v for k, v in os.environ.items() if k not in ("VIRTUAL_ENV", "PYTHONPATH")}
     out: list[tuple[str, int, float]] = []
+    skipped = 0
     try:
         for i, step in enumerate(steps, 1):
             name = step.get("name") or step.get("uses") or f"step {i}"
@@ -497,6 +498,11 @@ def run_job(workflow: Path, job: str, *, log=print) -> list[tuple[str, int, floa
                 env["PATH"] = os.pathsep.join([str(venv / "bin"), "/usr/local/bin", "/usr/bin", "/bin"])
             elif uses:
                 log(f"  SKIPPED  {name}  (a `uses:` this runner does not emulate)")
+                skipped += 1
+                continue
+            elif "${{" in str(step.get("run", "")):
+                log(f"  SKIPPED  {name}  (reads a `${{{{ }}}}` context — a pull request, a token — this runner does not have)")
+                skipped += 1
                 continue
             else:
                 rc = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", str(step["run"])], cwd=tree, env=env,
@@ -507,6 +513,7 @@ def run_job(workflow: Path, job: str, *, log=print) -> list[tuple[str, int, floa
             out.append((name, rc, secs))
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    run_job.skipped = skipped
     return out
 
 
@@ -518,7 +525,8 @@ def main(argv: list[str]) -> int:
         if red:
             print(f"CI LOCAL RED: {len(red)} of {len(results)} step(s) in {wf.name}:{argv[3]} — " + " · ".join(red))
             return 1
-        print(f"CI LOCAL OK: {len(results)} step(s) in {wf.name}:{argv[3]}, every one run")
+        print(f"CI LOCAL OK: {len(results)} step(s) in {wf.name}:{argv[3]}, every one run"
+              + (f"; {run_job.skipped} skipped by name" if getattr(run_job, "skipped", 0) else ""))
         return 0
     d = Path(argv[1]).resolve() if len(argv) > 1 else DEFAULT_DIR
     red, notes = check_dir(d)

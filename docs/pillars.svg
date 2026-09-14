@@ -93,19 +93,19 @@
       <path d="M 838,117 L 869.5,117 L 869.5,61 L 880,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
       <g class="node" data-id="CLI">
         <rect x="40" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="106.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (140→ ·→13)</text>
+        <text x="106.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (148→ ·→13)</text>
       </g>
       <g class="node" data-id="CUT">
         <rect x="187" y="124" width="126" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="250" y="149.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CUT (24→ ·→34)</text>
+        <text x="250" y="149.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CUT (26→ ·→34)</text>
       </g>
       <g class="node" data-id="DOORS">
         <rect x="341" y="68" width="140" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="411" y="93.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (44→ ·→36)</text>
+        <text x="411" y="93.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">DOORS (55→ ·→40)</text>
       </g>
       <g class="node" data-id="EDGE">
         <rect x="509" y="96" width="133" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="575.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (24→ ·→25)</text>
+        <text x="575.5" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">EDGE (24→ ·→26)</text>
       </g>
       <g class="node" data-id="MEMORY">
         <rect x="684" y="152" width="133" height="42" class="card" rx="3" stroke-width="1"/>
@@ -113,10 +113,10 @@
       </g>
       <g class="node" data-id="PRODUCE">
         <rect x="684" y="96" width="154" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="761" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (16→ ·→58)</text>
+        <text x="761" y="121.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">PRODUCE (20→ ·→58)</text>
       </g>
       <g class="node" data-id="SEAM">
         <rect x="880" y="40" width="140" height="42" class="card" rx="3" stroke-width="1"/>
-        <text x="950" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (26→ ·→101)</text>
+        <text x="950" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">SEAM (26→ ·→121)</text>
       </g>
 </svg>

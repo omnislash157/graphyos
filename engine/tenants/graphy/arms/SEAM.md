@@ -6,15 +6,15 @@
 `tenant` is the declared identity everything refuses without; `converge` resolves text labels through scope and counts the wormholes; `federated_store` compiles and reads the sqlite store; `cross_substrate` loads and walks a set of shards; `journal` records born and died; `container` and `index_estate` are the parquet; `cartograph` runs declared build lanes and measures freshness.
 
 <!-- graphy:arm SEAM generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=3060903e9150a9d6 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:8205dcc2cff84d54eff0bbd01ec88b6454ad3d9748f536e80b1453c754646a36 -->
+     store=70d2d3ba66002f87 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:f7670e55e8228e34c73ed97221a66fcb529fe0f7a4524efbf90066d66be3007b -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
 
 **`graphy._portable_flock`** — classes: `_NoFcntl` (1)
-**`graphy._shared`** — functions: `_ast_edge_salience` · `_shim_adj_for_activate` · `credibility` · `lift` · `nonneg_int` · `resolve_excludes` · `salience`
+**`graphy._shared`** — functions: `_ast_edge_salience` · `_shim_adj_for_activate` · `credibility` · `generation_name` · `generation_of` · `lift` · `nonneg_int` · `resolve_excludes` · `salience` · `source_sha`
 **`graphy.augment_registry`** — functions: `_entry_body` · `_entry_span` · `_load_descriptor` · `_load_predicate` · `_lock_path` · `_registry_path` · `collect_augment_stamps` · `declared_from_stamp` · `descriptor_digest` · `main` · `normalize_descriptor` · `observed_from_index` · `register` · `stamp_from_descriptor` · `verify_registration`
-**`graphy.cartograph`** — functions: `cartograph` · `cursor_drift` · `main` · `repo_cursor` · `repo_head_sha` · `repo_toplevel` · `resolve_graph` · `tenant_exclude` · `working_tree_dirt` · `write_graph`
+**`graphy.cartograph`** — functions: `_excluded` · `cartograph` · `cursor_drift` · `cursor_exclude` · `generation_base` · `main` · `repo_cursor` · `repo_head_sha` · `repo_toplevel` · `resolve_graph` · `tenant_exclude` · `working_tree_dirt` · `write_graph`
 **`graphy.container`** — classes: `ContainerError`; functions: `_attrs` · `_duckdb` · `_edge_rows` · `_node_rows` · `_write_parquet` · `_write_receipt` · `defer` · `emit` · `emit_all` · `emit_missing` · `estate` · `have_duckdb` · `node_forms` · `shard_digest` · `summarize` · `verify`
 **`graphy.converge`** — classes: `Ring` (8); functions: `_class_in_scope` · `_dotted_of_id` · `_label_edges` · `_qualify` · `_resolve_one` · `_standard_of` · `_through_package` · `converge` · `load_ring` · `resolve`
 **`graphy.cross_substrate`** — classes: `DocDeclarationError` · `Material` · `MeshSet` (1) · `MeshSetStats` · `PathResult` · `RosterError` · `Step`; functions: `_derive_source_root` · `_explanations_core` · `_hydrate` · `_index_rows` · `_load_literal_join_schemes` · `_load_scheme_owners` · `_print_buckets` · `_print_human` · `_print_material` · `_print_path` · `_scheme` · `_within` · `derive_doc_declaration` · `derive_roster` · `doc_list` · `doc_vocabulary` · `explanations` · `explanations_from_store` · `hydrate` · `hydrate_from_store` · `load_doc_declaration` · `load_set` · `load_standard` · `main` · `path_to` · `query_set`
@@ -38,6 +38,6 @@ python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus gr
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```
 
-Last walk: crown=`graphy://func/graphy.federated_store.open_for` dependents=93 → arms/SEAM.walk.txt
+Last walk: crown=`graphy://func/graphy.federated_store.open_for` dependents in graphy=21 → arms/SEAM.walk.txt
 
 <!-- /graphy:arm SEAM -->

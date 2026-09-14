@@ -136,9 +136,17 @@ def _joins_and_crowns(store, corpus: str, group_of: dict, records: dict) -> tupl
     return joins, crowns
 
 
-def _stamp_last_walks(store, crowns: dict[str, str], names) -> dict[str, dict]:
+def _stamp_last_walks(store, crowns: dict[str, str], names, corpus: str) -> dict[str, dict]:
     """One last-walk stamp per arm. A store without neighbours (the arms floor's mock)
-    stamps nothing, so the region stays the walk's inventory."""
+    stamps nothing, so the region stays the walk's inventory.
+
+    The count is the dependents the corpus itself owns. The whole blast also reaches the ring
+    (whatever the rendering interpreter happened to install) and the history lane (whatever the
+    sessions happened to discuss), so it was a property of the box and the archive, not of the code:
+    one commit read 73 here and 71 on the CI runner, and 86 then 87 after a session named the crown
+    (graphyos #90). A dependent the corpus owns cannot be reached through another lane (a ring
+    package never imports the corpus; a mention points into it, never out), so this count is the
+    commit's alone."""
     if not hasattr(store, "neighbours"):
         return {}
     from graphy.doors import DoorError, blast
@@ -150,10 +158,10 @@ def _stamp_last_walks(store, crowns: dict[str, str], names) -> dict[str, dict]:
         if crown:
             try:
                 b = blast(store, crown, max_depth=4)
-                dependents = max(0, len(b.reached) - 1)
+                dependents = sum(1 for r in b.reached.values() if r.hop > 0 and r.owner == corpus)
             except (DoorError, AttributeError, TypeError, KeyError):
                 pass
-        out[name] = {"store": gen, "crown": crown or "—", "dependents": dependents}
+        out[name] = {"store": gen, "crown": crown or "—", "dependents": dependents, "corpus": corpus}
     return out
 
 
@@ -194,7 +202,7 @@ def render_region(name: str, corpus: str, cut: Cut, inventory: dict, joins: list
     if last_walk:
         lines.append(
             f"Last walk: crown=`{last_walk['crown']}` "
-            f"dependents={last_walk['dependents']} → arms/{name}.walk.txt")
+            f"dependents in {last_walk.get('corpus', corpus)}={last_walk['dependents']} → arms/{name}.walk.txt")
         lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -204,7 +212,7 @@ def render_all(store, corpus: str, cut: Cut, *, tenant_dir: str, tenant_id: str)
         raise ArmsError("arms need a partition cut — a depth cut names no arm")
     inventory, group_of, records = _inventory(store, corpus, cut)
     joins, crowns = _joins_and_crowns(store, corpus, group_of, records)
-    last_walks = _stamp_last_walks(store, crowns, cut.groups)
+    last_walks = _stamp_last_walks(store, crowns, cut.groups, corpus)
     gen = store.generation()
     cut_sha = f"sha256:{cut.sha256}" if cut.sha256 else "unpinned"
     out = {}

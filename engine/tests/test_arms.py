@@ -135,3 +135,36 @@ def test_RED_cli_refuses_without_its_four_flags(tmp_path, capsys):
     assert rc == 2 and "ARMS REFUSED" in capsys.readouterr().err
     rc = cli.main(["arms", "--tenant", str(tmp_path / "nope.json"), "--tenant-id", "x"])
     assert rc == 2 and "--partition is required" in capsys.readouterr().err
+
+
+def test_RED_the_last_walk_counts_what_the_commit_owns_never_the_box_or_the_archive(monkeypatch):
+    """graphyos #90: the stamp counted every dependent a blast reached — the ring lanes the rendering
+    interpreter happened to install (73 here, 71 on the CI runner, one commit) and the history lane's
+    mentions (86, then 87 after a session named the crown) — so `arms --verify` read ARMS DRIFT with no
+    code moved. Two stores that differ only in their ring and their history stamp the same line."""
+    from graphy import arms, doors
+
+    class Store:
+        def neighbours(self, node):
+            return []
+
+        def generation(self):
+            return "g"
+
+    def reach(node, hop, owner):
+        return doors.Reach(node=node, hop=hop, via=None if hop == 0 else "crown", relation=None if hop == 0 else "calls", owner=owner)
+
+    def blast_with(extra):
+        def fake(store, crown, max_depth=4):
+            reached = {"crown": reach("crown", 0, "graphy"), "a": reach("a", 1, "graphy"), "b": reach("b", 2, "graphy")}
+            reached.update({f"x{i}": reach(f"x{i}", 1, owner) for i, owner in enumerate(extra)})
+            return type("B", (), {"reached": reached})()
+        return fake
+
+    stamps = []
+    for extra in ([], ["pydantic", "pydantic", "history", "tests"], ["history"] * 9):
+        monkeypatch.setattr(doors, "blast", blast_with(extra))
+        stamps.append(arms._stamp_last_walks(Store(), {"SEAM": "crown"}, ["SEAM"], "graphy")["SEAM"])
+    assert stamps[0] == stamps[1] == stamps[2] and stamps[0]["dependents"] == 2
+    line = arms.render_region("SEAM", "graphy", None, {}, [], "crown", {}, tenant_dir="T", tenant_id="graphy", last_walk=stamps[0])
+    assert "dependents in graphy=2" in line

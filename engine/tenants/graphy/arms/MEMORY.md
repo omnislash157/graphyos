@@ -6,7 +6,7 @@
 `session_tail` turns a transcript into its semantic tail; `reseed` captures and injects it around a clear; `lightning` is the ripgrep-anchored search over the archive. The walk names this the floor no arm consumes — it runs beside the engine, not under the CLI.
 
 <!-- graphy:arm MEMORY generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=3060903e9150a9d6 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:c5c6efae2387bfbd85df862860ae5af591457a21c78abd2722e8cd78c9074b24 -->
+     store=70d2d3ba66002f87 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:0f5d97afe1aaf9d84d7b1491fad347557390fb53e4b7f5ba596a7ab942553b6e -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -49,6 +49,6 @@ python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus gr
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```
 
-Last walk: crown=`graphy://class/graphy.lightning.models.CodeBlock` dependents=15 → arms/MEMORY.walk.txt
+Last walk: crown=`graphy://class/graphy.lightning.models.CodeBlock` dependents in graphy=15 → arms/MEMORY.walk.txt
 
 <!-- /graphy:arm MEMORY -->
