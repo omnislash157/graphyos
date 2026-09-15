@@ -6503,3 +6503,58 @@ Measured on the runner, 2026-09-15, without a Windows box: a branch of this repo
 | the done block | `pip index versions graphyos \| head -1` → the new version listed |
 | the cut | `bash release.sh \| tail -1` |
 | the gate | `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 146 · A HOOK RUNS ON THE HOST IT WAS WRITTEN FOR — `shell install` wrote every hook through text mode, so on Windows each `.sh` shebang read `bash\r` and failed even where bash exists, and it wired only bash hooks, so on a box with no bash the memory lane it reported installed never ran; every file the installer writes now carries the line ending it means (LF, and CRLF for a `.cmd`), each `.sh` hook has a `.cmd` twin, Codex and Cursor are wired to the twins on Windows, Claude Code keeps its bash hooks through Git Bash and its wiring refuses by name on a Windows box with none, and a floor test runs each harness's wiring through the shell that harness uses and reads the tail it captured back (2026-09-15 · graphyos issue 93)
+
+Measured by the first client on a Windows Server box (the issue body), and its second cause read from the source in the issue's comment: `install.py`'s writes passed no `newline=`. How Claude Code runs a hook on Windows is documented (code.claude.com/docs/en/hooks-guide: Git Bash when installed, PowerShell otherwise); which shell Codex and Cursor use there is not, so their wiring is an unquoted `.cmd` path, the form cmd.exe and PowerShell both run.
+
+- **The bytes.** One writer, `install._write`, for every file the installer writes: `newline="\n"`, and `"\r\n"` for the `.cmd` twins.
+- **The interpreter.** `hooks/*.cmd` beside `hooks/*.sh`, the same work with no bash, written on Windows. `install.git_bash` finds the bash a harness would run: `bash` on PATH unless it is WSL's `System32` stub, else Git Bash beside `git`. On Windows, `--harness claude` with no Git Bash raises `ShellError` before a byte is written and names Git for Windows, WSL, and the Codex and Cursor wiring. `_host_command` rewrites a Codex or Cursor command to its `.cmd` twin there.
+- **The floor.** `test_shell`: the bytes on disk (no CR in any LF file, the shebang `#!/usr/bin/env bash\n`, CRLF throughout a `.cmd`); the refusal and the `.cmd` wiring with Git Bash made absent; and each harness's wiring run as that harness runs it (`sh -c` off Windows; Git Bash for Claude Code and cmd.exe for the twins on Windows) with the harness payload on stdin — the end hook captures the fixture transcript into `reseed_tail.md`, and the start hook prints its session id back.
+
+Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graphyos --log-failed | grep -oE 'FAILED tests[^ ]*' | sort -u`):
+
+| run | branch | result |
+|---|---|---|
+| 34975928381 | `win-93-red`: this diff with `_write` passing no `newline=`, the writer as it was | red on windows-latest: `test_RED_every_byte_the_install_writes_is_the_byte_it_means` → `before_edit.sh carries a CR` (the issue's own defect) and a `.cmd` not CRLF; red on both Linux floors on the `.cmd` bytes — the byte test is load-bearing on both hosts |
+| 34975925412 | `win-93`, first cut | red on windows-latest in one test: the Claude wiring test handed its command to Git Bash as an argv, which Windows re-quotes (`unexpected EOF while looking for matching '"'`) — the test's harness, not the hook; the gate red on `BURDEN RED graphy/shell/install.py: host git-scm.com is not in burden.json` — the refusal named a download URL |
+| 34976261092 | `win-93`, the command as a script file and no URL | green on every job, the round 1 cut; no `test_shell` skip in the Windows floor step (`gh run view 34976261092 --repo omnislash157/graphyos --log \| grep '^store-windows' \| grep 'SKIPPED \[' \| grep -c test_shell` → `0`) |
+| 34977333501 | `win-93`, review round 1's fixes | green on every job; the wiring test runs each harness from a plain path and from `josh.shaw/First Last`, Claude Code's with the backslash `CLAUDE_PROJECT_DIR` it sets; no `test_shell` skip in the Windows floor step (the same `grep -c test_shell` → `0`) |
+
+| check | result |
+|---|---|
+| the done lines | hooks the harness executes on a host with no bash, or a refusal by name: the `.cmd` wiring and the Claude refusal in `test_shell` · hook files LF regardless of host: the byte test, red under the mutant · the lifecycle events fire on Windows and the tail is captured and injected: the wiring test on windows-latest, run 34976261092 · a floor test on the bytes written: the same byte test |
+| the floor | `cd engine && ../.venv/bin/python -m pytest -q` → no failure |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK` with 0 findings |
+| the gate | `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+| review round 1 | REVISE — three blockers, all reproduced: `_host_command` rewrote the first `.sh` anywhere in the command, so a Windows repo under a folder like `josh.shaw` got wiring to a file that does not exist; the `.cmd` commands were unquoted, so a repo under `C:/Users/First Last` split at the space in cmd.exe and PowerShell alike; and the Windows proof of Claude Code's capture set `CLAUDE_PROJECT_DIR` to the forward-slash spelling, where Claude Code sets the backslash one (BLOCK TWO ①). Fixed: the rewrite matches `"<path>/.graphy/hooks/<name>.sh"[ args]` whole and refuses a command it did not write; every Codex and Cursor command quotes its path on every host (the cursor template too); an earlier install's `.sh` command is retired from the wiring on Windows rather than left failing beside the twin (round 1's non-blocking, taken); the wiring test runs from both paths with the harness's own `CLAUDE_PROJECT_DIR`, and cmd.exe gets one command line, never an argv. Non-blocking, named: `%` in a path is expanded by cmd.exe; `session_start.cmd` waits on a console when run by hand with no argument; install callers in `test_cli` pass no `os_name` and would refuse on a Windows box with no Git Bash |
+| production, linux | `specs/93.md`'s block: a clone of pallets/itsdangerous eaten and wired, two real `claude -p` sessions → `reseed_diag.log`: `inject ok source=startup … tail_session=<the first session>`; installing three times over 0.2.4's Cursor wiring → one entry per event; the Windows job on the landing tree, run 34984040468, `store-windows => success`; the production Windows seat's run is a fleet message |
+
+## 147 · THE MCP SERVER HOLDS NO STORE BETWEEN CALLS — a live `graphy mcp` held one sqlite connection for its life, so on Windows `graphy build`'s `os.replace` at the store's own path was refused while any server was alive; every tool call now opens what `graphy <verb> --tenant` opens, answers and closes, on an answer, a refusal or a fault (2026-09-15 · graphyos issue 134)
+
+- spec: `specs/134.md` · `python3 spec_lint.py specs/134.md` → `SPEC OK`
+
+| check | result |
+|---|---|
+| production, linux | `.venv/bin/python engine/tests/mcp_drive.py --graphy .venv/bin/graphy /tmp/p134/repo itsdangerous` → `build under the live server: exit 0` · `MCP DRIVE OK` |
+| production, windows | the Windows job on the landing tree runs the rebuild-under-a-live-server test the #134 deselect skipped: run 34984857074, `store-windows => success`; the production Windows seat's run is a fleet message |
+| red first | the two new lifecycle tests against HEAD's `mcp.py` → `2 failed` |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 148 · A TYPESCRIPT ALIAS IMPORT BINDS TO THE MODULE IT NAMES — `$lib/api.js` bound nothing, so a SvelteKit app's routes imported nothing; the TypeScript producer reads `compilerOptions.paths` by TypeScript's rules through an `extends` chain, names a missing target in the mint receipt, applies Kit's documented `$lib` default in a Kit project with no `$lib` entry, stores every alias path relative to the project, and keys receipt reuse on the alias map (2026-09-15 · graphyos issue 102)
+
+- spec: `specs/102.md` · `python3 spec_lint.py specs/102.md` → `SPEC OK`
+
+| check | result |
+|---|---|
+| red first, production | a fresh clone of sveltejs/realworld eaten on HEAD: `graphy blast api.get` → `dependents=0` |
+| production, linux | the same clone eaten on this tree: `graphy blast api.get --tenant /tmp/p102/rw/.graphy/tenant.json --tenant-id realworld_svelte_dev` → `dependents=7 own=7`, the route loaders by name |
+| the receipt | `PROVENANCE.json` `sources.aliases` → `jsconfig.json`, `$lib` → `src/lib`, `missing: jsconfig.json extends ./.svelte-kit/tsconfig.json: .svelte-kit/tsconfig.json does not exist` |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 149 · 0.2.6 IS PUBLISHED — 0.2.5 was cut before the Windows hooks (#93), the MCP server that holds no store (#134) and the TypeScript alias imports (#102); this box's installs pinned 0.2.4 and 0.2.3 from PyPI and ran none of it (2026-09-15 · graphyos issue 93)
+
+| check | result |
+|---|---|
+| the cut | `bash release.sh \| tail -1` → `RELEASE OK: graphyos 0.2.6 built and checked` |
+| published | `pip index versions graphyos \| head -1` → `graphyos (0.2.6)` |

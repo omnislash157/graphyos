@@ -99,11 +99,11 @@ jobs:
       # platform's truth or skips by name with its reason, and the engine's own seams behind them are fixed (`resolve_graph`
       # read a `\\?\`-prefixed link target as an escape; `discard_generations` removed a symlinked substrate, which
       # Windows' rmdir does). Every test runs here except those an open issue owns, each deselected by name with its
-      # issue: test_mcp's rebuild-after-refusal holds a store across calls (#134); test_measure's profile-dir test runs
+      # issue: test_measure's profile-dir test runs
       # the profiled subprocess, which imports `resource` (#88); test_rebuild's pruned-lane test pins a separator #88
       # re-spells. A red here is a red on the platform: the deny list shrinks, never grows, and a new red files its issue first.
       - name: "the floor on this platform — every test but those an open issue owns, each deselected by name (graphyos #127)"
-        run: cd engine && pytest -q -rfs --basetemp "$env:RUNNER_TEMP\pt" --deselect tests/test_mcp.py::test_mcp_answers_again_after_the_build_its_own_refusal_prescribes --deselect tests/test_measure.py::test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss --deselect tests/test_rebuild.py::test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane
+        run: cd engine && pytest -q -rfs --basetemp "$env:RUNNER_TEMP\pt" --deselect tests/test_measure.py::test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss --deselect tests/test_rebuild.py::test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane
 
   gate:
     runs-on: ubuntu-latest

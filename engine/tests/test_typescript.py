@@ -361,3 +361,108 @@ def test_GREEN_a_function_referenced_as_a_value_mints_a_references_edge_in_types
     }), refs
     assert ("tsapp.app.k", "helper.x", 28) not in refs and ("tsapp.app.k", "helper", 28) not in refs
     validate_graph(nodes, edges, ts.TYPESCRIPT_AST_VOCABULARY)
+
+
+# graphyos #102 — an alias import binds to the module it names.
+
+def _alias_project(root: Path, config: str | None, *, kit: bool = False) -> Path:
+    """A project: package.json, an optional tsconfig/jsconfig body, `src/lib/api.ts` exporting `get`, and a route
+    importing it through `$lib`. Returns the corpus root, `src`."""
+    root.mkdir(parents=True)
+    deps = {"@sveltejs/kit": "^2"} if kit else {}
+    (root / "package.json").write_text(json.dumps({"name": "aliasapp", "devDependencies": deps}), encoding="utf-8")
+    if kit:
+        (root / "svelte.config.js").write_text("export default { kit: {} };\n", encoding="utf-8")
+    if config is not None:
+        (root / "tsconfig.json").write_text(config, encoding="utf-8")
+    (root / "src" / "lib").mkdir(parents=True)
+    (root / "src" / "routes").mkdir(parents=True)
+    (root / "src" / "lib" / "api.ts").write_text("export function get(path: string) {\n  return path;\n}\n", encoding="utf-8")
+    (root / "src" / "routes" / "page.ts").write_text(
+        "import * as api from '$lib/api.js';\nimport { get } from '$library/api';\n"
+        "export function load() {\n  return api.get('/x');\n}\n", encoding="utf-8")
+    return root / "src"
+
+
+API = "aliasapp://module/aliasapp.lib.api"
+
+
+def _bound(corpus: Path) -> tuple[list[dict], dict]:
+    """The route's import edges into `lib/api`, and the receipt. A bound import names its module as `dst`."""
+    _nodes, edges, receipt = ts.mint_records(corpus, "aliasapp")
+    return [e for e in edges if e.get("edge_type") == "imports" and e.get("src") == "aliasapp://module/aliasapp.routes.page"
+            and e.get("dst") == API], receipt
+
+
+PATHS_CONFIG = """{
+  // comments and a trailing comma, as tsconfig allows
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "$lib/*": ["src/lib/*"], "$lib": ["src/lib"], },
+  },
+}
+"""
+
+
+def test_GREEN_an_alias_binds_through_compilerOptions_paths(tmp_path):
+    """`import * as api from '$lib/api.js'` bound nothing: `_module_for_specifier` followed only `./` and package
+    names. `compilerOptions.paths` binds it by TypeScript's rules, and the receipt names the config it read."""
+    corpus = _alias_project(tmp_path / "app", PATHS_CONFIG)
+    bound, receipt = _bound(corpus)
+    assert [e.get("alias") for e in bound] == ["api"], bound
+    assert receipt["aliases"]["config"] == "tsconfig.json" and ["$lib/*", ["src/lib/*"]] in receipt["aliases"]["patterns"]
+
+
+def test_RED_an_alias_near_miss_never_binds(tmp_path):
+    """A key binds the whole specifier: `$lib/*` never binds `$library/api`, and `$lib` never binds `$lib2`."""
+    corpus = _alias_project(tmp_path / "app", PATHS_CONFIG)
+    (corpus / "library").mkdir()                            # what `$library/api` names if `$lib` matched as a bare prefix
+    (corpus / "library" / "api.ts").write_text("export function get() {}\n", encoding="utf-8")
+    _nodes, edges, _ = ts.mint_records(corpus, "aliasapp")
+    near = [e for e in edges if e.get("edge_type") == "imports" and e.get("dst") == "aliasapp://module/aliasapp.library.api"]
+    assert near == [], "`$library/api` bound through `$lib`: " + repr(near)
+    assert ts._alias_targets("$lib2", {"patterns": [["$lib", ["src/lib"]]], "project": tmp_path}) == []
+
+
+def test_RED_an_extends_target_that_is_missing_is_named_and_never_guessed(tmp_path):
+    """SvelteKit's jsconfig extends `.svelte-kit/tsconfig.json`, which exists only after `svelte-kit sync`: the
+    chain is followed, the absent target named in the receipt, and nothing bound from it."""
+    corpus = _alias_project(tmp_path / "app", '{ "extends": "./.svelte-kit/tsconfig.json" }')
+    bound, receipt = _bound(corpus)
+    assert bound == [], bound
+    assert receipt["aliases"]["missing"] == ["tsconfig.json extends ./.svelte-kit/tsconfig.json: .svelte-kit/tsconfig.json does not exist"]
+    sync = tmp_path / "app" / ".svelte-kit"
+    sync.mkdir()
+    (sync / "tsconfig.json").write_text('{ "compilerOptions": { "paths": { "$lib/*": ["../src/lib/*"] } } }', encoding="utf-8")
+    bound, receipt = _bound(corpus)
+    assert len(bound) == 1 and receipt["aliases"]["missing"] == []
+
+
+def test_GREEN_the_sveltekit_default_binds_lib_in_a_kit_project_with_no_lib_entry(tmp_path):
+    """Kit's documented `$lib` → `src/lib`, in a project whose package.json names @sveltejs/kit and whose config
+    declares no `$lib`; a project that is not Kit gets no such alias."""
+    corpus = _alias_project(tmp_path / "kit", '{ "extends": "./.svelte-kit/tsconfig.json" }', kit=True)
+    assert len(_bound(corpus)[0]) == 1
+    plain = _alias_project(tmp_path / "plain", None)
+    assert _bound(plain)[0] == []
+
+
+def test_RED_an_alias_config_edit_re_resolves_on_the_next_mint(tmp_path):
+    """The reuse key carries the alias map: a receipt from before an edit to `paths` is never spliced, so the
+    import resolves by the config that stands (class: a cache keyed on less than its inputs)."""
+    corpus = _alias_project(tmp_path / "app", PATHS_CONFIG)
+    _n, _e, first = ts.mint_records(corpus, "aliasapp")
+    (tmp_path / "app" / "tsconfig.json").write_text('{ "compilerOptions": { "paths": { "$lib/*": ["src/other/*"] } } }', encoding="utf-8")
+    spliced = []
+    _n, edges, second = ts.mint_records(corpus, "aliasapp", reuse=lambda pin, rel, sha: (spliced.append(rel), None)[1] if pin != first["pin"] else ("x", "y"))
+    assert second["pin"] != first["pin"]
+    assert not any(e.get("edge_type") == "imports" and e.get("dst") == API for e in edges), "an import bound by the config before the edit"
+
+
+@pytest.mark.parametrize("where", ["First Last"])
+def test_GREEN_an_alias_binds_under_a_spaced_path(tmp_path, where):
+    """A project under a directory with a space binds the same, and the receipt names no absolute path."""
+    corpus = _alias_project(tmp_path / "josh.shaw" / where / "app", PATHS_CONFIG)
+    bound, receipt = _bound(corpus)
+    assert len(bound) == 1, bound
+    assert str(tmp_path) not in json.dumps(receipt["aliases"])

@@ -21,6 +21,8 @@ without it this producer refuses by name and the core is untouched.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Iterator
@@ -962,25 +964,154 @@ def _writes_in(node, src: bytes, shadow=frozenset()) -> Iterator[tuple[str, int]
         stack.extend((c, sh) for c in n.named_children)
 
 
-def _module_for_specifier(spec: str, file: Path, root: Path, package: str, modules: dict[str, str]) -> str | None:
-    """A relative specifier → the module id it names (``./x`` → x.ts | x/index.ts | x.tsx …);
-    a bare one → the package's module id (the scheme a slug can carry) or None."""
+# ── alias imports (graphyos #102): TypeScript's own `compilerOptions.paths`, and SvelteKit's documented `$lib` ──
+# A specifier like `$lib/api.js` is neither relative nor a package: it is bound by the alias the language declares
+# in tsconfig/jsconfig, read here by TypeScript's rules (exact key first, then the `*` pattern with the longest
+# prefix; targets relative to `baseUrl`, else to the config that declares `paths`; `extends` followed, a missing
+# target named). SvelteKit's `$lib` → `src/lib` is the framework's fixed default, applied only in a Kit project
+# whose config declares no `$lib`; `kit.alias` lives in JavaScript and is named unread, never evaluated.
+
+_JSON_STRING = re.compile(r'"(?:\\.|[^"\\])*"')
+
+
+def _jsonc(text: str) -> Any:
+    """tsconfig is JSON with comments and trailing commas: both stripped outside strings, then parsed."""
+    out, pos = [], 0
+    for m in _JSON_STRING.finditer(text):
+        gap = re.sub(r"//[^\n]*|/\*.*?\*/", "", text[pos:m.start()], flags=re.S)
+        out += [gap, m.group(0)]
+        pos = m.end()
+    out.append(re.sub(r"//[^\n]*|/\*.*?\*/", "", text[pos:], flags=re.S))
+    body, parts = "".join(out), []
+    pos = 0
+    for m in _JSON_STRING.finditer(body):
+        parts += [re.sub(r",(\s*[}\]])", r"\1", body[pos:m.start()]), m.group(0)]
+        pos = m.end()
+    parts.append(re.sub(r",(\s*[}\]])", r"\1", body[pos:]))
+    return json.loads("".join(parts))
+
+
+def alias_config(root: Path) -> dict:
+    """The aliases a corpus's imports are bound by: ``{"config", "patterns": [[key, [target, …]], …], "missing"}``,
+    every path POSIX and relative to the project (the directory holding package.json), so the receipt a shard
+    carries is the same bytes on every host and names no box path (graphyos #88). ``project`` rides beside it
+    for the match and is never written. The nearest tsconfig.json or jsconfig.json at or above ``root``, up to
+    the first directory holding a package.json."""
+    root = Path(root).resolve()
+    project, cfg, d = root, None, root
+    for _ in range(8):
+        cfg = next((d / n for n in ("tsconfig.json", "jsconfig.json") if (d / n).is_file()), None)
+        if (d / "package.json").is_file():
+            project = d
+        if cfg is not None or (d / "package.json").is_file() or d.parent == d:
+            break
+        d = d.parent
+    missing: list[str] = []
+
+    def rel(p: Path) -> str:
+        """POSIX and relative to the project; a target outside it keeps its `..` hops, never an absolute path."""
+        return Path(os.path.relpath(p.resolve(), project)).as_posix()
+
+    def target_of(at: Path, ext: str) -> Path | None:
+        if ext.startswith("."):
+            t = (at / ext)
+            return t if t.is_file() or t.suffix == ".json" else t.with_name(t.name + ".json")
+        t = project / "node_modules" / ext
+        return t if t.suffix == ".json" else (t / "tsconfig.json" if t.is_dir() else t.with_name(t.name + ".json"))
+
+    def load(c: Path, seen: frozenset) -> tuple[tuple | None, Path | None]:
+        try:
+            data = _jsonc(c.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            missing.append(f"{rel(c)}: unreadable ({exc.__class__.__name__})")
+            return None, None
+        paths, base = None, None
+        ext = data.get("extends") if isinstance(data, dict) else None
+        for e in ([ext] if isinstance(ext, str) else [x for x in (ext or []) if isinstance(x, str)]):
+            t = target_of(c.parent, e)
+            if t is None or not t.is_file():
+                missing.append(f"{rel(c)} extends {e}: {rel(t) if t is not None else e} does not exist")
+                continue
+            if t.resolve() in seen:
+                continue
+            p, b = load(t, seen | {t.resolve()})
+            paths, base = (p if p is not None else paths), (b if b is not None else base)
+        co = data.get("compilerOptions") if isinstance(data, dict) else None
+        if isinstance(co, dict):
+            if isinstance(co.get("baseUrl"), str):
+                base = (c.parent / co["baseUrl"]).resolve()
+            if isinstance(co.get("paths"), dict):
+                paths = (co["paths"], c.parent.resolve())
+        return paths, base
+
+    table: dict[str, list[str]] = {}
+    if cfg is not None:
+        paths, base = load(cfg, frozenset({cfg.resolve()}))
+        if paths is not None:
+            declared, anchor = paths
+            anchor = base or anchor
+            for key, targets in declared.items():
+                if isinstance(key, str) and isinstance(targets, list):
+                    table[key] = [rel(anchor / t) for t in targets if isinstance(t, str)]
+    kit = next((project / n for n in ("svelte.config.js", "svelte.config.ts") if (project / n).is_file()), None)
+    pkg = project / "package.json"
+    if kit is not None and pkg.is_file() and "@sveltejs/kit" in pkg.read_text(encoding="utf-8", errors="replace"):
+        if "$lib" not in table and "$lib/*" not in table:
+            table["$lib"], table["$lib/*"] = ["src/lib"], ["src/lib/*"]
+        if re.search(r"\balias\s*:", kit.read_text(encoding="utf-8", errors="replace")):
+            missing.append(f"{rel(kit)}: kit.alias is JavaScript and is not read")
+    return {"config": rel(cfg) if cfg is not None else None,
+            "patterns": [[k, table[k]] for k in sorted(table)], "missing": missing, "project": project}
+
+
+def _alias_targets(spec: str, aliases: dict) -> list[Path]:
+    """TypeScript's matching: an exact key wins; else the `*` pattern whose prefix is longest, the star's match
+    substituted into each target. A key binds the whole specifier (`$lib/*` never binds `$library/x`)."""
+    project = aliases.get("project") or Path(".")
+    best: tuple[int, list[str]] | None = None
+    for key, targets in aliases.get("patterns", ()):
+        if "*" not in key:
+            if spec == key:
+                return [(project / t).resolve() for t in targets]
+            continue
+        pre, _, suf = key.partition("*")
+        if spec.startswith(pre) and spec.endswith(suf) and len(spec) >= len(pre) + len(suf):
+            star = spec[len(pre):len(spec) - len(suf)]
+            if best is None or len(pre) > best[0]:
+                best = (len(pre), [t.replace("*", star, 1) for t in targets])
+    return [(project / t).resolve() for t in best[1]] if best else []
+
+
+def _module_at(base: Path, modules: dict[str, str]) -> str | None:
+    """A path a specifier names → its module id: the file, the file with a source suffix, the directory's index,
+    and `x.js` naming `x.ts` in ESM-style TypeScript."""
+    cands = [base]
+    for suf in _SOURCE_SUFFIXES:
+        cands.append(base.with_name(base.name + suf))
+    for suf in _SOURCE_SUFFIXES:
+        cands.append(base / f"index{suf}")
+    if base.suffix in (".js", ".mjs", ".cjs"):
+        stem = base.with_suffix("")
+        for suf in _SOURCE_SUFFIXES:
+            cands.append(stem.with_name(stem.name + suf))
+    for c in cands:
+        key = str(c)
+        if key in modules:
+            return modules[key]
+    return None
+
+
+def _module_for_specifier(spec: str, file: Path, root: Path, package: str, modules: dict[str, str],
+                          aliases: dict | None = None) -> str | None:
+    """A relative specifier → the module id it names (``./x`` → x.ts | x/index.ts | x.tsx …); an alias
+    (``$lib/x``) → the module its target names; a bare one → the package's module id (the scheme a slug
+    can carry) or None."""
     if spec.startswith("."):
-        base = (file.parent / spec).resolve()
-        cands = [base]
-        for suf in _SOURCE_SUFFIXES:
-            cands.append(base.with_name(base.name + suf))
-        for suf in _SOURCE_SUFFIXES:
-            cands.append(base / f"index{suf}")
-        if base.suffix in (".js", ".mjs", ".cjs"):        # `./x.js` in ESM-style TS names ./x.ts
-            stem = base.with_suffix("")
-            for suf in _SOURCE_SUFFIXES:
-                cands.append(stem.with_name(stem.name + suf))
-        for c in cands:
-            key = str(c)
-            if key in modules:
-                return modules[key]
-        return None
+        return _module_at((file.parent / spec).resolve(), modules)
+    for target in _alias_targets(spec, aliases or {}):
+        found = _module_at(target, modules)
+        if found is not None:
+            return found
     slug = slug_of_specifier(spec)
     if slug is None:
         return None
@@ -1019,7 +1150,9 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
         modules[str(f.resolve())] = _node_id("module", d)
         rels[f] = str(f.relative_to(root)).replace("\\", "/")
     listing = hashlib.sha256("\n".join(sorted(rels.values())).encode("utf-8")).hexdigest()
-    pin = f"typescript_ast:references:{package}:{listing}"      # a pre-#94 span holds no reference edge: never spliced
+    aliases = alias_config(root)                                # an alias edit re-resolves every import (graphyos #102)
+    alias_key = hashlib.sha256(json.dumps(aliases["patterns"], sort_keys=True).encode("utf-8")).hexdigest()[:16]
+    pin = f"typescript_ast:references:{package}:{listing}:aliases:{alias_key}"   # a pre-#94 span holds no reference edge: never spliced
     nodes: dict[str, dict] = {}
     edges: list[dict] = []
     receipt = Receipt("first")
@@ -1048,7 +1181,7 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
                        "loc": src.count(b"\n") + 1, "docstring": ""}
             records = [mod_rec] + list(_walk_module(
                 tree, module_id, module_dotted, file_rel, code,
-                lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules), component,
+                lambda spec, _f=f: _module_for_specifier(spec, _f, root, package, modules, aliases), component,
                 component or f.name.endswith((".svelte.ts", ".svelte.js"))))
             n_recs, e_recs = [], []
             for rec in records:
@@ -1063,4 +1196,6 @@ def mint_records(corpus_root: str | Path, package: str | None = None, *, reuse=N
             n_recs, e_recs = cached
         receipt.file(rel, sha, n_recs, e_recs, nodes, parsed=cached is None)
         edges.extend(e_recs)
-    return nodes, edges, receipt.finish(pin)
+    done = receipt.finish(pin)
+    done["aliases"] = {k: v for k, v in aliases.items() if k != "project"}   # the config, the patterns, what was not found
+    return nodes, edges, done

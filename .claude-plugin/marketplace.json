@@ -7,7 +7,7 @@
   },
   "metadata": {
     "description": "graphy — the MCP server over the repo it ate; the checkout is the plugin",
-    "version": "0.2.5"
+    "version": "0.2.6"
   },
   "plugins": [
     {
@@ -17,7 +17,7 @@
         "repo": "omnislash157/graphyos"
       },
       "description": "The MCP server over the repo graphy ate: hunt · descend · blast · walk · draw · explain — every answer a walk over the code's structure, no model decides an edge. Run `graphy eat .` first; the server reads .graphy/tenant.json under the project root.",
-      "version": "0.2.5",
+      "version": "0.2.6",
       "author": {
         "name": "Matt Hartigan",
         "url": "https://github.com/omnislash157"

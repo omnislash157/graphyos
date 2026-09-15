@@ -77,53 +77,55 @@ class ToolError(RuntimeError):
 
 
 class Doors:
-    """The seven tools over one opened store."""
+    """The seven tools over the tenant's store — opened by each call and closed when it returns (graphyos #134)."""
 
     def __init__(self, store, tenant, tenant_id: str, roster: list[str], on_stale: str = "refuse",
                  descriptor: str | Path | None = None):
-        self.store, self.tenant, self.tenant_id = store, tenant, tenant_id
+        self.tenant, self.tenant_id = tenant, tenant_id
         self.roster, self.on_stale = list(roster), on_stale
         self.descriptor = Path(descriptor) if descriptor is not None else None
         self.generation = store.generation()
-        self._fresh_at: tuple | None = None        # the input signature the served store was opened under
+        store.close()                    # the boot open proves the store; between calls the server holds none
+        self._store = None
 
-    def _assert_fresh(self, which: str) -> None:
-        """One contract, two faces (graphyos #97): what a fresh CLI invocation would open now, this call
-        answers from. While every input's stat — the shards, the index, the registry, the store file, the
-        descriptor — is what it was when the served store was opened, the call is served as is. When any
-        moved, the server does exactly what `graphy <verb> --tenant` does and nothing less: the descriptor
-        re-read, the roster derived, `open_for` on a fresh connection (which refuses STALE in the CLI's
-        words, or warns), the old store closed once the new one is open. Never a check on a held store —
-        round 1 found `graphy build` at the store's own path (the refusal's own advice, and `shell
-        install`'s re-mint) leaving a held handle on the unlinked file, refusing forever; and a roster
-        narrowed in the descriptor in place never followed. A refusal leaves the server as it was and the
-        next call tries again (the signature is recorded only on a successful open). A read, never a write."""
+    @property
+    def store(self):
+        """The store a tool reads. `call` opens it and closes it when the call returns; a tool method called
+        directly opens it here and holds it until `close`."""
+        if self._store is None:
+            self._store = self._open("store")
+        return self._store
+
+    @store.setter
+    def store(self, store) -> None:
+        """A store handed in by a caller (a test's fake, a library user's own open): held until `close`."""
+        self._store = store
+
+    def _open(self, which: str):
+        """What a fresh `graphy <verb> --tenant` opens now: the descriptor re-read, the roster derived, `open_for`
+        on a fresh connection, which refuses STALE in the CLI's words or warns (graphyos #97). Nothing is held
+        between calls, so `graphy build`'s `os.replace` at the store's own path lands under a live server on
+        Windows, where a held file cannot be replaced (graphyos #124, #134). The open costs a full digest per
+        call (8.1 ms measured on the graphy tenant, RECON); the held design's stat was 0.19 ms."""
         from graphy.cli import _load_tenant, _roster
-        if self._fresh_at is not None and self._signature(self.store.path, self.roster, self.tenant) == self._fresh_at:
-            return
         try:
             tenant = _load_tenant(str(self.descriptor)) if self.descriptor is not None else self.tenant
             roster = _roster(tenant) if self.descriptor is not None else self.roster
-            path = fstore.store_path_for(roster, tenant=tenant)
-            sig = self._signature(path, roster, tenant)           # before the open: a write after it moves the next call
             store = fstore.open_for(roster, tenant=tenant, tenant_id=self.tenant_id, on_stale=self.on_stale)
         except (fstore.StoreError, TenantError, AttributeError, TypeError, KeyError, OSError) as exc:
             raise ToolError(fstore.refused(which.upper(), exc)) from exc   # the CLI's catch set, its line
         was = self.generation
-        self.store.close()
-        self.store, self.tenant, self.roster, self.generation = store, tenant, roster, store.generation()
-        self._fresh_at = sig
+        self.tenant, self.roster, self.generation = tenant, roster, store.generation()
         if self.generation != was:
             print(f"graphy mcp: {self.descriptor or 'the tenant'} now serves {tenant.data_home} — reopened on "
                   f"generation {self.generation} (was {was})", file=sys.stderr)
-
-    def _signature(self, store_path, roster: list[str], tenant) -> tuple:
-        return fstore.input_signature(store_path, roster, tenant=tenant, descriptor=self.descriptor)
+        return store
 
     def close(self) -> None:
-        """The server's one store, released when the server stops: a long-lived process that kept
-        it would refuse every rebuild's rename on Windows (graphyos #124)."""
-        self.store.close()
+        """Release a store a direct tool call opened; after `call` there is none to release."""
+        if self._store is not None:
+            store, self._store = self._store, None
+            store.close()
 
     def __enter__(self) -> "Doors":
         return self
@@ -238,11 +240,14 @@ class Doors:
         fn: Callable[..., str] | None = {t["name"]: getattr(self, t["name"]) for t in TOOLS}.get(name)
         if fn is None:
             raise ToolError(f"unknown tool {name!r}; the tools are {', '.join(t['name'] for t in TOOLS)}")
-        self._assert_fresh(name)
+        self.close()
+        self._store = self._open(name)
         try:
             return fn(**(arguments or {}))
         except TypeError as exc:
             raise ToolError(f"{name}: bad arguments ({exc})") from exc
+        finally:
+            self.close()                   # on an answer, a refusal or a fault: nothing held until the next call
 
 
 # ── the JSON-RPC loop ───────────────────────────────────────────────────────────────────────
@@ -310,7 +315,7 @@ def serve(tools: Doors, inp: io.TextIOBase | None = None, out: io.TextIOBase | N
                 out.flush()
         return 0
     finally:
-        tools.close()                      # the server's store lives exactly as long as its input (graphyos #124)
+        tools.close()                      # a store a direct call opened; a served call closed its own (graphyos #134)
 
 
 def open_tools(tenant, tenant_id: str, roster: list[str], on_stale: str = "refuse",

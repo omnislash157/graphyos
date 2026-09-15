@@ -141,11 +141,9 @@ def test_the_mcp_server_closes_the_store_it_reopened_from(tmp_path, tracked):
     assert cli.main(eat) == 0
     del tracked[:]
     assert "core.later" in tools.call("hunt", {"symbol": "later"})
-    assert tools.store is not old and _closed(old._db), "the store served before the reopen is still open"
-    held = [c for c in tracked if not _closed(c)]
-    assert len(held) == 1, f"{len(held)} connection(s) held after the reopen; the new store alone is expected"
+    assert _closed(old._db), "the store a direct call opened is still open after a served call"
+    _assert_all_closed(tracked, "mcp reopen: a served call holds nothing when it returns (graphyos #134)")
     tools.close()
-    _assert_all_closed(tracked, "mcp reopen then close")
 
 
 def _stale(repo: Path) -> None:
@@ -205,3 +203,46 @@ def test_a_verb_leaves_no_store_open_when_open_for_refuses_before_the_stale_chec
     with pytest.raises(fs.StoreError, match="recompile"):
         fs.open_for(roster, tenant=tenant, tenant_id="core")
     _assert_all_closed(tracked, "open_for on a store the constructor refuses")
+
+
+def test_the_mcp_server_holds_no_store_between_calls(tmp_path, tracked, monkeypatch):
+    """graphyos #134: between two tool calls a live server holds no connection, and during each call it holds
+    exactly the one it opened — so `graphy build` replaces the store under a live server on Windows."""
+    from graphy import mcp
+    repo = _git_repo(tmp_path)
+    assert cli.main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)]) == 0
+    desc = repo / ".graphy" / "tenant.json"
+    tenant = cli._load_tenant(str(desc))
+    del tracked[:]
+    tools = mcp.open_tools(tenant, "core", cli._roster(tenant), descriptor=desc)
+    _assert_all_closed(tracked, "mcp boot")
+    during: list[int] = []
+    real_hunt = mcp.Doors.hunt
+    monkeypatch.setattr(mcp.Doors, "hunt", lambda self, *a, **k: (during.append(sum(not _closed(c) for c in tracked)),
+                                                                   real_hunt(self, *a, **k))[1])
+    for _ in range(2):
+        assert "core.mod.run" in tools.call("hunt", {"symbol": "run"})
+        _assert_all_closed(tracked, "between two mcp calls")
+    assert during == [1, 1], during
+    assert cli.main(["build", "--tenant", str(desc), "--tenant-id", "core"]) == 0
+    assert "core.mod.run" in tools.call("hunt", {"symbol": "run"})
+    _assert_all_closed(tracked, "after a build under the live server")
+    tools.close()
+
+
+def test_the_mcp_server_closes_its_store_on_a_failing_call(tmp_path, tracked, monkeypatch):
+    """graphyos #134: a tool that raises mid-call — a fault, a bad argument, a refusal — still closes the store it opened."""
+    from graphy import mcp
+    repo = _git_repo(tmp_path)
+    assert cli.main(["eat", str(repo), "--package", "core", "--site-packages", str(repo)]) == 0
+    tenant = cli._load_tenant(str(repo / ".graphy" / "tenant.json"))
+    tools = mcp.open_tools(tenant, "core", cli._roster(tenant))
+    del tracked[:]
+    monkeypatch.setattr(mcp.Doors, "hunt", lambda self, *a, **k: (self.store.find("run"), (_ for _ in ()).throw(RuntimeError("fault")))[1])
+    reply = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "hunt", "arguments": {"symbol": "run"}}}, tools)
+    assert reply["result"]["isError"] is True and "fault" in reply["result"]["content"][0]["text"]
+    assert tracked, "the failing call opened no store — the probe proves nothing"
+    _assert_all_closed(tracked, "a failing mcp call")
+    with pytest.raises(mcp.ToolError, match="bad arguments"):
+        tools.call("walk", {"nope": 1})
+    _assert_all_closed(tracked, "a call with bad arguments")

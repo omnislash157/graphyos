@@ -42,6 +42,12 @@ sessions from every harness and the doors over it do not care.
 | PreCompact, SessionEnd | `.graphy/hooks/session_end.sh` | captures the session as 1:1 user/assistant exchanges under `.claude/recovery/`, archived in sequence |
 | PreToolUse on Edit, Write, MultiEdit | `.graphy/hooks/before_edit.sh` | the gate: an edit to a symbol the store knows, with no walk from it stored under the live generation, exits 2 with the walk to run |
 
+**On Windows** every hook is written with LF line endings, so a `.sh` shebang never reads `bash\r`. Each
+`.sh` also gets a `.cmd` twin that does the same work with no bash. Claude Code runs a hook through
+Git Bash there when it is installed, so its wiring keeps the `.sh` hooks, and `shell install` refuses
+that wiring by name on a box with no Git Bash. Codex and Cursor are wired to the `.cmd` twins
+(graphyos #93).
+
 The gate opens (exit 0) when the repo is not eaten, the file is not in the store, or duckdb is
 absent — it confines an agent to a substrate, never to nothing.
 

@@ -89,5 +89,7 @@ python3 "$HERE/sweep.py" --selftest || { echo "sweep              FAILED — a s
 # record's newest section names is an ancestor of HEAD, every emitted page holds its contract —
 # and every check is proven red on its own fixture in the same run. stdlib only; findings name file:line.
 python3 "$HERE/review.py" || { echo "review             FAILED — a set difference over the tree the reviewer should never have had to find"; exit 3; }
+# The spec linter proves its own rules: each red on its bad fixture, silent on its near miss (spec_lint.py).
+python3 "$HERE/spec_lint.py" --selftest > /dev/null || { echo "spec lint          FAILED — a rule fires on a near miss or not on its specimen: python3 spec_lint.py --selftest"; exit 3; }
 
 echo "GRAPHY_STANDALONE_OK"

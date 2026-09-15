@@ -561,6 +561,93 @@ def check_review_row_order(repo: Path) -> list[Finding]:
     return found
 
 
+# ── specs and the Windows text seam (the blocker mine of 2026-09-13..15) ─────────────────────────────────
+
+def check_spec_lint(repo: Path) -> list[Finding]:
+    """spec-lint: every tracked `specs/*.md` passes `spec_lint.py`, the contract linter whose patterns are the
+    review blockers of #80–#127 condensed (`python3 spec_lint.py --patterns`), and the linter's own rules are each
+    red on their bad fixture and silent on their near miss. A spec the linter cannot read REFUSES the check."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("spec_lint", HERE / "spec_lint.py")
+    if spec is None or spec.loader is None:
+        raise CheckError("spec_lint.py is absent beside review.py — the spec check cannot run")
+    sl = sys.modules.get("spec_lint") or importlib.util.module_from_spec(spec)
+    if "spec_lint" not in sys.modules:
+        sys.modules["spec_lint"] = sl          # a dataclass reads its own module back from sys.modules
+        spec.loader.exec_module(sl)
+    specs = [p for p in _tracked(repo, "specs/*.md")]
+    if not specs:
+        raise CheckError("spec-lint found ZERO tracked specs under specs/ — the scan is broken, or the specs are untracked")
+    found: list[Finding] = []
+    for p in specs:
+        try:
+            for f in sl.lint_file(p):
+                found.append(Finding("spec-lint", f"{_rel(repo, p)}:{f.line}", f"{f.rule} {f.text}"))
+        except sl.SpecRefused as exc:
+            raise CheckError(f"{_rel(repo, p)}: {exc}") from exc
+    NOTES["spec-lint"] = f"{len(specs)} spec(s) · {len(sl.RULES)} rule(s) · {sum(1 for v in sl.PATTERNS.values() if v['kind'] == 'lint')} lint pattern(s)"
+    return found
+
+
+WINDOWS_IO_BASELINE = "windows_io_baseline.json"
+
+
+def _windows_io_sites(repo: Path) -> dict[str, int]:
+    """`<file>::<function>::<kind>` → count, over tracked engine/graphy/**.py. kind `write-no-newline` is a
+    `write_text` with no `newline=` (text mode writes os.linesep: CRLF on Windows, graphyos #93's shebang);
+    kind `subprocess-no-encoding` is a text-mode subprocess read with no `encoding=` (the locale decodes it:
+    cp1252 on Windows, graphyos #125 and #138)."""
+    sites: dict[str, int] = {}
+    files = _tracked(repo, "engine/graphy/*.py", "engine/graphy/**/*.py")
+    if not files:
+        raise CheckError("windows-text-io found ZERO tracked engine files — the scan is broken")
+    for f in files:
+        try:
+            tree = ast.parse(f.read_text(encoding="utf-8"))
+        except SyntaxError as exc:
+            raise CheckError(f"{_rel(repo, f)} does not parse: {exc}") from exc
+        stack: list[str] = []
+
+        def visit(node, fn="<module>"):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                fn = node.name
+            if isinstance(node, ast.Call):
+                name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+                kws = {k.arg for k in node.keywords}
+                kind = None
+                if name == "write_text" and "newline" not in kws:
+                    kind = "write-no-newline"
+                elif (name in ("run", "check_output", "Popen") and isinstance(node.func, ast.Attribute)
+                      and getattr(node.func.value, "id", "") == "subprocess"
+                      and ({"text", "universal_newlines"} & kws) and "encoding" not in kws):
+                    kind = "subprocess-no-encoding"
+                if kind:
+                    key = f"{_rel(repo, f)}::{fn}::{kind}"
+                    sites[key] = sites.get(key, 0) + 1
+            for child in ast.iter_child_nodes(node):
+                visit(child, fn)
+        visit(tree)
+    return sites
+
+
+def check_windows_text_io(repo: Path) -> list[Finding]:
+    """windows-text-io: a ratchet over the Windows text seam. The sites standing when the mine ran are named in
+    windows_io_baseline.json; a new one, or one more in a function already named, is a finding. Fixing a site
+    lowers the file's count; the baseline is regenerated, never grown by hand (graphyos #93, #125, #138)."""
+    base = repo / WINDOWS_IO_BASELINE
+    if not base.is_file():
+        raise CheckError(f"{WINDOWS_IO_BASELINE} is absent — the ratchet has no floor to hold")
+    try:
+        allowed = json.loads(base.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise CheckError(f"{WINDOWS_IO_BASELINE} does not parse: {exc}") from exc
+    sites = _windows_io_sites(repo)
+    found = [Finding("windows-text-io", key.split("::")[0], f"{key.split('::', 1)[1]}: {n} site(s), the baseline allows {allowed.get(key, 0)}")
+             for key, n in sorted(sites.items()) if n > allowed.get(key, 0)]
+    NOTES["windows-text-io"] = f"{sum(sites.values())} site(s) standing, {sum(allowed.values())} allowed"
+    return found
+
+
 # ── the shas the record names ─────────────────────────────────────────────────────────────────────
 
 def check_sha_liveness(repo: Path) -> list[Finding]:
@@ -1622,6 +1709,8 @@ CHECKS = {
     "json-template-spliced": check_json_template_spliced,
     "specimen-corpus": check_specimen_corpus,
     "eol-rewritable": check_eol_rewritable,
+    "spec-lint": check_spec_lint,
+    "windows-text-io": check_windows_text_io,
 }
 
 
@@ -1794,6 +1883,14 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
                                              "0\t-\tgh issue comment 1 -b {M}\n"},   # + the oracle: bash posts the marker, the line says 0
             {"scrub.py": (HERE / "scrub.py").read_text(encoding="utf-8"),
              "review_specimens/gh_hook.tsv": "# corpus\n0\t-\tgh issue create --title t --body \"a public sentence\"\n2\t-\tgh issue comment 1 -b {M}\n"}),
+        "spec-lint": (
+            {"specs/93.md": '# shell install writes hooks a harness runs on the host it was written for\nissue: graphyos #93\nhost: linux, windows\nscars: S1 S8 S2 S3 S7\n\n## Contract\n- C1 every file `shell install` writes carries the line ending it means: LF, and CRLF in a `.cmd`\n- C2 on Windows each `.sh` hook has a `.cmd` twin, and the Codex and Cursor wiring runs the twin\n- C3 on Windows with no bash from Git for Windows, the Claude wiring refuses by name before a byte is written\n- C4 a wiring command is matched whole and its path quoted, so a repo under `josh.shaw/First Last` runs\n- C5 an install over the 0.2.4 wiring leaves one entry per event, and no `.sh` in the Codex or Cursor wiring on Windows\n- C6 the end hook captures the tail and the start hook injects it, through each harness\'s shell\n\n## Scope\n- IN: engine/graphy/shell/install.py\n- IN: engine/graphy/shell/hooks/\n- IN: engine/graphy/shell/cursor/hooks.json\n- IN: engine/tests/test_shell.py\n- OUT: engine/graphy/reseed.py\n\n## Hazards\n- W3 C4 P2\n- W4 C6 P3\n- W7 C2,C6 P4\n- E1 C5 P5\n- E2 C5 P5\n- G1 C4 P2\n\n## Probes\n```bash\n# P1 C1 W1\nrm -rf /tmp/p93 && git clone -q https://github.com/pallets/itsdangerous /tmp/p93/repo\n.venv/bin/graphy eat --repo /tmp/p93/repo --package itsdangerous --site-packages /tmp/p93/repo/src\n.venv/bin/graphy shell install --repo /tmp/p93/repo --harness claude --harness codex --harness cursor\n.venv/bin/python -c "import pathlib,sys; fs=list(pathlib.Path(\'/tmp/p93/repo/.graphy/hooks\').glob(\'*.sh\')); sys.exit(not fs or any(b\'\\r\' in f.read_bytes() for f in fs))"\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" tests/test_shell.py -k every_byte_the_install_writes\n# P2 C4 G1 W3\n.venv/bin/python -c "from graphy.shell import install as i; assert i._host_command(\'\\"/r/josh.shaw/First Last/.graphy/hooks/session_end.sh\\"\', \'nt\') == \'\\"/r/josh.shaw/First Last/.graphy/hooks/session_end.cmd\\"\'"\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" "tests/test_shell.py::test_GREEN_the_wiring_captures_and_injects_on_the_host_it_was_written_for[cursor-josh.shaw/First Last]"\n# P3 C6 W4\nW=/tmp/p93/repo/.claude/settings.json; T=engine/tests/fixtures/transcript/session.jsonl\nprintf \'{"session_id":"fx-session-0001","transcript_path":"%s","cwd":"/tmp/p93/repo"}\' "$PWD/$T" | CLAUDE_PROJECT_DIR=/tmp/p93/repo sh -c "$(.venv/bin/python -c "import json,sys; print(json.load(open(sys.argv[1]))[\'hooks\'][\'SessionEnd\'][0][\'hooks\'][0][\'command\'])" "$W")"\nCLAUDE_PROJECT_DIR=/tmp/p93/repo sh -c "$(.venv/bin/python -c "import json,sys; print(json.load(open(sys.argv[1]))[\'hooks\'][\'SessionStart\'][0][\'hooks\'][0][\'command\'])" "$W")" < /dev/null | grep -q fx-session-0001\n# P4 C1 C2 C6 W7 W1\ngh workflow run ci.yml --repo omnislash157/graphy --ref win-93\ngh run watch "$(gh run list --repo omnislash157/graphy --branch win-93 --limit 1 --json databaseId --jq \'.[0].databaseId\')" --repo omnislash157/graphy --exit-status\n# P5 C5 E1 E2\ngit fetch -q https://github.com/omnislash157/graphyos refs/tags/v0.2.4:refs/tags/v0.2.4\ngit show v0.2.4:engine/graphy/shell/cursor/hooks.json | sed \'s#{{repo}}#/tmp/p93/repo#g\' > /tmp/p93/repo/.cursor/hooks.json\nfor n in 1 2 3; do .venv/bin/graphy shell install --repo /tmp/p93/repo --harness cursor; done\n.venv/bin/python -c "import json; h=json.load(open(\'/tmp/p93/repo/.cursor/hooks.json\'))[\'hooks\']; assert all(len(v) == 1 for v in h.values())"\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" tests/test_shell.py -k released_wiring\n# P6 C3\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" tests/test_shell.py -k "no_git_bash_refuses"\n```\n\n## Production\n```bash\n# host: linux a clone of a real repo, a Claude Code session in it\n.venv/bin/graphy shell install --repo /tmp/p93/repo --harness claude\nrm -rf /tmp/p93/repo/.claude/recovery && cd /tmp/p93/repo && claude -p "reply ok" && claude -p "reply ok"\ngrep -q "inject ok source=startup" /tmp/p93/repo/.claude/recovery/reseed_diag.log\n# host: windows the production Windows seat, a Claude Code session and a Cursor session\ngraphy shell install --repo "$TENANT_REPO" --harness claude --harness cursor\ntest -s "$TENANT_REPO/.claude/recovery/reseed_tail.md"\n```\n'},
+            {"specs/93.md": '# shell install writes hooks a harness runs on the host it was written for\nissue: graphyos #93\nhost: linux, windows\nscars: S1 S8 S2 S3 S7\n\n## Contract\n- C1 every file `shell install` writes carries the line ending it means: LF, and CRLF in a `.cmd`\n- C2 on Windows each `.sh` hook has a `.cmd` twin, and the Codex and Cursor wiring runs the twin\n- C3 on Windows with no bash from Git for Windows, the Claude wiring refuses by name before a byte is written\n- C4 a wiring command is matched whole and its path quoted, so a repo under `josh.shaw/First Last` runs\n- C5 an install over the 0.2.4 wiring leaves one entry per event, and no `.sh` in the Codex or Cursor wiring on Windows\n- C6 the end hook captures the tail and the start hook injects it, through each harness\'s shell\n\n## Scope\n- IN: engine/graphy/shell/install.py\n- IN: engine/graphy/shell/hooks/\n- IN: engine/graphy/shell/cursor/hooks.json\n- IN: engine/tests/test_shell.py\n- OUT: engine/graphy/reseed.py\n\n## Hazards\n- W1 C1 P1,P4\n- W3 C4 P2\n- W4 C6 P3\n- W7 C2,C6 P4\n- E1 C5 P5\n- E2 C5 P5\n- G1 C4 P2\n\n## Probes\n```bash\n# P1 C1 W1\nrm -rf /tmp/p93 && git clone -q https://github.com/pallets/itsdangerous /tmp/p93/repo\n.venv/bin/graphy eat --repo /tmp/p93/repo --package itsdangerous --site-packages /tmp/p93/repo/src\n.venv/bin/graphy shell install --repo /tmp/p93/repo --harness claude --harness codex --harness cursor\n.venv/bin/python -c "import pathlib,sys; fs=list(pathlib.Path(\'/tmp/p93/repo/.graphy/hooks\').glob(\'*.sh\')); sys.exit(not fs or any(b\'\\r\' in f.read_bytes() for f in fs))"\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" tests/test_shell.py -k every_byte_the_install_writes\n# P2 C4 G1 W3\n.venv/bin/python -c "from graphy.shell import install as i; assert i._host_command(\'\\"/r/josh.shaw/First Last/.graphy/hooks/session_end.sh\\"\', \'nt\') == \'\\"/r/josh.shaw/First Last/.graphy/hooks/session_end.cmd\\"\'"\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" "tests/test_shell.py::test_GREEN_the_wiring_captures_and_injects_on_the_host_it_was_written_for[cursor-josh.shaw/First Last]"\n# P3 C6 W4\nW=/tmp/p93/repo/.claude/settings.json; T=engine/tests/fixtures/transcript/session.jsonl\nprintf \'{"session_id":"fx-session-0001","transcript_path":"%s","cwd":"/tmp/p93/repo"}\' "$PWD/$T" | CLAUDE_PROJECT_DIR=/tmp/p93/repo sh -c "$(.venv/bin/python -c "import json,sys; print(json.load(open(sys.argv[1]))[\'hooks\'][\'SessionEnd\'][0][\'hooks\'][0][\'command\'])" "$W")"\nCLAUDE_PROJECT_DIR=/tmp/p93/repo sh -c "$(.venv/bin/python -c "import json,sys; print(json.load(open(sys.argv[1]))[\'hooks\'][\'SessionStart\'][0][\'hooks\'][0][\'command\'])" "$W")" < /dev/null | grep -q fx-session-0001\n# P4 C1 C2 C6 W7 W1\ngh workflow run ci.yml --repo omnislash157/graphy --ref win-93\ngh run watch "$(gh run list --repo omnislash157/graphy --branch win-93 --limit 1 --json databaseId --jq \'.[0].databaseId\')" --repo omnislash157/graphy --exit-status\n# P5 C5 E1 E2\ngit fetch -q https://github.com/omnislash157/graphyos refs/tags/v0.2.4:refs/tags/v0.2.4\ngit show v0.2.4:engine/graphy/shell/cursor/hooks.json | sed \'s#{{repo}}#/tmp/p93/repo#g\' > /tmp/p93/repo/.cursor/hooks.json\nfor n in 1 2 3; do .venv/bin/graphy shell install --repo /tmp/p93/repo --harness cursor; done\n.venv/bin/python -c "import json; h=json.load(open(\'/tmp/p93/repo/.cursor/hooks.json\'))[\'hooks\']; assert all(len(v) == 1 for v in h.values())"\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" tests/test_shell.py -k released_wiring\n# P6 C3\ncd engine && ../.venv/bin/python -m pytest -q -o addopts="" tests/test_shell.py -k "no_git_bash_refuses"\n```\n\n## Production\n```bash\n# host: linux a clone of a real repo, a Claude Code session in it\n.venv/bin/graphy shell install --repo /tmp/p93/repo --harness claude\nrm -rf /tmp/p93/repo/.claude/recovery && cd /tmp/p93/repo && claude -p "reply ok" && claude -p "reply ok"\ngrep -q "inject ok source=startup" /tmp/p93/repo/.claude/recovery/reseed_diag.log\n# host: windows the production Windows seat, a Claude Code session and a Cursor session\ngraphy shell install --repo "$TENANT_REPO" --harness claude --harness cursor\ntest -s "$TENANT_REPO/.claude/recovery/reseed_tail.md"\n```\n'}),
+        "windows-text-io": (
+            {"engine/graphy/m.py": "from pathlib import Path\nimport subprocess\ndef f(p):\n    Path(p).write_text('x')\n    subprocess.run(['git'], text=True)\n",
+             "windows_io_baseline.json": "{}"},
+            {"engine/graphy/m.py": "from pathlib import Path\nimport subprocess\ndef f(p):\n    Path(p).write_text('x', newline='\\n')\n    subprocess.run(['git'], text=True, encoding='utf-8')\n",
+             "windows_io_baseline.json": "{}"}),
         "eol-rewritable": (
             # red: a rule narrowed to the shard leaves the svg rewritable (the attribute), a `-text` file with `ident` on is
             # rewritten on every clone all the same (round 4: `$Id$` expanded, `text` unset), a CRLF file sits in the index,

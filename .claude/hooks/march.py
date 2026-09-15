@@ -570,9 +570,9 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
         log(f"blocked stop on issue {issue} ({blocks} stalled)")
         return block(
             f"MARCH — issue {issue} is still OPEN on the board ({blocks} stalled continuation(s)). "
-            f"The loop does not stop on an open issue. Keep marching: run its done check, then review "
-            f"rounds until one reads SHIP (rung-discipline §2.6), land the evidence, commit and push, then "
-            f"`gh issue close {issue} --repo {REPO} --comment <evidence>`. "
+            f"The loop does not stop on an open issue. Keep marching: specs/{issue}.md linted by "
+            f"`python3 spec_lint.py`, the build, `python3 review.py` and the gate, the spec's production blocks on each "
+            f"declared host, commit and push, then `gh issue close {issue} --repo {REPO} --comment <production output>`. "
             f"A rung only the operator can finish is gated, never held: a line `{GATE_TOKEN}: <gate> — <step>` "
             f"naming one of {names}, and the march moves to the next rung."
         )
@@ -674,7 +674,7 @@ def route_gates(state: dict, issue: int, gates: list[tuple[str, str, int | None]
         return gate(state, issue, *own)
     where = ", ".join(f"#{r}" for r, _, _ in foreign + carried)
     return verdict(f"MARCH — the gate landed on {where}: labeled `{OPERATOR_LABEL}`, the step commented. Issue {issue} "
-                   f"is still the armed rung and OPEN — keep marching it: the done check, review rounds to SHIP, commit, "
+                   f"is still the armed rung and OPEN — keep marching it: the spec linted, the build, the battery, production, commit, "
                    f"push, `gh issue close {issue} --repo {REPO} --comment <evidence>`; if issue {issue} itself needs the "
                    f"operator, `{GATE_TOKEN}: <gate> — <step>` with no rung in the head gates it and marches on.")
 
@@ -737,8 +737,9 @@ def cmd_inject(_: argparse.Namespace) -> int:
     print("The board loop is live. FIRST, after the reseed file:\n")
     print("```\npython3 .claude/hooks/march.py ack\n"
           f"gh issue view {issue} --repo {REPO}\n```\n")
-    print(f"Then march issue {issue} until its done check holds on a real run and a review round reads SHIP "
-          f"(rung-discipline §2.6): land the evidence, commit, push, and "
+    print(f"Then march issue {issue}: write specs/{issue}.md and lint it (`python3 spec_lint.py specs/{issue}.md` → SPEC OK), "
+          f"build, run `python3 review.py` and `bash standalone_check.sh` and fix what they flag, run the spec's production "
+          f"blocks on each declared host (a host this box cannot run is a fleet message), then commit, push, and "
           f"`gh issue close {issue} --repo {REPO} --comment <evidence>`. The Stop hook refuses to "
           f"stop while it is open and arms the next issue the moment it closes. A rung only the operator can "
           f"finish is gated with a line `{GATE_TOKEN}: <{' | '.join(REAL_GATES)}> — <the exact step>`: it is "

@@ -131,7 +131,7 @@ re-rendered and compared byte for byte in the gate, never drawn by hand:
 ## Install, then eat — two lines
 
 ```bash
-pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.5 — the extras are optional
+pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.6 — the extras are optional
 cd /path/to/your/repo && graphy eat .        # a repo with several packages: graphy eat . --package <name>
 graphy showcase .                            # the page: .graphy/showcase/index.html — open it in a browser
 ```
@@ -143,7 +143,7 @@ is not yet supported, which are two different sentences and both are measured. T
 a rung: a minted shard's `file` fields carry the OS separator, so shards are not byte-identical
 across hosts (node ids are clean, so a walk answers the same on both — graphyos #88). A door that draws
 encodes its glyphs on a `cp1252` console or pipe without `PYTHONUTF8=1`: every verb reconfigures its
-own streams to utf-8 before the first line prints (graphyos #123). The hooks, `shell install` and the MCP pointer are bash, so WSL is still the smoother road.
+own streams to utf-8 before the first line prints (graphyos #123). `shell install` writes its hooks LF on every host. It wires Claude Code's bash hooks through Git Bash, and refuses that wiring by name on a box with none. Codex and Cursor get `.cmd` hooks that need no bash (graphyos #93). The MCP pointer is still bash, so WSL is still the smoother road.
 What is proven on the platform on every push is the store lane — CI's `store-windows` job runs the
 `durable` mark, so the defect that wrote no store at all there can never come back silently
 (graphyos #77) — and the lock: every lock the engine takes (journal, index, fan-out, inventory, registry) is `msvcrt.locking` there, and

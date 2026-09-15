@@ -103,29 +103,22 @@ def test_mcp_refuses_a_store_that_went_stale_after_boot(tmp_path, capsys):
     assert by_id[3]["result"]["content"][0]["text"] == cli_line     # verbatim: the two faces print one line
 
 
-def test_mcp_re_checks_freshness_only_when_an_input_moved(tmp_path, monkeypatch, capsys):
-    """The check behind the stat: two calls over an unmoved store hash the inputs once; a rewrite of a
-    shard that keeps its size still moves the stat (mtime) and re-hashes; `warn` says so once and answers."""
+def test_mcp_opens_what_the_cli_opens_on_every_call(tmp_path, monkeypatch, capsys):
+    """graphyos #134: the held design hashed the inputs once and kept the store open between calls, so on Windows a
+    `graphy build` under a live server could not replace it. Every call now opens the store the way `graphy <verb>`
+    does — the inputs digested — and closes it; under `warn` a stale store answers every call, as the CLI does."""
     from graphy import federated_store as fs
     tenant, _desc, roster = _fixture(tmp_path)
     tools = mcp.open_tools(tenant, "doors", roster, on_stale="warn")
     real, digests = fs._compute_input_digest, []
     monkeypatch.setattr(fs, "_compute_input_digest", lambda *a, **k: (digests.append(1), real(*a, **k))[1])
-    tools.call("hunt", {"symbol": "gadget"})
-    tools.call("hunt", {"symbol": "gadget"})
-    assert len(digests) == 1, "an unmoved store was re-hashed on the second call"
-    from pathlib import Path
-    import os
-    nodes_path = Path(tenant.data_home) / "widgets_graph" / "nodes.json"
-    nodes_path.write_bytes(nodes_path.read_bytes())          # the same bytes: the stat moves, the digest does not
-    os.utime(nodes_path, ns=(os.stat(nodes_path).st_mtime_ns + 1, os.stat(nodes_path).st_mtime_ns + 1))
-    assert "by tail" in tools.call("hunt", {"symbol": "gadget"})
-    assert len(digests) == 2 and capsys.readouterr().err == ""
+    for _ in range(3):
+        assert "by tail" in tools.call("hunt", {"symbol": "gadget"})
+    assert len(digests) == 3, "a call answered from a store it did not open"
     _move_a_shard(tenant)
-    assert "by tail" in tools.call("hunt", {"symbol": "gadget"})   # warn answers, and says so once
-    tools.call("hunt", {"symbol": "gadget"})
-    err = capsys.readouterr().err
-    assert err.count("is STALE") == 1 and len(digests) == 3, (err, digests)
+    assert "by tail" in tools.call("hunt", {"symbol": "gadget"})
+    assert "by tail" in tools.call("hunt", {"symbol": "gadget"})
+    assert capsys.readouterr().err.count("is STALE") == 2
     tools.close()
 
 
