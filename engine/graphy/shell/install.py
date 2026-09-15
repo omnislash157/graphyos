@@ -233,7 +233,7 @@ def remint_history(repo: Path, tid: str, *, log=print) -> str:
     if sub is None or not (sub / f"{cli.HISTORY_SLUG}_graph" / smash_lane.PROVENANCE_NAME).is_file():
         return "none (`graphy eat .` mints it beside the code shard when the repo is a git checkout)"
     rc = cli.main(["history", "--remint", "--tenant", str(home / "tenant.json"), "--tenant-id", tid])
-    if rc == 1:      # landed; the check that follows the landing named a lane (the cursor's, when the wiring just written is untracked)
+    if rc == 1:      # landed; the check that follows the landing named a lane (the cursor's, when HEAD or the code moved)
         return "re-minted, store recompiled; `graphy check` reads red — its lines above name the lane"
     if rc != 0:
         return f"re-mint refused (exit {rc}) — the served store stands; run `graphy history --remint --tenant " \

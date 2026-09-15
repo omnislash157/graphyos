@@ -25,6 +25,10 @@ GLYPHS = "│─┌┐└┘├┤┬┴┼╪▶◀▾═→←·—⚠✗…"
 """The glyphs the engine prints: the drawings' box and arrows, the doors' hops, the receipts' separators."""
 
 
+# The first line of every pointer `harness` writes: the pointer is the engine's while it carries it (graphyos #143).
+POINTER_MARK = "This repo's agent hub is generated."
+
+
 def utf8_streams(*streams) -> list[str]:
     """Every stream that cannot encode the engine's glyphs is reconfigured to utf-8 — what
     ``PYTHONUTF8=1`` would have made it — before the first line prints, so a cp1252 console or pipe

@@ -249,7 +249,7 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
             served = served_data_home(desc)
             stale = (f"the descriptor at {desc} names no data_home" if served is None else
                      cursor_drift(json.loads(desc.read_text(encoding="utf-8")).get("cursor", ""), repo,
-                                  exclude=cursor_exclude(desc, served)))
+                                  exclude=cursor_exclude(desc, served, root=repo)))
         except (OSError, ValueError, AttributeError) as exc:
             stale = f"the descriptor at {desc} is unreadable ({exc})"
         if stale:

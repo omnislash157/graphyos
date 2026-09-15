@@ -13,10 +13,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from graphy._shared import POINTER_MARK  # one spelling: the cursor reads it too (graphyos #143)
+
 __all__ = ["HarnessError", "POINTER_MARK", "run", "render_graph_md", "install_pointer"]
 
 ASCII_CAP = 88
-POINTER_MARK = "This repo's agent hub is generated."
 
 
 class HarnessError(RuntimeError):

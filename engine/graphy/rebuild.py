@@ -228,7 +228,7 @@ def _rebuild_stage(*, root, served, sub, desc, staged, prev, tenant_id, lanes, p
         declared.append(f"--lane={cli_lane.HISTORY_SLUG}_graph:static-dep")
 
     if cursor is None:
-        cursor, dirty = repo_cursor(root, exclude=cursor_exclude(desc, sub, journal=journal, join_keys=join_keys))
+        cursor, dirty = repo_cursor(root, exclude=cursor_exclude(desc, sub, root=root, journal=journal, join_keys=join_keys))
         if cursor is None:
             raise RebuildError(
                 f"rebuild: {root} is not a git checkout, so there is no cursor to pin the store to. "

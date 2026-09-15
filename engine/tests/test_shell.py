@@ -253,3 +253,98 @@ def test_RED_an_install_over_the_released_wiring_leaves_one_entry_per_event(tmp_
     ext = ".cmd" if os_name == "nt" else ".sh"
     assert all(v[0].startswith('"') and f'{ext}"' in v[0] for v in ours.values()), ours
     assert any(d["command"] == "notify-send done" for d in hooks["sessionEnd"]), "a user's own hook was dropped"
+
+
+# ── graphyos #143: shell install never turns the cursor lane red ────────────────────────────────────────────
+
+
+def _eaten_git_checkout(tmp_path: Path) -> Path:
+    from graphy import cli
+    repo = tmp_path / "First Last" / "repo"
+    (repo / "solo").mkdir(parents=True)
+    (repo / "solo" / "__init__.py").write_bytes(b"def f():\n    return 1\n")
+    (repo / "pyproject.toml").write_bytes(b'[project]\nname = "solo"\nversion = "0"\n')
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-qm", "i"], check=True)
+    assert cli.main(["eat", str(repo), "--package", "solo", "--no-provision"]) == 0
+    return repo
+
+
+def _check(repo: Path, capsys) -> tuple[int, str]:
+    from graphy import cli
+    capsys.readouterr()
+    rc = cli.main(["check", "--tenant", str(repo / ".graphy" / "tenant.json"), "--tenant-id", "solo"])
+    out = capsys.readouterr()
+    return rc, out.out + out.err
+
+
+def test_RED_install_never_turns_the_cursor_lane_red(tmp_path, capsys):
+    """The README's two commands, then check: the install's GRAPHY.md and harness files were untracked dirt, so the
+    very next check read the cursor lane STALE and named `eat .` (graphyos #143). Installed three times, every harness."""
+    repo = _eaten_git_checkout(tmp_path)
+    assert _check(repo, capsys)[0] == 0
+    for _ in range(3):
+        shell_install.install(repo, python=sys.executable, harness=("claude", "codex", "cursor"), os_name="posix",
+                              log=lambda *a, **k: None)
+    rc, out = _check(repo, capsys)
+    assert rc == 0 and "cursor lane" not in out, out
+
+
+def test_RED_every_file_the_install_writes_is_excluded_from_the_cursor(tmp_path):
+    """Every path the install writes, on either host, lies under the one exclusion the build and the check share."""
+    from graphy import cartograph, cli
+    repo = _eaten_git_checkout(tmp_path)
+    desc = repo / ".graphy" / "tenant.json"
+    tenant = cli._load_tenant(str(desc))
+    roots = cartograph.tenant_exclude(desc, tenant)
+    for os_name, harness in (("posix", ("claude", "codex", "cursor")), ("nt", ("codex", "cursor"))):
+        info = shell_install.install(repo, python=sys.executable, harness=harness, os_name=os_name, log=lambda *a, **k: None)
+        missed = [p for p in info["written"] if not any(cartograph._excluded(Path(p).resolve(), r.resolve()) for r in roots)]
+        assert not missed, (os_name, missed)
+
+
+def test_GREEN_a_code_edit_after_the_install_still_reads_stale(tmp_path, capsys):
+    """The exclusion is the wiring's paths, never a name near them: a code edit, and a `GRAPHY.md` one directory
+    down (a near miss), still move the cursor."""
+    repo = _eaten_git_checkout(tmp_path)
+    shell_install.install(repo, python=sys.executable, log=lambda *a, **k: None)
+    (repo / "solo" / "GRAPHY.md").write_bytes(b"near miss\n")
+    rc, out = _check(repo, capsys)
+    assert rc == 1 and "cursor lane: STALE" in out, out
+    (repo / "solo" / "GRAPHY.md").unlink()
+    assert _check(repo, capsys)[0] == 0
+    (repo / "solo" / "__init__.py").write_bytes(b"def f():\n    return 2\n")
+    rc, out = _check(repo, capsys)
+    assert rc == 1 and "cursor lane: STALE" in out and "graphy eat ." in out, out
+
+
+def test_RED_the_remedy_names_eat_only_on_a_tenant_eat_owns(tmp_path):
+    """A tenant whose roster holds a lane eat did not mint is told its own rebuild, and so is a descriptor anywhere
+    but `<root>/.graphy` — `eat .` refuses there, or prunes with --force (graphyos #143)."""
+    from graphy import cli
+    repo = _eaten_git_checkout(tmp_path)
+    desc = repo / ".graphy" / "tenant.json"
+    tenant = cli._load_tenant(str(desc))
+    roster = cli._roster(tenant)
+    assert "graphy eat ." in cli._cursor_remedy(desc, tenant, roster)
+    foreign = cli._cursor_remedy(desc, tenant, [*roster, "house"])
+    assert "graphy eat ." not in foreign.split(" — ")[0] and "own rebuild" in foreign and "house" in foreign
+    elsewhere = cli._cursor_remedy(tmp_path / "tenant.json", tenant, roster)
+    assert "graphy eat ." not in elsewhere and "own rebuild" in elsewhere
+
+
+def test_RED_the_harness_pointer_is_not_dirt_and_a_human_claude_md_is(tmp_path, capsys):
+    """On a real repo `eat`'s harness writes CLAUDE.md and AGENTS.md pointers after the cursor is taken, so
+    itsdangerous read CHECK RED straight after `graphy eat .`. A pointer is the engine's while it carries the mark;
+    a human CLAUDE.md with no mark is still dirt (graphyos #143)."""
+    from graphy import harness
+    repo = _eaten_git_checkout(tmp_path)
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        assert harness.install_pointer(repo / name, ".graphy/GRAPH.md") == "installed"
+    rc, out = _check(repo, capsys)
+    assert rc == 0 and "cursor lane" not in out, out
+    (repo / "CLAUDE.md").write_bytes(b"# our own rules\n")
+    rc, out = _check(repo, capsys)
+    assert rc == 1 and "cursor lane: STALE" in out, out

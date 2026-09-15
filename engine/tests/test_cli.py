@@ -1183,11 +1183,12 @@ def test_GREEN_remint_history_lands_a_generation(tmp_path, capsys, monkeypatch):
     assert new != old and old.is_dir() and (new / "history_graph" / "PROVENANCE.json").is_file()
     assert not (repo / ".graphy" / ".tenant.json.next").exists()
     capsys.readouterr()
-    # the history lane is green; the install's own untracked wiring (GRAPHY.md · .claude/) moved the tree past the
-    # store, which is the cursor lane's finding and not the re-mint's — named, never absorbed
-    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "solo"]) == 1
+    # the history lane is green, and so is the cursor: the install's own wiring (GRAPHY.md · .claude/) is the
+    # engine's, never the tree moving past the store (graphyos #143)
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "solo"]) == 0
     err = capsys.readouterr().err
-    assert "history lane" not in err and "cursor lane: STALE" in err, err
+    assert "history lane" not in err and "cursor lane" not in err, err
+    assert info["history"] == "re-minted, store recompiled", info["history"]
 
 
 def test_GREEN_three_remints_in_a_row_each_name_the_served_generation_as_their_input(tmp_path, capsys):

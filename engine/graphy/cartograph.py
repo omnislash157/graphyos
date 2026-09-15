@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from graphy.tenant import Tenant, TenantError, cli_tenant
-from graphy._shared import generation_of, source_sha
+from graphy._shared import POINTER_MARK, generation_of, source_sha
 
 SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
@@ -129,13 +129,34 @@ def _excluded(full: Path, root: Path) -> bool:
     return any(a.parent == root.parent and generation_of(a.name) == root.name for a in (full, *full.parents))
 
 
-def cursor_exclude(descriptor: Path, data_home: Path, *, journal=None, join_keys=None) -> tuple[Path, ...]:
+# What `graphy shell install` writes into a checkout for its own wiring, relative to the tenant's root. The cursor
+# never counts it as dirt: the README's `graphy eat . && graphy shell install` read CHECK RED on the two files the
+# install had just written, and named `eat .` to absorb them (graphyos #143).
+ENGINE_WIRING = ("GRAPHY.md", ".claude/settings.json", ".codex/hooks.json", ".cursor/hooks.json", ".graphy/hooks")
+# The pointers `eat`'s harness writes at the root. Each is the engine's only while it carries the harness's mark —
+# the same rule by which the harness replaces it — so a human CLAUDE.md the harness left alone is still dirt.
+POINTER_FILES = ("CLAUDE.md", "AGENTS.md")
+
+
+def _is_pointer(path: Path) -> bool:
+    try:
+        return path.is_file() and POINTER_MARK in path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
+
+def cursor_exclude(descriptor: Path, data_home: Path, *, root: Path, journal=None, join_keys=None) -> tuple[Path, ...]:
     """What the cursor never counts as dirt: the tenant's own products — every generation of its data home,
-    its journal and join keys, the descriptor and the staged one beside it, and the home the eat wrote when the
-    data home sits inside it. `rebuild`, `eat`, `check` and `showcase` all ask here."""
+    its journal and join keys, the descriptor and the staged one beside it, the home the eat wrote when the
+    data home sits inside it, the wiring `shell install` writes under ``root`` (``ENGINE_WIRING``) and the harness's
+    pointers while they are still its own (``POINTER_FILES``). `rebuild`,
+    `eat`, `check` and `showcase` all ask here; ``root`` is required so no caller counts the wiring another skips."""
     desc = Path(descriptor).resolve()
     base = generation_base(Path(data_home).resolve())
+    top = Path(root).resolve()
     out = [base, desc, desc.with_name(f".{desc.name}.next")]
+    out += [top / rel for rel in ENGINE_WIRING]
+    out += [p for p in (top / name for name in POINTER_FILES) if _is_pointer(p)]
     out += [Path(x) for x in (journal, join_keys) if x]
     if desc.parent == base.parent:
         out.append(desc.parent)
@@ -144,7 +165,8 @@ def cursor_exclude(descriptor: Path, data_home: Path, *, journal=None, join_keys
 
 def tenant_exclude(descriptor: Path, tenant: Tenant) -> tuple[Path, ...]:
     """`cursor_exclude` for a declared tenant."""
-    return cursor_exclude(descriptor, tenant.data_home, journal=tenant.journal, join_keys=tenant.join_keys)
+    return cursor_exclude(descriptor, tenant.data_home, root=tenant.root, journal=tenant.journal,
+                          join_keys=tenant.join_keys)
 
 
 def cursor_drift(cursor: str, repo_root: Path, exclude: Iterable[Path] = ()) -> str | None:

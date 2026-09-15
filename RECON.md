@@ -6568,3 +6568,15 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | red first, production | pallets/itsdangerous cloned under `/tmp/p136/José/repo` and eaten, on HEAD: the MCP `hunt` · the gate on an unwalked `class Signer:` edit · the capture each exit 1 in the spec's production block; P6 (the installed SessionEnd hook through `sh`) exit 1 |
 | production, linux | the same block on this tree: `HUNT: 'José'` · the gate exit 2 `GATE BLOCKED` · `reseed_tail.md` written; P6 exit 0, the tail with no CR |
 | the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 151 · THE ENGINE'S OWN WIRING IS NOT DIRT — the cursor counted what the engine wrote into the checkout, so a fresh clone read CHECK RED straight after `graphy eat .` (the harness's CLAUDE.md and AGENTS.md pointers) and again after `graphy shell install` (GRAPHY.md and the harness files), each time naming `eat .` to absorb them; `cartograph.cursor_exclude` now takes the tenant's root and excludes `ENGINE_WIRING` and each pointer while it carries the harness's mark, every cursor caller passes the root, and `check` names `graphy eat .` only for a tenant eat owns — any other is told its own rebuild (2026-09-15 · graphyos issue 143)
+
+- spec: `specs/143.md` · `python3 spec_lint.py specs/143.md` → `SPEC OK`
+
+| check | result |
+|---|---|
+| red first, production | pallets/itsdangerous cloned fresh, on HEAD: `graphy eat .` → `CHECK RED: cursor lane: STALE — … 2 file(s)` (AGENTS.md · CLAUDE.md); after `shell install --harness claude --harness codex --harness cursor` → `6 file(s)` |
+| production, linux | the same on this tree: `CHECK OK` after the install; one line planted in `src/itsdangerous/signer.py` → `CHECK RED: cursor lane: STALE — … 1 file(s) … re-eat the repo (graphy eat .)`; the graphy tenant, a house roster → `… run the tenant's own rebuild` |
+| the upgrade | `graphyos==0.2.6` eats, installs and re-eats over the wiring's dirt; this tree's `check` → STALE naming `graphy eat .`; one eat → `CHECK OK` |
+| three installs | a clone under `First Last`, `shell install` × 3 for every harness → `CHECK OK` |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |

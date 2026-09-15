@@ -1049,6 +1049,25 @@ def _endpoint_audit(tenant) -> list[dict]:
     return lanes
 
 
+def _cursor_remedy(descriptor: Path, tenant: Tenant, roster: list[str]) -> str:
+    """The stale cursor's remedy names `graphy eat .` only for a tenant eat owns: its descriptor at
+    ``<root>/.graphy/tenant.json`` and every lane on its roster one the eaten ring minted, or the history shard.
+    Any other tenant is told its own rebuild — on a roster holding a lane eat did not mint, `eat .` refuses, or
+    with `--force` prunes that lane (graphyos #143)."""
+    rebuild = "run the tenant's own rebuild so the store answers from the tree you stand in"
+    try:
+        if descriptor.resolve() != (Path(tenant.root) / ".graphy" / "tenant.json").resolve():
+            return rebuild
+        ring = json.loads((Path(tenant.data_home) / "ring.json").read_text(encoding="utf-8"))
+        eaten = {str(m.get("slug")) for m in ring.get("minted", {}).values()} | {HISTORY_SLUG}
+    except (OSError, ValueError, AttributeError):
+        return rebuild
+    foreign = sorted(set(roster) - eaten)
+    if foreign:
+        return f"{rebuild} — `graphy eat .` does not own lane(s) {', '.join(foreign)}"
+    return "re-eat the repo (`graphy eat .`) so the store answers from the tree you stand in"
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     from graphy import federated_store as fstore
     from graphy import journal
@@ -1077,7 +1096,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
         findings.append((
             "COULD-NOT-TELL" if drift.startswith("the repo's HEAD is unreadable") else "RED",
             f"cursor lane: STALE — {drift}",
-            "re-eat the repo (`graphy eat .`) or run the tenant's rebuild so the store answers from the tree you stand in"))
+            _cursor_remedy(Path(args.tenant), tenant, substrates)))
     for scheme, pins in release_lane.collisions(release_lane.roster_releases(data_home, substrates)):
         findings.append((
             "RED",
@@ -2246,7 +2265,7 @@ def _eat_stage(args: argparse.Namespace, repo: Path, package: str, corpus: Path,
     if with_history:
         lanes.append(f"--lane={HISTORY_SLUG}_graph:static-dep")
     from graphy.cartograph import cursor_exclude, repo_cursor
-    cursor, dirty = repo_cursor(repo, exclude=cursor_exclude(desc, sub))   # the working tree's dirt joins the cursor (graphyos #39)
+    cursor, dirty = repo_cursor(repo, exclude=cursor_exclude(desc, sub, root=repo))   # the working tree's dirt joins the cursor (graphyos #39)
     if cursor is None:
         cursor = "sha256:" + hashlib.sha256((sub / f"{package}_graph" / "edges.json").read_bytes()).hexdigest()
     elif dirty:
