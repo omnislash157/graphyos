@@ -6686,3 +6686,12 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 
 - `graphy mcp --repo /tmp` with no eaten ancestor still refuses by name: `no tenant at /tmp/.graphy/tenant.json or under any directory above it`
 - the plugin row (`graphy` on PATH) fails on this box because that install is 0.2.6, which refuses a format-5 store (§158); it reads again once that install moves to the next release
+
+## 160 · 0.2.7 IS CUT — 0.2.6 was cut before the in-place store update (#147), the MCP block that connects from any directory (#99), the verb that fails an unexpected OSError instead of refusing it (#95), `graphy hunt` (#92) and the Windows rungs landed since; the production seats run 0.2.6 from PyPI and the seven `awaiting-release` rungs run their Windows pass on this install (2026-09-15 · operator ruling)
+
+- **one upgrade, every seat together:** stores move to generation format 5 (§158). 0.2.7 reads a format-4 store and its first `build` converts it; 0.2.6 refuses a format-5 store.
+- **the wheel is at its cap:** 397,195 of `burden.json`'s 400,000 bytes. The 3D renderer ships no library in the wheel.
+
+| check | result |
+|---|---|
+| the cut | `bash release.sh \| tail -3` → `RELEASE OK: graphyos 0.2.7 built and checked in dist/; CHANGELOG.md regenerated` |
