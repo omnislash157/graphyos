@@ -6675,3 +6675,14 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | a held reader | an `open_for` store held across an in-place update keeps answering; a fresh open reads the new generation and the landed record |
 | the upgrade | a fresh itsdangerous clone eaten by the published graphyos 0.2.6 answers `hunt` on this engine; `build` compiles it whole, the next `build` reads `store fresh`, `CHECK OK` |
 | the battery | `REVIEW OK` · `GRAPHY_STANDALONE_OK` |
+
+## 159 · THE MCP BLOCK CONNECTS FROM ANY DIRECTORY IN THE REPO — the block `eat` printed spelled an in-repo venv's command relative (`.venv/bin/graphy`) and Claude Code spawns a project server from the directory it was launched in, so the server connected from the repo root and failed from `src/`; the command is now the absolute path of the install that ate the repo, and `graphy mcp --repo <dir>` finds the nearest eaten ancestor the way git finds `.git` (2026-09-15 · graphyos issue 99)
+
+| launched from (a fresh itsdangerous clone, its own `.venv`, the block eat printed written verbatim to `.mcp.json`, `claude -p … --output-format stream-json`) | before | now |
+|---|---|---|
+| the repo root | connected | connected |
+| `src/` | failed | connected |
+| `src/itsdangerous/` | — | connected |
+
+- `graphy mcp --repo /tmp` with no eaten ancestor still refuses by name: `no tenant at /tmp/.graphy/tenant.json or under any directory above it`
+- the plugin row (`graphy` on PATH) fails on this box because that install is 0.2.6, which refuses a format-5 store (§158); it reads again once that install moves to the next release

@@ -856,15 +856,13 @@ def test_next_steps_prints_a_project_mcp_json_that_runs_the_graphy_that_ate(tmp_
     assert "CLAUDE_PROJECT_DIR" not in block and str(decoy) not in block
     server = _printed_mcp(block)["mcpServers"]["graphy"]
     assert server["args"] == ["mcp", "--repo", "."]
-    if venv_inside_repo:
-        assert server["command"] == ".venv/bin/graphy"
-    else:
-        assert server["command"] == (venv / "graphy").as_posix()          # the block spells POSIX on every host (graphyos #125)
+    # absolute inside the repo too: a client launched in a subdirectory resolves a relative command there (graphyos #99)
+    assert server["command"] == (venv / "graphy").as_posix()              # the block spells POSIX on every host (graphyos #125)
     # no console script beside the interpreter: that interpreter with -m, still not PATH
     (venv / "graphy").unlink()
     server = _printed_mcp(cli._next_steps(desc, "click", "s", "t", repo / ".graphy", repo=repo))["mcpServers"]["graphy"]
     assert server["args"] == ["-m", "graphy", "mcp", "--repo", "."]
-    assert server["command"] == (".venv/bin/python" if venv_inside_repo else (venv / "python").as_posix())
+    assert server["command"] == (venv / "python").as_posix()
 
 
 @pytest.mark.parametrize("breakage", ["no-repo", "no-ring", "no-root", "empty-root", "no-data-home"])

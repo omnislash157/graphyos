@@ -833,7 +833,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
 EAT_HOME = ".graphy"
 
 
-def repo_tenant(repo: str | Path) -> tuple[Path, str]:
+def repo_tenant(repo: str | Path, *, upward: bool = False) -> tuple[Path, str]:
     """The tenant `graphy eat` left under a repo: (<repo>/.graphy/tenant.json, the root package
     the ring receipt names). Declared by eat, never guessed here — a repo that was not eaten, a
     descriptor without its ring, or a ring without a root refuses by name (graphyos #49). This is
@@ -842,8 +842,15 @@ def repo_tenant(repo: str | Path) -> tuple[Path, str]:
     from graphy import smash as smash_lane
     root = Path(repo).expanduser().resolve()
     desc = root / EAT_HOME / "tenant.json"
+    if upward and not desc.is_file():
+        # an MCP client spawns the server from wherever it was launched, so `--repo .` from a subdirectory names
+        # the nearest eaten ancestor, the way git finds `.git` (graphyos #99)
+        found = next((d / EAT_HOME / "tenant.json" for d in root.parents if (d / EAT_HOME / "tenant.json").is_file()), None)
+        if found is not None:
+            root, desc = found.parent.parent, found
     if not desc.is_file():
-        raise TenantError(f"no tenant at {desc} — run `graphy eat {root}` first")
+        raise TenantError(f"no tenant at {desc}" + (" or under any directory above it" if upward else "")
+                          + f" — run `graphy eat {root}` first")
     try:
         data_home = Path(json.loads(desc.read_text(encoding="utf-8"))["data_home"])
     except (ValueError, KeyError, TypeError) as exc:
@@ -879,7 +886,7 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         return 2
     if args.repo:
         try:
-            desc, tenant_id = repo_tenant(args.repo)
+            desc, tenant_id = repo_tenant(args.repo, upward=True)
         except TenantError as exc:
             print(f"MCP REFUSED: {exc}", file=sys.stderr)
             return 2
@@ -2441,22 +2448,14 @@ def _graphy_command() -> list[str]:
 
 
 def mcp_config(cmd: list[str], desc: Path, package: str) -> dict:
-    """The `mcpServers` block for a project `.mcp.json`. A project config expands no
-    `${CLAUDE_PROJECT_DIR}` (only the plugin manifest does) and its spawn resolves a relative
-    command and argv against the project root — so for the tenant eat left under a repo the
-    `--repo` is `.` and an executable inside the repo is spelled relative to it; one outside the
-    repo stays the absolute path of the install that ate it (graphyos #82)."""
+    """The `mcpServers` block for a project `.mcp.json`. The client spawns the command from the directory it was
+    launched in, not the project root: a relative `.venv/bin/graphy` connected from the root and failed from `src/`
+    (graphyos #99, measured with Claude Code), so the command is the absolute path of the install that ate the repo
+    (never PATH, graphyos #82). `--repo .` stays relative: `mcp --repo` finds the nearest eaten ancestor."""
     args = cmd[1:] + mcp_args(desc, package)
-    command = cmd[0]
-    desc = Path(desc)
     if args[-2:-1] == ["--repo"]:
-        repo = desc.parent.parent
         args[-1] = "."
-        try:
-            command = Path(command).relative_to(repo).as_posix()
-        except ValueError:
-            pass
-    return {"mcpServers": {"graphy": {"command": command, "args": args}}}
+    return {"mcpServers": {"graphy": {"command": cmd[0], "args": args}}}
 
 
 def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
@@ -2471,7 +2470,7 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
     return "\n".join([
         "",
         "  ADD YOUR MODEL — paste this into the repo's .mcp.json (Claude Code) or your client's MCP settings; the model is yours, the walk is graphy's.",
-        "  Its paths are relative, so the client starts in the repo root:",
+        "  The command is this install's absolute path and `--repo .` finds the eaten repo from any directory under it:",
         *("  " + ln for ln in mcp.splitlines()),
         "  or, in Claude Code, the plugin — one command, no pointer to write:  claude plugin install graphy@omnislash157/graphyos",
         "",
