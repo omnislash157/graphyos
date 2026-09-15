@@ -264,7 +264,8 @@ This project is one thing, so the rules are few.
 - **Done is it works in production.** A test, a token or a gate going green proves nothing there: it is the
   floor, and manipulating the environment until it goes green is the oldest failure in AI.
 - **The loop, every rung, in order:** write `specs/<n>.md` → `python3 spec_lint.py specs/<n>.md` reads SPEC OK → build → `python3 review.py` and `bash standalone_check.sh` (fix what they flag) → run the spec's `## Production` blocks on each declared host → commit and push both repos and close with the production output, without waiting
-  to be told. A host this box cannot run (the Windows seat) is a fleet message; the rung stays open until its output arrives.
+  to be told. A host this box cannot run (the Windows seat) is not waited on: the rung is labeled `awaiting-release` with this box's output, stays open, holds nothing,
+  and every such rung runs in one pass on that host when the release is cut. **No tests are written for a rung**: done is the production run, and the battery, the spec linter and the adversarial reviewer are the checks.
   A review round runs only when the operator asks for one, judged against the spec alone.
 - **A blocker becomes a lint or a scar.** A mistake a spec could have avoided becomes a `spec_lint.py` rule with a bad and a
   near-miss fixture, or a one-line scar; `python3 spec_lint.py --patterns` is the build checklist.

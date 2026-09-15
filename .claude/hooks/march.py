@@ -45,6 +45,9 @@ CLEAR_DELAY = float(os.environ.get("MARCH_CLEAR_DELAY", "5"))
 CADENCE = float(os.environ.get("MARCH_CADENCE", "120"))
 GATE_TOKEN = "MARCH GATE"
 OPERATOR_LABEL = "operator"
+# A rung whose code is landed and proven on every host this box reaches, waiting only on a host that runs a release
+# (the Windows seat): it stays open on the board, holds nothing, and is run with its siblings in one pass per release.
+AWAITING_LABEL = "awaiting-release"
 # A hold is a handhold for entropy: the loop never stops on a rung that needs the operator. It gates
 # THAT rung — labeled `operator` on the board with the exact step — and marches the next one. Only the
 # gates no walk can derive pass (the Enterprise "ur call" gate, #682, ported): a ruling on the law, money,
@@ -214,6 +217,11 @@ def issue_state(n: int) -> str:
     return json.loads(gh("issue", "view", str(n), "--json", "state"))["state"]
 
 
+def awaiting_release(n: int) -> bool:
+    row = json.loads(gh("issue", "view", str(n), "--json", "labels"))
+    return any(l.get("name") == AWAITING_LABEL for l in row.get("labels") or [])
+
+
 _NO_SUCH_RE = re.compile(r"Could not resolve to an issue or pull request", re.IGNORECASE)
 
 
@@ -277,7 +285,7 @@ def next_issue(exclude: int | None = None) -> int | None:
     rows = json.loads(gh("issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels"))
     candidates = [
         r["number"] for r in rows
-        if r["number"] != exclude and not any(l["name"] in ("blocked", OPERATOR_LABEL) for l in r.get("labels", []))
+        if r["number"] != exclude and not any(l["name"] in ("blocked", OPERATOR_LABEL, AWAITING_LABEL) for l in r.get("labels", []))
     ]
     if not candidates:
         return None
@@ -550,7 +558,13 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
         log(f"gh failed on issue {issue}: {exc}")
         return allow(f"could not read issue {issue} from GitHub ({exc}); letting the session stop")
 
+    parked = False
     if live == "OPEN":
+        try:
+            parked = awaiting_release(issue)
+        except Exception as exc:  # noqa: BLE001
+            log(f"gh failed reading labels of issue {issue}: {exc}")
+    if live == "OPEN" and not parked:
         pending, tool_uses = transcript_facts(payload.get("transcript_path"))
         if pending:
             # the session is waiting on its own background work, whose notification wakes it: let it
@@ -572,7 +586,8 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
             f"MARCH — issue {issue} is still OPEN on the board ({blocks} stalled continuation(s)). "
             f"The loop does not stop on an open issue. Keep marching: specs/{issue}.md linted by "
             f"`python3 spec_lint.py`, the build, `python3 review.py` and the gate, the spec's production blocks on each "
-            f"declared host, commit and push, then `gh issue close {issue} --repo {REPO} --comment <production output>`. "
+            f"declared host this box reaches, commit and push, then `gh issue close {issue} --repo {REPO} --comment <production output>` — "
+            f"or, when only a host that runs a release is left, label it `{AWAITING_LABEL}` with that output. "
             f"A rung only the operator can finish is gated, never held: a line `{GATE_TOKEN}: <gate> — <step>` "
             f"naming one of {names}, and the march moves to the next rung."
         )
@@ -593,6 +608,8 @@ def cmd_stop_hook(_: argparse.Namespace) -> int:
             f"main: `gh run list --repo {REPO} --workflow ci --branch main --limit 1`, `python3 workflows.py --run .github/workflows/ci.yml <job>` runs every step here, read the failed job's log, fix it, run the "
             f"gate, commit and push; the next stop on a green or pending main arms the next rung."
         )
+    if parked:
+        return advance(state, issue, f"issue {issue} labeled `{AWAITING_LABEL}` — open until the release pass")
     unblock(issue)
     return advance(state, issue, f"issue {issue} closed")
 
