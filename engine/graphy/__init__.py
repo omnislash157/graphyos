@@ -15,7 +15,7 @@ from graphy.ir import (
 from graphy.parity import Golden, Harness, ParityError, load_golden
 from graphy.tenant import REQUIRED_FIELDS, Tenant, TenantError
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 __all__ = [
     "Golden",
