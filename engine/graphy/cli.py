@@ -859,14 +859,9 @@ def _recall(args: argparse.Namespace, store, home, live: str) -> int:
     except doors.DoorError as exc:
         print(f"TRAVERSALS UNANSWERABLE: {exc}", file=sys.stderr)
         return 1
-    vocab = traversal.vocabulary(store)
-    if vocab is None:
-        print("TRAVERSALS REFUSED: the door rules' source is unreadable, so no stored door answer can be matched "
-              "to the code that computed it", file=sys.stderr)
-        return 2
     try:
         rows = traversal.recall(home, live, seed=node if args.seed else None, target=node if args.target else None,
-                                vocab=vocab)
+                                store=store)
     except traversal.TraversalError as exc:
         print(f"TRAVERSALS REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -913,7 +908,7 @@ def _cmd_traversals(args: argparse.Namespace) -> int:
                 return 2
             return _recall(args, store, home, live)
         if not args.replay:
-            n, vocab = 0, traversal.vocabulary(store)
+            n = 0
             for gen_dir in sorted(p for p in home.iterdir() if p.is_dir()) if home.is_dir() else []:
                 for seed, rp in traversal.stored(home, gen_dir.name).items():
                     r = json.loads(rp.read_text(encoding="utf-8"))
@@ -922,8 +917,9 @@ def _cmd_traversals(args: argparse.Namespace) -> int:
                           f"rows={r['rows']} exhausted={r['exhausted']} reads={r['reads']}")
                     n += 1
                 for r in traversal.stored_doors(home, gen_dir.name):
-                    tag = "past" if gen_dir.name != live else "live" if r.get("vocabulary") == vocab else "stale-vocab"
-                    print(f"  {tag} {gen_dir.name[:12]}  {r['door']} {r['seed']}  depth={r['depth']} rows={r['rows']} reads={r['reads']}")
+                    tag = "live" if gen_dir.name == live else "past"
+                    print(f"  {tag} {gen_dir.name[:12]}  {r['door']} {r['seed']}  depth={r['depth']} reached={r['reached']} "
+                          f"facts={r['rows']} reads={r['reads']}")
                     n += 1
             print(f"TRAVERSALS OK: {n} stored traversal(s) under {home} (live generation {live[:12]})")
             return 0

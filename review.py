@@ -923,16 +923,6 @@ def check_pages(repo: Path) -> tuple[list[Finding], int]:
 
 
 
-# ── a stored answer's key covers the code that computed it ───────────────────────────────────────
-
-def _module_path(repo: Path, dotted: str) -> Path | None:
-    rel = dotted.replace(".", "/")
-    for p in (repo / "engine" / f"{rel}.py", repo / "engine" / rel / "__init__.py"):
-        if p.is_file():
-            return p
-    return None
-
-
 def _literal_tuple(tree: ast.Module, name: str) -> tuple[int, list[str]] | None:
     for node in tree.body:
         targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
@@ -945,117 +935,7 @@ def _literal_tuple(tree: ast.Module, name: str) -> tuple[int, list[str]] | None:
     return None
 
 
-def _literal_dict(tree: ast.Module, name: str) -> tuple[int, dict] | None:
-    for node in tree.body:
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
-        if any(isinstance(t, ast.Name) and t.id == name for t in targets) and node.value is not None:
-            try:
-                value = ast.literal_eval(node.value)
-            except ValueError:
-                return node.lineno, {}
-            return node.lineno, dict(value) if isinstance(value, dict) else {}
-    return None
-
-
-def _imports(repo: Path, dotted: str) -> set[str]:
-    """Every graphy module a module can import: every Import and ImportFrom anywhere in it — top level, a
-    function body, an `if`, a `try`'s handlers — with relative imports resolved against its package, and each
-    parent package's `__init__` (importing `graphy.a.b` runs `graphy/__init__.py`). A lazy import runs when its
-    function runs, and the door functions are where this codebase imports (graphyos #111 review round 5)."""
-    p = _module_path(repo, dotted)
-    if p is None:
-        return set()
-    pkg = dotted if p.name == "__init__.py" else dotted.rpartition(".")[0]
-    out: set[str] = set()
-    for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.ImportFrom):
-            if node.level:
-                base = pkg.split(".")[: len(pkg.split(".")) - (node.level - 1)]
-                mod = ".".join(base + ([node.module] if node.module else []))
-            else:
-                mod = node.module or ""
-            if mod.split(".")[0] != "graphy":
-                continue
-            out |= {c for c in {mod, *(f"{mod}.{a.name}" for a in node.names)} if _module_path(repo, c)}
-        elif isinstance(node, ast.Import):
-            out |= {a.name for a in node.names if a.name.split(".")[0] == "graphy" and _module_path(repo, a.name)}
-        elif (isinstance(node, ast.Call) and node.args and isinstance(node.args[0], ast.Constant)
-              and isinstance(node.args[0].value, str) and node.args[0].value.split(".")[0] == "graphy"
-              and ((isinstance(node.func, ast.Attribute) and node.func.attr == "import_module")
-                   or (isinstance(node.func, ast.Name) and node.func.id in ("import_module", "__import__")))):
-            if _module_path(repo, node.args[0].value):     # importlib.import_module("graphy.x") · __import__("graphy.x")
-                out.add(node.args[0].value)
-    parts = dotted.split(".")
-    out |= {".".join(parts[:k]) for k in range(1, len(parts)) if _module_path(repo, ".".join(parts[:k]))}
-    return out - {dotted}
-
-
-_PINNED = re.compile(r"^SOURCE_SHA\s*=\s*source_sha\(__file__\)", re.M)
-
-
-def check_cache_key_closure(repo: Path) -> list[Finding]:
-    """cache-key-closure: a module that keys stored answers by the code that computed them declares
-    `RULE_ROOTS` (where the answer is computed), `RULE_MODULES` (what its key hashes) and `RULE_EXEMPT`
-    (module → why it bears no rule; its imports are not followed). Every module the roots can import, lazily
-    or not, is in exactly one of the two; neither names a module outside the closure; every key member pins
-    `SOURCE_SHA = source_sha(__file__)` at import; every exemption carries its reason. graphyos #111 was
-    REVISED for a key that described less than its inputs through four holes — the relations, the engine's
-    rules, the disk read after import, and a lazy import this check first could not see."""
-    declarers = []
-    for p in sorted((repo / "engine" / "graphy").rglob("*.py")) if (repo / "engine" / "graphy").is_dir() else []:
-        tree = ast.parse(p.read_text(encoding="utf-8"))
-        roots, modules = _literal_tuple(tree, "RULE_ROOTS"), _literal_tuple(tree, "RULE_MODULES")
-        if roots or modules:
-            declarers.append((p, roots, modules, _literal_dict(tree, "RULE_EXEMPT")))
-    if not declarers:
-        raise CheckError("cache-key-closure found ZERO modules declaring RULE_ROOTS / RULE_MODULES — "
-                         "the stored doors key by nothing, or the scan is broken")
-    found: list[Finding] = []
-    judged = 0
-    for p, roots, modules, exempt in declarers:
-        rel = _rel(repo, p)
-        if not roots or not modules or not roots[1] or not modules[1]:
-            found.append(Finding("cache-key-closure", rel, "declares one of RULE_ROOTS / RULE_MODULES without the other, "
-                                 "or not as a literal tuple of dotted module names"))
-            continue
-        ex_line, ex = exempt if exempt else (modules[0], {})
-        for m, why in sorted(ex.items()):
-            if not isinstance(why, str) or not why.strip():
-                found.append(Finding("cache-key-closure", f"{rel}:{ex_line}", f"RULE_EXEMPT[{m!r}] carries no reason"))
-        declared = set(modules[1])
-        for m in sorted(declared & set(ex)):
-            found.append(Finding("cache-key-closure", f"{rel}:{ex_line}", f"{m} is both keyed and exempt"))
-        seen: set[str] = set()
-        todo = list(roots[1])
-        while todo:
-            m = todo.pop()
-            if m in seen:
-                continue
-            seen.add(m)
-            if _module_path(repo, m) is None:
-                found.append(Finding("cache-key-closure", f"{rel}:{roots[0]}", f"{m} is in the closure and names no module"))
-                continue
-            if m in ex:
-                continue                       # declared rule-free: its own imports are not the key's
-            todo += sorted(_imports(repo, m) - seen)
-        judged += len(seen)
-        for m in sorted(seen - declared - set(ex)):
-            found.append(Finding("cache-key-closure", f"{rel}:{modules[0]}",
-                                 f"{m} is importable from the rule roots and neither in RULE_MODULES nor RULE_EXEMPT — "
-                                 f"an edit to it would serve a stored answer the new code never computed"))
-        for m in sorted((declared | set(ex)) - seen):
-            found.append(Finding("cache-key-closure", f"{rel}:{modules[0]}",
-                                 f"{m} is declared and outside the roots' import closure — a stale declaration"))
-        for m in sorted(declared & seen):
-            mp = _module_path(repo, m)
-            if mp is not None and not _PINNED.search(mp.read_text(encoding="utf-8")):
-                found.append(Finding("cache-key-closure", _rel(repo, mp),
-                                     "does not pin `SOURCE_SHA = source_sha(__file__)` at import — "
-                                     "the key would read the disk, not the code this process runs"))
-    NOTES["cache-key-closure"] = f"{len(declarers)} declaring module(s), {judged} module(s) in the closure"
-    return found
-
-
+# ── a cache write never costs an answer ───────────────────────────────────────────────────────────
 
 def _catches(handler: ast.ExceptHandler) -> set[str]:
     t = handler.type
@@ -1084,6 +964,7 @@ def _guard_holds(tr: ast.Try) -> bool:
 
 
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
 
 
 def check_cache_write_guarded(repo: Path) -> list[Finding]:
@@ -1699,7 +1580,6 @@ CHECKS = {
     "template-token": check_template_tokens,
     "review-row-order": check_review_row_order,
     "sha-liveness": check_sha_liveness,
-    "cache-key-closure": check_cache_key_closure,
     "cache-write-guarded": check_cache_write_guarded,
     "data-home-by-descriptor": check_data_home_by_descriptor,
     "cursor-exclude-by-tenant": check_cursor_exclude_by_tenant,
@@ -1779,21 +1659,6 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
         "sha-liveness": (
             {"RECON.md": "## 1 · x (2026-01-01)\n\nlanded at commit deadbeef0\n"},
             {"RECON.md": "## 1 · x (2026-01-01)\n\nthe store generation 24eecb50371f9e1d is not a commit\n"}),
-        "cache-key-closure": (
-            # red: e absent (a lazy import inside a root function), rel absent (a relative import), gone stale,
-            # d unpinned, an exemption with no reason, dyn absent (a literal import_module) — six findings
-            {"engine/graphy/__init__.py": "", "engine/graphy/_shared.py": "def source_sha(f):\n    return f\nSOURCE_SHA = source_sha(__file__)\n",
-             "engine/graphy/t.py": "RULE_ROOTS = ('graphy.d',)\nRULE_MODULES = ('graphy.d', 'graphy._shared', 'graphy.gone')\nRULE_EXEMPT = {'graphy': ''}\n",
-             "engine/graphy/d.py": "from graphy._shared import source_sha\nfrom .rel import z\ndef blast():\n    from graphy.e import x\n"
-                                   "    import importlib\n    importlib.import_module('graphy.dyn')\n",
-             "engine/graphy/rel.py": "", "engine/graphy/e.py": "", "engine/graphy/dyn.py": ""},
-            {"engine/graphy/__init__.py": "", "engine/graphy/_shared.py": "def source_sha(f):\n    return f\nSOURCE_SHA = source_sha(__file__)\n",
-             "engine/graphy/t.py": "RULE_ROOTS = ('graphy.d',)\nRULE_MODULES = ('graphy.d', 'graphy._shared', 'graphy.e', 'graphy.rel', 'graphy.dyn')\n"
-                                   "RULE_EXEMPT = {'graphy': 'the package re-exports; no rule'}\n",
-             "engine/graphy/d.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\nfrom .rel import z\ndef blast():\n    from graphy.e import x\n"
-                                   "    __import__('graphy.dyn')\n",
-             "engine/graphy/dyn.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\n",
-             "engine/graphy/rel.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\n", "engine/graphy/e.py": "from graphy._shared import source_sha\nSOURCE_SHA = source_sha(__file__)\n"}),
         "cache-write-guarded": (
             # red: bare call · a JSONDecodeError beside OSError · a re-raise · a nested def · an alias · a partial · a getattr — seven
             {"engine/graphy/t.py": "CACHE_WRITERS = ('store_x',)\ndef store_x():\n    pass\n",

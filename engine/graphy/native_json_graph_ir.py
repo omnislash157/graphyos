@@ -9,9 +9,7 @@ from typing import Any
 
 from graphy.cartograph import resolve_graph
 from graphy.ir import IRError, validate_graph, Vocabulary
-from graphy._shared import source_sha
 
-SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 
 

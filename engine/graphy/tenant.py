@@ -4,9 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
-from graphy._shared import source_sha
 
-SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 __all__ = ["Tenant", "TenantError", "REQUIRED_FIELDS", "POLICY_VALUES", "LANE_KINDS"]
 

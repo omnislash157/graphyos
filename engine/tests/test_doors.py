@@ -199,11 +199,10 @@ def test_GREEN_blast_and_descend_record_and_recall(tmp_path, capsys):
     assert "stored=no" in capsys.readouterr().out and len(traversal.stored_doors(home, gen)) == 3
 
     # the stored answer equals a fresh live door, field for field
-    vocab = traversal.vocabulary(store)
     fresh = doors.blast(store, SEED, max_depth=3)
-    recalled = traversal.load_door(home, gen, "blast", SEED, 3, vocab)
+    recalled = traversal.load_door(home, gen, "blast", SEED, 3, store)
     assert doors.render_blast(recalled) == doors.render_blast(fresh) and recalled.declined == fresh.declined
-    d_fresh, d_rec = doors.descend(store, SEED, max_depth=3), traversal.load_door(home, gen, "descend", SEED, 3, vocab)
+    d_fresh, d_rec = doors.descend(store, SEED, max_depth=3), traversal.load_door(home, gen, "descend", SEED, 3, store)
     assert [r.node for r in d_rec.primitives] == [r.node for r in d_fresh.primitives] == ["widgets://func/widgets.prim"]
 
     # recall by target: every stored traversal that reached the test, one scan, zero reads
@@ -215,24 +214,24 @@ def test_GREEN_blast_and_descend_record_and_recall(tmp_path, capsys):
     # recall by seed: the blasts and the descent from the seed, and the walk rows beside them
     assert cli.main(["walk", *argv, "--seed", "widgets://func/widgets.gadget", "--target", "widgets://func/widgets.prim"]) == 0
     capsys.readouterr()
-    rows = traversal.recall(home, gen, seed=SEED)
+    rows = traversal.recall(home, gen, seed=SEED, store=store)
     assert {(r["kind"], r["depth"]) for r in rows} == {("blast", 3), ("blast", 1), ("descend", 3)}
-    walked = traversal.recall(home, gen, target="widgets://func/widgets.prim")
+    walked = traversal.recall(home, gen, target="widgets://func/widgets.prim", store=store)
     assert {(r["kind"], r["seed"]) for r in walked} == {("descend", SEED), ("walk", "widgets://func/widgets.gadget")}
     assert cli.main(["traversals", *argv]) == 0
     assert "TRAVERSALS OK: 4 stored traversal(s)" in capsys.readouterr().out
     # a torn receipt refuses by name, never reinterpreted
-    rp = next((home / gen / "doors").glob("blast-*-d3-v*.json"))
+    rp = next((home / gen / "doors").glob("blast-*-d3.facts.json"))
     rp.write_text(json.dumps({**json.loads(rp.read_text()), "depth": 9}))
     assert cli.main(["blast", SEED, *argv, "--depth", "3"]) == 2
     assert "refusing to reinterpret it" in capsys.readouterr().err
 
 
 def test_RED_a_redeclared_relation_is_never_recalled_stale(tmp_path):
-    """graphyos #111 review round 1: a door answer depends on what the door follows, and the generation
-    hashes nodes and edges, not the relation vocabulary. A lane that re-declares `reads_table` over the
-    same shards keeps its generation — keyed on the generation alone, the blast replayed dependents=0
-    from the store while the live door answered 1. The key carries the vocabulary; the repeat runs live."""
+    """graphyos #111 review round 1, kept by #117's design: the generation hashes nodes and edges, not the relation
+    vocabulary, so a lane that re-declares `reads_table` over the same shards keeps its generation. The facts the
+    first blast read are facts of that generation; the live rules re-run over them under the new declaration ask
+    for a node the first blast never expanded, so the door runs live and answers what the live door answers."""
     import graphy.traversal as traversal
     if not traversal.have_duckdb():
         pytest.skip(traversal.INSTALL_HINT)
@@ -244,25 +243,111 @@ def test_RED_a_redeclared_relation_is_never_recalled_stale(tmp_path):
     assert declared.generation() == undeclared.generation()           # the same shards: the generation cannot tell
     again = traversal.door(declared, home, "blast", TABLE, 3)
     assert again.source == "live" and READER in again.result.reached
-    assert traversal.vocabulary(declared) != traversal.vocabulary(undeclared)
-    # an upgraded engine whose door rules moved, over the same store and the same declaration: live again
-    import unittest.mock
-    with unittest.mock.patch.object(doors, "SOURCE_SHA", "f" * 16):
-        assert traversal.door(declared, home, "blast", TABLE, 3).source == "live"
-    # review round 3: a long-lived process (the MCP server) whose files move on disk after import keys by
-    # the code it runs — the digest is pinned at import, never read from the disk at the first door call
-    pinned = traversal.rules_digest()
-    with unittest.mock.patch.object(Path, "read_bytes", lambda self: b"an upgraded engine on disk"):
-        assert traversal.rules_digest() == pinned
-    with unittest.mock.patch.object(doors, "SOURCE_SHA", None):
-        unread = traversal.door(declared, home, "blast", TABLE, 3)
-        assert unread.source == "live" and unread.stored is None and "unreadable" in unread.note
+    assert doors.render_blast(again.result) == doors.render_blast(doors.blast(declared, TABLE, max_depth=3))
     assert traversal.door(declared, home, "blast", TABLE, 3).source == "store"
-    # recall under the live vocabulary never serves the stale answer's rows
-    rows = traversal.recall(home, declared.generation(), target=READER, vocab=traversal.vocabulary(declared))
+    # recall re-derives under the live store's declaration: the reader is reached under it and not without it
+    rows = traversal.recall(home, declared.generation(), target=READER, store=declared)
     assert {(r["kind"], r["seed"]) for r in rows} == {("blast", TABLE)}
-    assert traversal.recall(home, declared.generation(), seed=TABLE, vocab=traversal.vocabulary(undeclared))
-    assert not traversal.recall(home, declared.generation(), target=READER, vocab=traversal.vocabulary(undeclared))
+    assert not traversal.recall(home, declared.generation(), target=READER, store=undeclared)
+    assert traversal.recall(home, declared.generation(), seed=TABLE, store=undeclared)
+
+
+def test_RED_a_door_records_the_facts_it_read_and_no_answer(tmp_path):
+    """graphyos #117: the stored rows are what the door READ — every neighbour of each node it expanded and each
+    owner it looked up — never what it computed; the key is the generation, the door, the seed and the depth."""
+    import graphy.traversal as traversal
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    store, tenant, _ = _store(tmp_path)
+    home, gen = traversal.home_for(tenant), store.generation()
+    o = traversal.door(store, home, "descend", SEED, 3)
+    assert o.source == "live" and o.stored.name.endswith(".facts.parquet") and "-v" not in o.stored.name
+    receipt = json.loads(o.stored.with_suffix(".json").read_text())
+    assert set(receipt) >= {"generation", "door", "seed", "depth", "rows", "expanded", "owners", "reads"}
+    assert "vocabulary" not in receipt and receipt["generation"] == gen
+    nbs, owners = traversal.load_facts(home, gen, "descend", SEED, 3)
+    for node in o.result.reached:                       # descend asks every reached node for its callees
+        assert node in owners and node in nbs
+        assert [(n.node, n.relation, n.direction) for n in nbs[node]] == \
+               [(n.node, n.relation, n.direction) for n in store.neighbours(node)]   # unfiltered, as the store gave them
+
+
+def test_RED_changed_rules_over_stored_facts_answer_as_the_changed_live_door(tmp_path, monkeypatch):
+    """graphyos #117: an engine whose door rules moved, over facts an older rule recorded, answers what the new rule
+    answers live — from the facts when they suffice, live when the new rule reads further. No key names the code."""
+    import graphy.traversal as traversal
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    store, tenant, _ = _store(tmp_path)
+    home = traversal.home_for(tenant)
+    wide = traversal.door(store, home, "blast", SEED, 3)
+    assert wide.source == "live" and len(wide.result.reached) > 1
+    monkeypatch.setattr(doors, "blast_relations", lambda s: frozenset())       # a rule that follows nothing
+    monkeypatch.setattr(doors, "SEED_RELATIONS", frozenset())
+    narrow = traversal.door(store, home, "blast", SEED, 3)
+    assert narrow.source == "store" and list(narrow.result.reached) == [SEED]
+    assert doors.render_blast(narrow.result) == doors.render_blast(doors.blast(store, SEED, max_depth=3))
+    monkeypatch.undo()
+    monkeypatch.setattr(doors, "SEED_RELATIONS", doors.SEED_RELATIONS | {"calls", "contains", "imports"})
+    wider = traversal.door(store, home, "blast", SEED, 3)
+    assert doors.render_blast(wider.result) == doors.render_blast(doors.blast(store, SEED, max_depth=3))
+
+
+def test_RED_recall_rederives_each_stored_door_under_the_live_rules(tmp_path, monkeypatch):
+    """graphyos #117: recall by target reads no answer rows; it re-runs each stored door over its facts, so a rule
+    that stops reaching the target stops recalling it, with zero store reads."""
+    import graphy.traversal as traversal
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    store, tenant, _ = _store(tmp_path)
+    home, gen = traversal.home_for(tenant), store.generation()
+    reached = [n for n in traversal.door(store, home, "blast", SEED, 3).result.reached if n != SEED]
+    assert reached and traversal.recall(home, gen, target=reached[0], store=store)
+    counted = traversal.Counting(store)
+    monkeypatch.setattr(doors, "blast_relations", lambda s: frozenset())
+    monkeypatch.setattr(doors, "SEED_RELATIONS", frozenset())
+    assert not traversal.recall(home, gen, target=reached[0], store=counted) and counted.reads == 0
+
+
+def test_RED_a_released_door_layout_is_never_read_as_facts(tmp_path):
+    """graphyos #117 · S7: 0.2.6 stored a door's ANSWER rows under `<door>-<key>-d<depth>-v<vocabulary>`. Those files
+    are on users' disks; the repeat never reads them as facts — it runs live and records beside them."""
+    import graphy.traversal as traversal
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    store, tenant, _ = _store(tmp_path)
+    home, gen = traversal.home_for(tenant), store.generation()
+    d = home / gen / "doors"
+    d.mkdir(parents=True)
+    stem = f"blast-{traversal._key(SEED)}-d3-v0123456789abcdef"
+    (d / f"{stem}.parquet").write_bytes(b"PAR1 an answer-rows parquet from 0.2.6")
+    (d / f"{stem}.json").write_text(json.dumps({"format": 1, "door": "blast", "seed": SEED, "depth": 3,
+                                                "generation": gen, "vocabulary": "0123456789abcdef", "rows": 1}))
+    o = traversal.door(store, home, "blast", SEED, 3)
+    assert o.source == "live" and o.stored.name == f"blast-{traversal._key(SEED)}-d3.facts.parquet"
+    assert (d / f"{stem}.parquet").read_bytes().startswith(b"PAR1 an answer")
+    assert traversal.door(store, home, "blast", SEED, 3).source == "store"
+    assert [r["door"] for r in traversal.stored_doors(home, gen)] == ["blast"]
+
+
+def test_RED_a_raise_mid_record_leaves_no_facts_and_the_answer_stands(tmp_path, monkeypatch):
+    """graphyos #117 · E3: a write that fails half way lands no torn facts — the next ask is live, never a replay
+    of a partial recording."""
+    import graphy.traversal as traversal
+    import graphy.container as container
+    if not traversal.have_duckdb():
+        pytest.skip(traversal.INSTALL_HINT)
+    store, tenant, _ = _store(tmp_path)
+    home = traversal.home_for(tenant)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(traversal, "_write_parquet", boom)
+    o = traversal.door(store, home, "descend", SEED, 3)
+    assert o.source == "live" and o.stored is None and "disk full" in o.note
+    assert not list(home.rglob("*.facts.*"))
+    monkeypatch.undo()
+    assert traversal.door(store, home, "descend", SEED, 3).source == "live"
 
 
 def test_RED_a_door_answers_when_its_store_cannot_be_written(tmp_path, capsys):

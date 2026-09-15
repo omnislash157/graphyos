@@ -24,9 +24,7 @@ from dataclasses import dataclass, field
 from graphy.cross_substrate import AGAINST, BOTH, WITH, WIRE_BUCKET, explanations_from_store
 from graphy.federated_store import relations_in
 from graphy.ir import DEPENDS, REACHES
-from graphy._shared import source_sha
 
-SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 # The DEFAULTS, not the law (graphyos #68). A store whose lanes declare their relation vocabulary
 # answers from the declaration; one whose lanes declare nothing — every shard minted before this

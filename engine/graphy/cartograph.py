@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from graphy.tenant import Tenant, TenantError, cli_tenant
-from graphy._shared import POINTER_MARK, generation_of, source_sha
+from graphy._shared import POINTER_MARK, generation_of
 
-SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 def repo_head_sha(repo_root: Path | None = None) -> str | None:
     if repo_root is None:

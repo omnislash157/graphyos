@@ -1,23 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import hashlib
 import math
-from pathlib import Path
 
 SUPPORT_PRIOR = 5
 
-
-def source_sha(file: str) -> str | None:
-    """A module's own bytes as sha16, taken when the module is imported — the code this process runs,
-    never what the disk holds later (graphyos #111). None when the source is unreadable (a zipimport)."""
-    try:
-        return hashlib.sha256(Path(file).read_bytes()).hexdigest()[:16]
-    except OSError:
-        return None
-
-
-SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 DEFAULT_EXCLUDE = ("tests/", "test/", "docs_src/", "docs/", "scripts/", "examples/")
 

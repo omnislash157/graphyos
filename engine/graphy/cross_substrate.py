@@ -19,9 +19,7 @@ from graphy._shared import (
     _shim_adj_for_activate,
 )
 from graphy.tenant import Tenant, TenantError, cli_tenant
-from graphy._shared import source_sha
 
-SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 WIRE_BUCKET = "wire"
 RESERVED_SCHEMES = {"fetch", "artifact", "impl", "doctrine", "scrape"}

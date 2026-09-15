@@ -22,12 +22,9 @@ from pathlib import Path
 
 from graphy.container import INSTALL_HINT, _duckdb, _write_parquet, have_duckdb
 from graphy.cross_substrate import UNKNOWN, PathResult, Step
-from graphy._shared import source_sha
-
-SOURCE_SHA = source_sha(__file__)   # the door rules this process runs (graphyos #111)
 
 __all__ = ["TraversalError", "DIRNAME", "home_for", "walk", "store_walk", "load_walk", "stored",
-           "replay", "Counting", "INSTALL_HINT", "door", "load_door", "stored_doors", "recall", "vocabulary"]
+           "replay", "Counting", "INSTALL_HINT", "door", "load_door", "load_facts", "stored_doors", "recall"]
 
 DIRNAME = "traversals"
 COLUMNS = {"seed": "VARCHAR", "hop": "BIGINT", "node": "VARCHAR", "via_src": "VARCHAR",
@@ -35,11 +32,7 @@ COLUMNS = {"seed": "VARCHAR", "hop": "BIGINT", "node": "VARCHAR", "via_src": "VA
            "on_path": "BOOLEAN"}
 RECEIPT_FORMAT = 1
 DOORS = ("descend", "blast")
-DOOR_FORMAT = 1            # the receipt's shape; the rules themselves are keyed by rules_digest, never by a bump
 DOOR_DIR = "doors"          # beside the walks, never in their glob: replay and `stored` read walks only
-DOOR_COLUMNS = {"door": "VARCHAR", "seed": "VARCHAR", "depth": "BIGINT", "ord": "BIGINT", "hop": "BIGINT",
-                "node": "VARCHAR", "via_src": "VARCHAR", "relation": "VARCHAR", "owner": "VARCHAR",
-                "primitive": "BOOLEAN", "generation": "VARCHAR"}
 
 
 # Every function that lands rows in the traversal store. The store is a cache: the review battery's
@@ -383,53 +376,80 @@ def replay(store, home: Path) -> list[dict]:
     return out
 
 
-# ── the doors: descend and blast land rows too (graphyos #111) ─────────────────────────────────
+# ── the doors: descend and blast land the facts they read (graphyos #111, #117) ─────────────────────────────
 
-# Where a door answer is computed, and every module its key hashes: the import closure of the roots. The
-# review battery's `cache-key-closure` refuses a module the roots import that is not declared here, and a
-# declared module that does not pin SOURCE_SHA at import; RULE_EXEMPT names what the roots can import that bears no rule.
-RULE_ROOTS = ("graphy.doors", "graphy.traversal")
-RULE_MODULES = ("graphy._shared", "graphy.cartograph", "graphy.container", "graphy.cross_substrate", "graphy.doors",
-                "graphy.federated_store", "graphy.ir", "graphy.native_json_graph_ir", "graphy.query", "graphy.tenant",
-                "graphy.traversal")
-# importable from the roots and bearing no door rule — the check follows none of their imports
-RULE_EXEMPT = {
-    "graphy": "the package __init__ re-exports the IR, parity and tenant; it defines no door rule",
-    "graphy.journal": "explain's HISTORY line reads it, and explain is never stored",
-    "graphy.smash": "derive_doc_declaration reads shard schemes at compile; the result is the store's doc declaration, hashed into the generation",
-}
+# A stored door answer was the OUTPUT of the door rules, so its key had to hash every rule — four review rounds of
+# #111 grew it from the relations to an import closure of source pins. A door now lands what it READ: every
+# neighbour row of each node it expanded and each owner it looked up, which are facts of the generation. A repeat
+# re-runs the live rules over those facts with zero store reads, so a changed rule or a re-declared relation needs no
+# key at all; a node the new rules ask for and the facts never read runs the door live and records it again.
 
 
-def rules_digest() -> str | None:
-    """The door rules as the engine that answers runs them: the source digests each module a door's answer
-    is computed in pinned when it was imported (the walk, what it admits and declines, what a primitive is,
-    how a neighbour is oriented). An upgraded engine over an unchanged store keeps the generation; it never
-    keeps the old engine's answers — and a process whose files moved under it after import keys its answers
-    by the code it executes, never by the bytes on disk. Combined from the pins on every call, so a reload
-    moves it too. None when any source was unreadable."""
-    import importlib
-    pinned = [importlib.import_module(m).SOURCE_SHA for m in RULE_MODULES]
-    if any(p is None for p in pinned):
-        return None
-    return hashlib.sha256("\x00".join(pinned).encode()).hexdigest()[:16]
+class FactsMissing(TraversalError):
+    """The rules asked the recorded facts for something the recording door never read."""
 
 
-def vocabulary(store) -> str | None:
-    """What a door answer depends on beyond the nodes and edges the generation hashes: the folded relation
-    vocabulary, the families each door admits, the receipt format and the engine's door rules. A lane that re-declares a
-    relation over the same shards keeps its generation; it never keeps its stored door answers."""
-    from graphy import doors
-    rules = rules_digest()
-    if rules is None:
-        return None
-    folded = {k: sorted(v) for k, v in (getattr(store, "relations", None) or {}).items()}
-    basis = {"format": DOOR_FORMAT, "relations": folded, "descend": sorted(doors.descend_relations(store)),
-             "blast": sorted(doors.blast_relations(store)), "seed": sorted(doors.SEED_RELATIONS), "rules": rules}
-    return hashlib.sha256(json.dumps(basis, sort_keys=True).encode()).hexdigest()[:16]
+class _Recording(Counting):
+    """A counted store that keeps every answer it gave a door: the neighbour rows per node, the owner per node."""
+
+    def __init__(self, store):
+        super().__init__(store)
+        self.nbs: dict[str, list] = {}
+        self.owners: dict[str, str | None] = {}
+
+    def neighbours(self, node: str):
+        rows = self.nbs.get(node)
+        if rows is None:
+            rows = self.nbs[node] = list(super().neighbours(node))
+        return rows
+
+    def membership(self, node: str):
+        if node not in self.owners:
+            self.owners[node] = self._store.membership(node)
+        return self.owners[node]
 
 
-def _door_paths(home: Path, generation: str, which: str, seed: str, depth: int, vocab: str) -> tuple[Path, Path]:
-    stem = f"{which}-{_key(seed)}-d{int(depth)}-v{vocab}"
+class _Facts:
+    """The recorded facts as a store the door rules can run over: neighbours and owners from the rows, the relation
+    fold from the live store (an attribute of the store, never a read), anything else the facts never saw."""
+
+    def __init__(self, nbs: dict, owners: dict, live):
+        self._nbs, self._owners, self._live = nbs, owners, live
+        self.reads = 0
+
+    @property
+    def relations(self):
+        return getattr(self._live, "relations", None) or {}
+
+    def neighbours(self, node: str):
+        if node not in self._nbs:
+            raise FactsMissing(node)
+        return self._nbs[node]
+
+    def membership(self, node: str):
+        if node not in self._owners:
+            raise FactsMissing(node)
+        return self._owners[node]
+
+    def generation(self) -> str:
+        return self._live.generation()
+
+    def __getattr__(self, name: str):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        raise FactsMissing(f"the door rules read store.{name}, which no door recorded")
+
+
+FACT_FORMAT = "facts-1"
+FACT_COLUMNS = {"door": "VARCHAR", "seed": "VARCHAR", "depth": "BIGINT", "ord": "BIGINT", "fact": "VARCHAR",
+                "node": "VARCHAR", "other": "VARCHAR", "relation": "VARCHAR", "direction": "VARCHAR",
+                "generation": "VARCHAR"}
+
+
+def _door_paths(home: Path, generation: str, which: str, seed: str, depth: int) -> tuple[Path, Path]:
+    """One stem per (door, seed, depth) under the generation; ``.facts`` keeps the 0.2.6 answer rows
+    (``-v<vocabulary>`` stems) out of every glob here, so a released layout is never read as facts."""
+    stem = f"{which}-{_key(seed)}-d{int(depth)}.facts"
     d = home / generation / DOOR_DIR
     return d / f"{stem}.parquet", d / f"{stem}.json"
 
@@ -443,25 +463,31 @@ class DoorOutcome:
     note: str | None = None
 
 
-def store_door(home: Path, generation: str, which: str, result, reads: int, vocab: str) -> dict:
-    """One door answer's rows — every reached node in BFS order, its hop, the edge it came by, its
-    owner — and a receipt carrying what the rows cannot: the declined counts and their classes."""
+def store_door(home: Path, generation: str, which: str, result, recording: _Recording) -> dict:
+    """The facts one door read — a ``nb`` row per neighbour of each expanded node, a ``none`` row for a node that
+    had none, an ``own`` row per owner looked up — and a receipt naming the question and how much was read."""
     duckdb = _duckdb()
-    pq, rp = _door_paths(home, generation, which, result.seed, result.depth, vocab)
+    pq, rp = _door_paths(home, generation, which, result.seed, result.depth)
     _make_under(home, pq.parent)
-    prims = {r.node for r in getattr(result, "primitives", ())}
-    rows = [(which, result.seed, result.depth, i, r.hop, r.node, r.via, r.relation, r.owner, r.node in prims, generation)
-            for i, r in enumerate(result.reached.values())]
+    rows, head = [], (which, result.seed, result.depth)
+    for node, nbs in recording.nbs.items():
+        if not nbs:
+            rows.append((*head, len(rows), "none", node, None, None, None, generation))
+        for nb in nbs:
+            rows.append((*head, len(rows), "nb", node, nb.node, nb.relation, nb.direction, generation))
+    for node, owner in recording.owners.items():
+        rows.append((*head, len(rows), "own", node, owner, None, None, generation))
     started = time.perf_counter()
     con = duckdb.connect()
     try:
-        _write_parquet(con, "door", DOOR_COLUMNS, rows, pq)
+        _write_parquet(con, "facts", FACT_COLUMNS, rows, pq)
     finally:
         con.close()
     receipt = {
-        "format": RECEIPT_FORMAT, "door": which, "seed": result.seed, "depth": result.depth, "generation": generation,
-        "vocabulary": vocab, "rows": len(rows), "reads": reads, "declined": result.declined, "declined_classes": result.declined_classes,
-        "duckdb": duckdb.__version__, "stored_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "format": FACT_FORMAT, "door": which, "seed": result.seed, "depth": result.depth, "generation": generation,
+        "rows": len(rows), "expanded": len(recording.nbs), "owners": len(recording.owners), "reads": recording.reads,
+        "reached": len(result.reached), "duckdb": duckdb.__version__,
+        "stored_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "seconds": round(time.perf_counter() - started, 3), "bytes": pq.stat().st_size,
     }
     tmp = rp.with_name(f".{rp.name}.{os.getpid()}.tmp")
@@ -470,44 +496,61 @@ def store_door(home: Path, generation: str, which: str, result, reads: int, voca
     return receipt
 
 
-def load_door(home: Path, generation: str, which: str, seed: str, depth: int, vocab: str):
-    """The stored answer of one door for (seed, depth) under this generation, rebuilt from its rows
-    with zero store reads — or None when it was never stored under this vocabulary."""
-    from graphy import doors
-    pq, rp = _door_paths(home, generation, which, seed, depth, vocab)
+def load_facts(home: Path, generation: str, which: str, seed: str, depth: int) -> tuple[dict, dict] | None:
+    """The facts one door read for (seed, depth) under this generation, or None when none were stored."""
+    from graphy.federated_store import Neighbour
+    pq, rp = _door_paths(home, generation, which, seed, depth)
     if not pq.is_file() or not rp.is_file():
         return None
     try:
         r = json.loads(rp.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise TraversalError(f"receipt unreadable at {rp} ({type(exc).__name__}) — delete it and re-ask") from exc
-    if (r.get("format") != RECEIPT_FORMAT or r.get("door") != which or r.get("seed") != seed
-            or r.get("generation") != generation or r.get("depth") != depth or r.get("vocabulary") != vocab):
+    if (r.get("format") != FACT_FORMAT or r.get("door") != which or r.get("seed") != seed
+            or r.get("generation") != generation or r.get("depth") != depth):
         raise TraversalError(f"receipt at {rp} does not describe {which} {seed!r} depth {depth} under generation "
-                             f"{generation} and vocabulary {vocab} — refusing to reinterpret it")
+                             f"{generation} — refusing to reinterpret it")
     duckdb = _duckdb()
     con = duckdb.connect()
     try:
-        rows = con.execute("SELECT hop, node, via_src, relation, owner, primitive FROM read_parquet('"
+        rows = con.execute("SELECT fact, node, other, relation, direction FROM read_parquet('"
                            + pq.as_posix().replace("'", "''") + "') ORDER BY ord").fetchall()
     except duckdb.Error as exc:
         raise StoredUnreadable(f"stored {which} at {pq} is unreadable ({type(exc).__name__})") from exc
     finally:
         con.close()
-    if len(rows) != r.get("rows") or not rows or rows[0][1] != seed:
+    if len(rows) != r.get("rows"):
         raise TraversalError(f"stored {which} at {pq} holds {len(rows)} row(s) where its receipt says {r.get('rows')} "
-                             f"and its first row must be the seed — refusing it")
-    reached = {node: doors.Reach(node, hop, via, rel, owner) for hop, node, via, rel, owner, _p in rows}
-    declined = {k: int(v) for k, v in (r.get("declined") or {}).items()}
-    classes = {k: list(v) for k, v in (r.get("declined_classes") or {}).items()}
-    if which == "descend":
-        return doors.descent_of(seed, depth, reached, {row[1] for row in rows if row[5]}, declined, classes)
-    return doors.blast_of(seed, depth, reached, declined, classes)
+                             f"— refusing it")
+    nbs: dict[str, list] = {}
+    owners: dict[str, str | None] = {}
+    for fact, node, other, relation, direction in rows:
+        if fact == "nb":
+            nbs.setdefault(node, []).append(Neighbour(other, relation, direction))
+        elif fact == "none":
+            nbs.setdefault(node, [])
+        elif fact == "own":
+            owners[node] = other
+    return nbs, owners
+
+
+def load_door(home: Path, generation: str, which: str, seed: str, depth: int, store):
+    """The door's answer for (seed, depth), re-derived by the live rules over the stored facts with zero store
+    reads — or None when no facts were stored, or the live rules ask for a fact the recording never read."""
+    from graphy import doors
+    facts = load_facts(home, generation, which, seed, depth)
+    if facts is None:
+        return None
+    fn = doors.descend if which == "descend" else doors.blast
+    try:
+        return fn(_Facts(*facts, store), seed, depth)
+    except FactsMissing:
+        return None
 
 
 def door(store, home: Path, which: str, seed: str, depth: int, save: bool = True) -> DoorOutcome:
-    """``descend`` or ``blast`` through the traversal store: the same (seed, depth) under the live
-    generation answers from its rows with zero reads; otherwise the door runs live and lands its rows.
+    """``descend`` or ``blast`` through the traversal store: the same (seed, depth) under the live generation
+    answers from the facts it read with zero reads; otherwise the door runs live and lands what it read.
     With no duckdb it is exactly the live door, and says why nothing was stored."""
     from graphy import doors
     if which not in DOORS:
@@ -516,74 +559,75 @@ def door(store, home: Path, which: str, seed: str, depth: int, save: bool = True
     if not have_duckdb():
         counted = Counting(store)
         return DoorOutcome(fn(counted, seed, depth), "live", counted.reads, None, note=INSTALL_HINT)
-    generation, vocab = store.generation(), vocabulary(store)
-    if vocab is None:
-        counted = Counting(store)
-        return DoorOutcome(fn(counted, seed, depth), "live", counted.reads, None,
-                           note="the door rules' source is unreadable, so no answer can be keyed by the code that computed it")
+    generation = store.generation()
     try:
-        hit = load_door(home, generation, which, seed, depth, vocab)
+        hit = load_door(home, generation, which, seed, depth, store)
     except StoredUnreadable:   # damaged from outside (writes are atomic): a cache miss, re-asked live and rewritten
         hit = None
     if hit is not None:
-        return DoorOutcome(hit, "store", 0, _door_paths(home, generation, which, seed, depth, vocab)[0])
-    counted = Counting(store)
-    result = fn(counted, seed, depth)
+        return DoorOutcome(hit, "store", 0, _door_paths(home, generation, which, seed, depth)[0])
+    recording = _Recording(store)
+    result = fn(recording, seed, depth)
     saved = None
     if save:
         duckdb = _duckdb()
         try:               # the store is a cache: a failed write never costs the answer already computed
-            store_door(home, generation, which, result, counted.reads, vocab)
+            store_door(home, generation, which, result, recording)
         except (OSError, duckdb.Error) as exc:
-            return DoorOutcome(result, "live", counted.reads, None,
+            return DoorOutcome(result, "live", recording.reads, None,
                                note=f"the traversal store could not be written ({type(exc).__name__}: {str(exc)[:160]})")
-        saved = _door_paths(home, generation, which, seed, depth, vocab)[0]
-    return DoorOutcome(result, "live", counted.reads, saved)
+        saved = _door_paths(home, generation, which, seed, depth)[0]
+    return DoorOutcome(result, "live", recording.reads, saved)
 
 
 def stored_doors(home: Path, generation: str) -> list[dict]:
     """Every door answer stored under this generation, as its receipt."""
     d = home / generation / DOOR_DIR
     out = []
-    for rp in sorted(d.glob("*.json")) if d.is_dir() else []:
+    for rp in sorted(d.glob("*.facts.json")) if d.is_dir() else []:
         try:
             r = json.loads(rp.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(r, dict) and r.get("format") == RECEIPT_FORMAT and r.get("door") in DOORS and rp.with_suffix(".parquet").is_file():
+        if isinstance(r, dict) and r.get("format") == FACT_FORMAT and r.get("door") in DOORS and rp.with_suffix(".parquet").is_file():
             out.append(r)
     return out
 
 
 def recall(home: Path, generation: str, seed: str | None = None, target: str | None = None,
-           vocab: str | None = None) -> list[dict]:
-    """Every stored row under this generation — walks and doors alike — whose seed is ``seed`` or
-    whose node is ``target``, in one parquet scan and zero store reads. A row names the traversal
-    it belongs to (walk · descend · blast, and the door's depth), its hop and the edge it came by.
-    ``vocab`` (the live store's ``vocabulary``) admits only the door answers stored under it; a walk
-    row records edges, never an admission rule, so walks are read whatever it says."""
+           store=None) -> list[dict]:
+    """Every stored row under this generation — walks and doors alike — whose seed is ``seed`` or whose node is
+    ``target``, with zero store reads. A walk row records edges and is read from its parquet; a door's rows are its
+    answer re-derived by the live rules over the facts it read, so ``store`` (the live store, whose relation fold the
+    rules read) is required to recall doors, and a stored door whose facts the live rules outgrew is left out."""
     if (seed is None) == (target is None):
         raise TraversalError("recall takes exactly one of seed or target")
     d = home / generation
     walks = sorted(d.glob("*.parquet")) if d.is_dir() else []
-    doors_ = sorted((d / DOOR_DIR).glob("*.parquet" if vocab is None else f"*-v{vocab}.parquet")) \
-        if (d / DOOR_DIR).is_dir() else []
     col, val = ("seed", seed) if seed is not None else ("node", target)
-
-    def scan(files, kind_sql, depth_sql):
-        listing = ", ".join("'" + p.as_posix().replace("'", "''") + "'" for p in files)
-        return (f"SELECT {kind_sql} AS kind, seed, {depth_sql} AS depth, hop, node, via_src, relation "
-                f"FROM read_parquet([{listing}]) WHERE {col} = ?")
-    parts, params = [], []
+    out: list[dict] = []
     if walks:
-        parts.append(scan(walks, "'walk'", "CAST(NULL AS BIGINT)")); params.append(val)
-    if doors_:
-        parts.append(scan(doors_, "door", "depth")); params.append(val)
-    if not parts:
-        return []
-    con = _duckdb().connect()
-    try:
-        rows = con.execute(" UNION ALL ".join(parts) + " ORDER BY kind, seed, depth, hop, node", params).fetchall()
-    finally:
-        con.close()
-    return [dict(zip(("kind", "seed", "depth", "hop", "node", "via_src", "relation"), row)) for row in rows]
+        listing = ", ".join("'" + p.as_posix().replace("'", "''") + "'" for p in walks)
+        con = _duckdb().connect()
+        try:
+            rows = con.execute(f"SELECT seed, hop, node, via_src, relation FROM read_parquet([{listing}]) "
+                               f"WHERE {col} = ?", [val]).fetchall()
+        finally:
+            con.close()
+        out += [{"kind": "walk", "seed": s_, "depth": None, "hop": h, "node": n, "via_src": v, "relation": r}
+                for s_, h, n, v, r in rows]
+    if store is not None:
+        for r in stored_doors(home, generation):
+            if seed is not None and r["seed"] != seed:
+                continue
+            try:
+                answer = load_door(home, generation, r["door"], r["seed"], r["depth"], store)
+            except StoredUnreadable:
+                continue
+            if answer is None:
+                continue
+            rows = [{"kind": r["door"], "seed": r["seed"], "depth": r["depth"], "hop": x.hop, "node": x.node,
+                     "via_src": x.via, "relation": x.relation} for x in answer.reached.values()]
+            out += [row for row in rows if seed is not None or row["node"] == target]
+    return sorted(out, key=lambda row: (row["kind"], row["seed"], -1 if row["depth"] is None else row["depth"],
+                                        row["hop"], row["node"]))

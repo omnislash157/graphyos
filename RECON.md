@@ -6590,3 +6590,16 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | red first, windows | branch `win-88-red`, HEAD's engine with both deselects removed, run 34993450573: `store-windows` failure — `test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss` (a traceback in the profiled child) · `test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane` (no `EAT DROPPED (1): dep_graph`) |
 | production, linux | a fresh pallets/itsdangerous clone eaten under `GRAPHY_PROFILE_DIR` → `eat-<pid>.json` with `rss_kb` 32816 |
 | the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 153 · A DOOR STORES WHAT IT READ, NOT WHAT IT ANSWERED — a stored `blast`/`descend` was the door rules' output, so its key had to hash every rule (the relations, `rules_digest`, `SOURCE_SHA` in 11 modules, `RULE_MODULES` and review.py's `cache-key-closure`); a door now lands the neighbour rows of each node it expanded and each owner it looked up, keyed by generation · door · seed · depth, and a repeat re-runs the live rules over those facts with zero store reads — a node the live rules ask for that was never read runs the door live and records again; the pins, the digest, the vocabulary key and the check are gone (2026-09-15 · graphyos issue 117)
+
+- spec: `specs/117.md` · `python3 spec_lint.py specs/117.md` → `SPEC OK`
+
+| check | result |
+|---|---|
+| before, production | `/tmp/doorbench.py` on the FastAPI tenant (a process per call, the traversal home cleared): blast `Dependant` d4 first 0.137 s reads=19 · repeat 0.129 s store · descend `get_request_handler` d4 first 0.142 s reads=131 · repeat 0.135 s store · stored 18,187 B |
+| after, production | the same: blast d4 first 0.133 s reads=18 · repeat 0.135 s store · descend d4 first 0.143 s reads=78 (a node's neighbours read once) · repeat 0.138 s store · every repeat byte-identical to its live answer · stored 44,396 B |
+| the verdict | the repeat's wall clock is the process start on both (~0.13 s); the facts cost 2.4× the bytes of the answers; the key has no input to miss, so a changed rule or a re-declared relation answers what the live door answers with no pin to keep |
+| the released layout | the FastAPI home still held 0.2.6's `-v<vocabulary>` answer files: ignored, the facts landed beside them |
+| the receipt | `python3 measure.py diff recon.before117.json recon.json` → `MEASURE DIFF OK: 8 number(s) moved, none the wrong way past tolerance` |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK: 20 check(s)` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
