@@ -798,32 +798,49 @@ def check_fresh(store: SQLiteStore, substrates: list[str], *, tenant: Tenant, te
     per tool call, so a process that outlives a rebuild refuses the way a fresh process would instead
     of answering confidently from the generation it booted on (graphyos #97). Never writes."""
     p = store.path
+    # The input digest hashes the bytes of nodes, edges and the sidecar, and the generation hashes nodes, owners,
+    # edges and the doc declaration — neither the relation fold, so a lane that re-declares only
+    # `vocabulary.relations` moved nothing either reads, and the served row kept the doors on the old families
+    # until a build (graphyos #115). The fold is read on every check (sub-millisecond: one small JSON per lane)
+    # and compared on its own; a moved one is stale by name.
+    moved = _relations_moved(store.relations, fold_relations(substrates, tenant))
+    served_gen = store.generation()
     live_input_digest = _compute_input_digest(substrates, tenant=tenant)
     if live_input_digest == store._input_digest:
-        return
-
-    try:
-        live_gen = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id).generation()
-    except (OSError, ValueError) as exc:
-        raise StoreError(
-            f"inputs for roster {sorted(substrates)} changed AND the live shards cannot "
-            f"be materialized to compare generations ({type(exc).__name__}: {exc}) — "
-            f"refusing to serve") from exc
-    served_gen = store.generation()
-    if live_gen == served_gen:
-        return
+        if not moved:
+            return
+        live_gen = served_gen
+    else:
+        try:
+            live_gen = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id).generation()
+        except (OSError, ValueError) as exc:
+            raise StoreError(
+                f"inputs for roster {sorted(substrates)} changed AND the live shards cannot "
+                f"be materialized to compare generations ({type(exc).__name__}: {exc}) — "
+                f"refusing to serve") from exc
+        if live_gen == served_gen and not moved:
+            return
+    what = (f"the declared relations moved ({moved}) over generation {served_gen}" if live_gen == served_gen
+            else f"it serves generation {served_gen} but the live shards digest to {live_gen}")
 
     if on_stale == "warn":
-        print(f"graphy.federated_store: store for {sorted(substrates)} is STALE — serving generation "
-              f"{served_gen} while the live shards digest to {live_gen}.\n"
+        said = what if live_gen == served_gen else f"serving generation {served_gen} while the live shards digest to {live_gen}"
+        print(f"graphy.federated_store: store for {sorted(substrates)} is STALE — {said}.\n"
               f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}",
               file=sys.stderr)
         return
     raise StoreError(
-        f"compiled store for roster {sorted(substrates)} at {p} is STALE: it serves "
-        f"generation {served_gen} but the live shards digest to {live_gen}.\n"
+        f"compiled store for roster {sorted(substrates)} at {p} is STALE: {what}.\n"
         f"    A query never rebuilds one (walk-kernel Rung 4: no query-time writes).\n"
         f"    Rebuild it:  {_repair_hint(substrates, tenant, tenant_id, p)}")
+
+
+def _relations_moved(served: dict, live: dict) -> str:
+    """The relations whose declared classes differ between the served row and the live fold, named; empty when
+    none moved. Compared as sets of classes, so a declaration re-ordered in its PROVENANCE is not a move."""
+    norm = lambda d: {k: sorted(set(v)) for k, v in (d or {}).items()}
+    a, b = norm(served), norm(live)
+    return " · ".join(f"{k}: {a.get(k, [])} -> {b.get(k, [])}" for k in sorted(set(a) | set(b)) if a.get(k, []) != b.get(k, []))
 
 
 def refused(verb: str, exc: BaseException) -> str:
@@ -837,7 +854,7 @@ def refused(verb: str, exc: BaseException) -> str:
 def input_signature(store_path: str | Path, substrates: list[str], *, tenant: Tenant,
                     descriptor: str | Path | None = None) -> tuple:
     """The cheap stat in front of `check_fresh` for a long-lived reader: (size, mtime_ns, inode) of every
-    file the digest reads — each shard's inputs, the scheme index, the override registry — of the
+    file the check reads — each shard's inputs and PROVENANCE, the scheme index, the override registry — of the
     store file itself, and of the tenant descriptor when the reader was booted from one (a landing
     renames it onto a new generation). Equal signatures skip the hash; a moved one runs it. Never a
     verdict: an absent file is a marker here and the refusal is `check_fresh`'s, in its own words."""
@@ -847,6 +864,7 @@ def input_signature(store_path: str | Path, substrates: list[str], *, tenant: Te
         paths.append(Path(descriptor))
     for s in sorted(substrates):
         paths.extend(data_home / f"{s}_graph" / name for name in SHARD_INPUTS)
+        paths.append(data_home / f"{s}_graph" / "PROVENANCE.json")     # the relation fold check_fresh reads (#115)
     sig = []
     for path in paths:
         try:

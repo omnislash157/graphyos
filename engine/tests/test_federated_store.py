@@ -479,7 +479,8 @@ def test_GREEN_open_for_hashes_shard_bytes_and_never_parses_them(tmp_path, monke
     shard_opens = [(f, m) for f, m in opened if f in payloads]
     assert shard_opens, "the freshness check never touched the shard bytes"
     assert all(m == "rb" for _f, m in shard_opens), shard_opens
-    assert all(f in payloads or "_graph" not in f for f, _m in opened), opened
+    # a shard's PROVENANCE is read for its relation fold (graphyos #115) — metadata, never a payload parse
+    assert all(f in payloads or "_graph" not in f or f.endswith("PROVENANCE.json") for f, _m in opened), opened
     assert not [n for n in parsed if n in {len(b) for b in payloads.values()}]
     # a byte moved in any input still reads STALE — the verdict is as strict as before
     monkeypatch.undo()

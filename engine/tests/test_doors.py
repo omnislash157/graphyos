@@ -936,3 +936,31 @@ def test_RED_a_declaring_shard_the_store_never_loads_changes_nothing(tmp_path):
                        {"other": {"own": ["other"], "out": []}}, [])
     assert store.doc_declaration == {"relations": ["governs"], "schemes": ["skills"]}
     assert all(d["relation"] != "cites" for d in doors.explain(store, SEED, max_depth=3).docs)
+
+
+def test_RED_a_relations_only_change_is_named_stale_until_build(tmp_path, capsys):
+    """graphyos #115: a lane that re-declares only `vocabulary.relations` moves the input digest and not the
+    generation, so `open_for` served the old relations row and blast kept the old families until a build. The
+    moved declaration is stale by name — refused, or warned under `warn` — and the build serves the new one,
+    under the same generation."""
+    undeclared = _census_store(tmp_path, None)
+    generation = undeclared.generation()
+    assert READER not in doors.blast(undeclared, TABLE, max_depth=3).reached
+    undeclared.close()
+    data_home = tmp_path / "data"
+    _census_lane(data_home, {"reads_table": ["depends"]})              # the same shards, one relation declared
+    tenant = Tenant(root=tmp_path, data_home=data_home, adapters=(),
+                    build_lanes={"pg_schema_graph": (None, "static-dep"), "core_graph": (None, "static-dep")},
+                    join_keys=tmp_path / "registry.json", cursor="sha256:" + "0" * 64, policy="refuse",
+                    journal=tmp_path / "journal")
+    roster = ["pg_schema", "core"]
+    with pytest.raises(fs.StoreError) as exc:
+        fs.open_for(roster, tenant=tenant, tenant_id="census")
+    assert "declared relations moved" in str(exc.value) and "reads_table: [] -> ['depends']" in str(exc.value)
+    assert "graphy build" in fs.refused("BLAST", exc.value)
+    warned = fs.open_for(roster, tenant=tenant, tenant_id="census", on_stale="warn")
+    assert "STALE — the declared relations moved" in capsys.readouterr().err
+    warned.close()
+    fs.compile_store(roster, fs.store_path_for(roster, tenant=tenant), tenant=tenant, tenant_id="census")
+    built = fs.open_for(roster, tenant=tenant, tenant_id="census")
+    assert built.generation() == generation and READER in doors.blast(built, TABLE, max_depth=3).reached

@@ -6603,3 +6603,15 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | the released layout | the FastAPI home still held 0.2.6's `-v<vocabulary>` answer files: ignored, the facts landed beside them |
 | the receipt | `python3 measure.py diff recon.before117.json recon.json` → `MEASURE DIFF OK: 8 number(s) moved, none the wrong way past tolerance` |
 | the battery | `python3 review.py \| tail -1` → `REVIEW OK: 20 check(s)` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 154 · A RE-DECLARED RELATION IS STALE UNTIL BUILD — the store's input digest hashes the bytes of nodes, edges and the sidecar and its generation hashes nodes, owners, edges and the doc declaration, so a lane that edited only `vocabulary.relations` in its PROVENANCE moved neither and `open_for` served the old relations row: `descend` kept walking `calls` as REACHES after its producer declared it DEPENDS only; `check_fresh` now folds the relations on every check (0.3 ms on the graphy tenant, the input digest is 7 ms) and a moved fold refuses by name, warns under `warn`, and the stat signature a long-lived reader keeps covers each PROVENANCE (2026-09-15 · graphyos issue 115)
+
+- spec: `specs/115.md` · `python3 spec_lint.py specs/115.md` → `SPEC OK`
+- the issue said the relations edit moved the input digest; it does not — `native_json_graph_ir.shard_input_digest` reads `SHARD_INPUTS` only
+
+| check | result |
+|---|---|
+| red first, production | a fresh pallets/itsdangerous clone eaten, `calls` re-declared `["depends"]` in its PROVENANCE, on HEAD: `graphy descend itsdangerous.signer.Signer.sign` answered from the old row (no REFUSED) |
+| production, linux | the same on this tree: `DESCEND REFUSED: … is STALE: the declared relations moved (calls: ['depends'] -> ['depends', 'reaches']) over generation …`; `graphy build` → the descend answers |
+| the upgrade | a store eaten by `graphyos==0.2.6`, checked by this tree → `CHECK OK` |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
