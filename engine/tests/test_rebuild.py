@@ -641,7 +641,10 @@ def test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane
     assert eat() == 0
     g0 = cli.served_data_home(desc)
     g0.rename(sub)                                                       # the layout every tenant had before #98
-    desc.write_text(desc.read_text(encoding="utf-8").replace(str(g0), str(sub)), encoding="utf-8")
+    fields = json.loads(desc.read_text(encoding="utf-8"))               # parsed: a Windows path is spelled `C:\\…` in the JSON (#88)
+    fields = {k: v.replace(str(g0), str(sub)) if isinstance(v, str) else v for k, v in fields.items()}
+    assert fields["data_home"] == str(sub), fields
+    desc.write_text(json.dumps(fields, indent=2), encoding="utf-8")
     ring = json.loads((sub / "ring.json").read_text(encoding="utf-8"))
     ring["minted"]["dep"] = dict(ring["minted"]["core"], slug="dep")    # a dependency the last ring named
     (sub / "ring.json").write_text(json.dumps(ring), encoding="utf-8")

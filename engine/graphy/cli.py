@@ -3013,6 +3013,35 @@ def _main(argv: list[str] | None = None) -> int:
     return handler(args)
 
 
+def _peak_rss_kb() -> int:
+    """This process's peak resident set in KiB. POSIX asks `resource` (bytes on macOS, KiB elsewhere); Windows has
+    no `resource`, so the profiled verb crashed there after its work was done (graphyos #88) — it asks the process's
+    own counters, PeakWorkingSetSize, through the kernel32/psapi call `ctypes` reaches with no dependency."""
+    if os.name != "nt":
+        import resource
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return rss // 1024 if sys.platform == "darwin" else rss
+    import ctypes
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+    counters = Counters()
+    counters.cb = ctypes.sizeof(Counters)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    get = ctypes.WinDLL("psapi", use_last_error=True).GetProcessMemoryInfo
+    get.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+    get.restype = wintypes.BOOL
+    if not get(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+        raise OSError(ctypes.get_last_error(), "GetProcessMemoryInfo refused")
+    return counters.PeakWorkingSetSize // 1024
+
+
 def _profiled(argv: list[str] | None, prof_dir: str) -> int:
     """GRAPHY_PROFILE_DIR names a directory: this verb runs under cProfile and leaves
     ``<verb>-<pid>.prof`` (the stats) and ``<verb>-<pid>.json`` (verb · argv · seconds · rss_kb,
@@ -3023,7 +3052,6 @@ def _profiled(argv: list[str] | None, prof_dir: str) -> int:
     — cProfile does not nest — while a child process, with its own pid, still is."""
     import cProfile
     import os
-    import resource
     import time
     if os.environ.get("GRAPHY_PROFILE_PID") == str(os.getpid()):
         return _main(argv)
@@ -3040,8 +3068,7 @@ def _profiled(argv: list[str] | None, prof_dir: str) -> int:
     finally:
         os.environ.pop("GRAPHY_PROFILE_PID", None)
         prof.dump_stats(stem + ".prof")
-        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        rss_kb = rss // 1024 if sys.platform == "darwin" else rss
+        rss_kb = _peak_rss_kb()
         with open(stem + ".json", "w", encoding="utf-8") as fh:
             json.dump({"verb": verb, "argv": args, "seconds": round(time.perf_counter() - t0, 3),
                        "rss_kb": rss_kb}, fh)

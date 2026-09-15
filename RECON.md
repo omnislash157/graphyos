@@ -6580,3 +6580,13 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | the upgrade | `graphyos==0.2.6` eats, installs and re-eats over the wiring's dirt; this tree's `check` → STALE naming `graphy eat .`; one eat → `CHECK OK` |
 | three installs | a clone under `First Last`, `shell install` × 3 for every harness → `CHECK OK` |
 | the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 152 · WINDOWS RUNS THE WHOLE FLOOR — the last two tests the `store-windows` job deselected under #88 run there: a verb under `GRAPHY_PROFILE_DIR` imported `resource`, which Windows lacks, and now reads its peak working set through `ctypes`; the pruned-lane test re-pointed its descriptor with a string replace the JSON's escaped backslashes never matched, and now edits the parsed fields; the README says Windows is supported (2026-09-15 · graphyos issue 88)
+
+- spec: `specs/88.md` · `python3 spec_lint.py specs/88.md` → `SPEC OK`
+
+| check | result |
+|---|---|
+| red first, windows | branch `win-88-red`, HEAD's engine with both deselects removed, run 34993450573: `store-windows` failure — `test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss` (a traceback in the profiled child) · `test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane` (no `EAT DROPPED (1): dep_graph`) |
+| production, linux | a fresh pallets/itsdangerous clone eaten under `GRAPHY_PROFILE_DIR` → `eat-<pid>.json` with `rss_kb` 32816 |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |

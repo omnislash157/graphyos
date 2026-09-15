@@ -93,6 +93,21 @@ def test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss(tmp_path, mo
     assert not clean.exists() and not list(tmp_path.glob("*.prof"))
 
 
+def test_GREEN_peak_rss_without_resource_is_the_process_s_own_peak():
+    """graphyos #88: `_profiled` imported `resource`, which Windows does not have, so a profiled verb crashed after its
+    work. The peak is read per host, and on Windows `resource` is never imported."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    probe = "import sys, graphy.cli as c; print(c._peak_rss_kb(), 'resource' in sys.modules)"
+    p = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, encoding="utf-8",
+                       env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}, timeout=120)
+    kb, imported = p.stdout.split()
+    assert int(kb) > 1024, p.stdout + p.stderr                  # a Python process holds more than a MiB
+    assert imported == ("False" if os.name == "nt" else "True"), p.stdout
+
+
 def test_GREEN_summarize_names_the_hot_frames_the_rss_and_whether_the_engine_is_hot(tmp_path):
     import cProfile
     d = tmp_path / "lane"; d.mkdir()

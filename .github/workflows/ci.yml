@@ -98,12 +98,11 @@ jobs:
       # removed, bash on PATH, and the locale as the encoding of utf-8 the engine wrote); each such test now asserts the
       # platform's truth or skips by name with its reason, and the engine's own seams behind them are fixed (`resolve_graph`
       # read a `\\?\`-prefixed link target as an escape; `discard_generations` removed a symlinked substrate, which
-      # Windows' rmdir does). Every test runs here except those an open issue owns, each deselected by name with its
-      # issue: test_measure's profile-dir test runs
-      # the profiled subprocess, which imports `resource` (#88); test_rebuild's pruned-lane test pins a separator #88
-      # re-spells. A red here is a red on the platform: the deny list shrinks, never grows, and a new red files its issue first.
-      - name: "the floor on this platform — every test but those an open issue owns, each deselected by name (graphyos #127)"
-        run: cd engine && pytest -q -rfs --basetemp "$env:RUNNER_TEMP\pt" --deselect tests/test_measure.py::test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss --deselect tests/test_rebuild.py::test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane
+      # Windows' rmdir does). Every test runs here, none deselected (graphyos #88: the profiler reads its peak memory
+      # without `resource`, and the pruned-lane test re-points its descriptor through the parsed JSON). A red here is a red
+      # on the platform: a new one files its issue first.
+      - name: "the floor on this platform — every test (graphyos #127, #88)"
+        run: cd engine && pytest -q -rfs --basetemp "$env:RUNNER_TEMP\pt"
 
   gate:
     runs-on: ubuntu-latest
