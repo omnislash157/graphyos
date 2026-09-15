@@ -104,7 +104,7 @@ const G=new ForceGraph3D(document.getElementById('g'),{controlType:'orbit'}).bac
  .nodeVal(n=>n.crown?Math.max(n.val,40):n.val).nodeRelSize(3.4).nodeOpacity(1).nodeResolution(10)
  .nodeColor(n=>lit(n)?color[n.arm]:'#1a1f33').nodeLabel(n=>`<b>${n.label}</b><br>${n.kind||''} · ${n.where}<br>${n.val-1} depend on it`)
  .width(innerWidth).height(innerHeight).showNavInfo(false)
- .linkColor(l=>color[l.source.arm||l.source]||'#445').linkOpacity(.32).linkWidth(l=>l.kind==='cross'?.35:0)
+ .linkColor(l=>color[l.source.arm||l.source]||'#445').linkOpacity(.32).linkWidth(0)
  .linkVisibility(l=>!focus||l.source.arm===focus||l.target.arm===focus)
  .linkDirectionalParticles(l=>l.kind==='cross'?2:0).linkDirectionalParticleWidth(1.3).linkDirectionalParticleSpeed(.006)
  .linkDirectionalParticleColor(l=>color[l.source.arm]).d3Force('cluster',cluster).warmupTicks(220).cooldownTime(9000)
@@ -117,7 +117,7 @@ const lg=document.getElementById('legend');for(const a of S.arms){const e=docume
 const labs=document.getElementById('labs');const crowns=S.nodes.filter(n=>n.crown).map(n=>{const e=document.createElement('div');
  e.className='lab';e.style.color=color[n.arm];e.textContent=n.label.split('.').slice(-2).join('.');labs.appendChild(e);return [n,e]});
 let spin=true,t0=performance.now();['pointerdown','wheel'].forEach(ev=>addEventListener(ev,()=>spin=false,{once:true}));
-G.cameraPosition({x:0,y:H*1.2,z:R*2.6},{x:0,y:0,z:0});G.onEngineStop(()=>{});setTimeout(()=>G.zoomToFit(2500,20),400);
+G.cameraPosition({x:0,y:H*1.2,z:R*2.6},{x:0,y:0,z:0});let fitted=false;G.onEngineStop(()=>{if(spin&&!fitted){fitted=true;G.zoomToFit(1500,20)}});setTimeout(()=>G.zoomToFit(2500,20),400);
 addEventListener('resize',()=>G.width(innerWidth).height(innerHeight));
 (function tick(){requestAnimationFrame(tick);if(spin&&performance.now()-t0>4500){const c=G.camera(),a=.0012,x=c.position.x,z=c.position.z;
  c.position.x=x*Math.cos(a)-z*Math.sin(a);c.position.z=x*Math.sin(a)+z*Math.cos(a);c.lookAt(G.controls().target)}
