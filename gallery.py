@@ -122,7 +122,8 @@ def compose_index(pages: list[dict], *, built_at: str, engine: str, mcp: str = "
         arms = " · ".join(f"<b>{html.escape(a['name'])}</b> <small>({html.escape(a['crown'])})</small>" for a in p["arms"]) or "one pillar"
         ring = p.get("ring") or {"count": 0, "names": ""}
         rows.append(
-            f'<li><a href="{html.escape(p["slug"])}/{PAGE}">{html.escape(p["repo"])}</a>'
+            f'<li><a class="card" href="{html.escape(p["slug"])}/{PAGE}">{html.escape(p["repo"])} <span aria-hidden="true">→</span></a>'
+            f'<a class="g3d" href="{html.escape(p["slug"])}/galaxy.html">3D galaxy</a>'
             f'<div class="arms">{arms}</div>'
             f'<div class="ring">ring: {ring["count"]} package(s){(" — " + html.escape(ring["names"])) if ring["names"] and ring["count"] else ""}</div></li>')
     mcp_html = f'<pre class="mcp">{html.escape(mcp)}</pre>' if mcp else ""
@@ -166,10 +167,14 @@ def compose_index(pages: list[dict], *, built_at: str, engine: str, mcp: str = "
         "h2{font:500 1.5rem/1.2 Georgia,\"Iowan Old Style\",Palatino,serif;margin:0 0 .25rem}\n"
         "p.sub{color:var(--muted);margin:0 0 1rem}\n"
         "ul.repos{list-style:none;padding:0;margin:0 0 2.5rem}\n"
-        "ul.repos li{border:1px solid var(--line);border-radius:16px;padding:1rem 1.1rem;"
-        "margin:0 0 .75rem;background:var(--elev)}\n"
-        "ul.repos a{font-weight:500;font-size:1.05rem;text-decoration:none}\n"
-        "ul.repos a:hover{text-decoration:underline}\n"
+        "ul.repos li{position:relative;border:1px solid var(--line);border-radius:16px;padding:1rem 1.1rem;"
+        "margin:0 0 .75rem;background:var(--elev);transition:border-color .15s}\n"
+        "ul.repos li:hover,ul.repos li:focus-within{border-color:#7dd3fc}\n"
+        # the whole card is the link: a phone taps the card, never a 1-line target (graphyos, the gallery on mobile)
+        "ul.repos a.card{font-weight:600;font-size:1.1rem;text-decoration:none;color:#7dd3fc}\n"
+        "ul.repos a.card::after{content:\"\";position:absolute;inset:0;border-radius:16px}\n"
+        "ul.repos a.g3d{position:relative;z-index:1;float:right;font:12px/1 ui-monospace,Menlo,Consolas,monospace;"
+        "padding:.5rem .7rem;border:1px solid #f0abfc;border-radius:99px;color:#f0abfc;text-decoration:none}\n"
         ".arms{margin-top:.4rem;color:var(--fg);font-size:.9rem}\n"
         ".arms small,.ring{color:var(--muted);font-size:.85rem}.ring{margin-top:.2rem}\n"
         "pre{overflow-x:auto;padding:1rem;border:1px solid var(--line);border-radius:12px;"
