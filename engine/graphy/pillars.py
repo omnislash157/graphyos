@@ -40,10 +40,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-__all__ = ["PillarsError", "PillarsArgumentError", "ModuleGraph", "Proposal", "module_graph", "propose", "shape", "census", "render_census", "render",
+from graphy.federated_store import relations_in
+from graphy.ir import DEPENDS
+
+__all__ = ["PillarsError", "PillarsArgumentError", "ModuleGraph", "Proposal", "module_graph", "relations_for", "propose", "shape", "census", "render_census", "render",
            "to_partition", "diff", "render_diff"]
 
+# What a unit depends on, for a store no producer declared a thing in (pre-#68): the doors' old constant.
+# A store that declares its relations is read through ``relations_for`` — the DEPENDS family its lanes
+# minted, so `references` and `writes` count where their producer said they are dependencies (graphyos #140).
 RELATIONS = frozenset({"imports", "calls", "inherits", "decorates"})
+
+
+def relations_for(store) -> frozenset:
+    """The edge types a unit's fan-out and fan-in count over this store: its declared DEPENDS family — the
+    set `blast` walks (``doors.blast_relations``) — else ``RELATIONS``. Never a vocabulary of this module's own."""
+    return relations_in(store, DEPENDS, RELATIONS)
 DEFAULT_DEPTH = 2
 # The bound on the escalation. Whether a given depth is the right cut is a property of how deeply a
 # repo nests its packages — `pkg.tools.thing` rather than `pkg.thing` — which is exactly the thing
@@ -77,6 +89,7 @@ class ModuleGraph:
     size: dict[str, int]                       # unit -> nodes in it
     weight: dict[tuple[str, str], int]         # (unit, unit) -> cross-unit edges
     modules: dict[str, set] = field(default_factory=dict)   # unit -> its module dotted names
+    relations: frozenset = RELATIONS                          # the edge types the weights count (``relations_for``)
 
     @property
     def total(self) -> int:
@@ -128,8 +141,9 @@ def module_graph(store, corpus: str, depth: int = DEFAULT_DEPTH) -> ModuleGraph:
     for m in module_of.values():
         modules[unit(m)].add(m)
     weight: dict[tuple[str, str], int] = collections.Counter()
+    relations = relations_for(store)
     for src, dst, rel in store.edges():
-        if rel not in RELATIONS:
+        if rel not in relations:
             continue
         ms, md = module_of.get(src), module_of.get(dst)
         if ms is None or md is None:
@@ -138,7 +152,7 @@ def module_graph(store, corpus: str, depth: int = DEFAULT_DEPTH) -> ModuleGraph:
         if us != ud:
             weight[(us, ud)] += 1
     return ModuleGraph(corpus=corpus, depth=depth, root=root, size=dict(size), weight=dict(weight),
-                       modules={u: set(v) for u, v in modules.items()})
+                       modules={u: set(v) for u, v in modules.items()}, relations=relations)
 
 
 @dataclass
@@ -164,6 +178,7 @@ class Proposal:
     arms: dict[str, list[str]]             # arm -> units, crown first
     rulings: list[Ruling]
     total: int
+    relations: frozenset = RELATIONS       # the edge types the proposal was cut over
 
     def arm_of(self, unit: str) -> str:
         for r in self.rulings:
@@ -340,7 +355,7 @@ def propose(g: ModuleGraph, arms: int | None = None, floor: int = DEFAULT_FLOOR,
     ordered = [rulings[u] for u in sorted(rulings, key=lambda u: (
         order.index(rulings[u].arm) if rulings[u].arm in crowns else len(order), -traffic[u], u))]
     return Proposal(corpus=g.corpus, depth=g.depth, floor=floor, owned=owned, client=client, rest=rest, crowns=crowns,
-                    floor_arm=floor_arm, arms={a: arm_units[a] for a in order}, rulings=ordered, total=total)
+                    floor_arm=floor_arm, arms={a: arm_units[a] for a in order}, rulings=ordered, total=total, relations=g.relations)
 
 
 def census(data_home, corpus: str) -> dict:
@@ -452,7 +467,7 @@ def to_partition(p: Proposal, note: str | None = None) -> dict[str, Any]:
 
 def render(p: Proposal, g: ModuleGraph | None = None) -> str:
     lines = [f"PILLARS: {p.corpus} at depth {p.depth} — {len(p.arms)} arm(s) over {p.total} cross-unit edges "
-             f"(imports · calls · inherits · decorates); floor {p.floor} edges, owned {p.owned:.2f}, client {p.client:.2f}"]
+             f"({' · '.join(sorted(p.relations))}); floor {p.floor} edges, owned {p.owned:.2f}, client {p.client:.2f}"]
     for arm, units in p.arms.items():
         crown = p.crowns[arm]
         kind = "the floor" if arm == p.floor_arm else "crown"

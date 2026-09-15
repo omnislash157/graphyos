@@ -168,3 +168,26 @@ def test_RED_the_last_walk_counts_what_the_commit_owns_never_the_box_or_the_arch
     assert stamps[0] == stamps[1] == stamps[2] and stamps[0]["dependents"] == 2
     line = arms.render_region("SEAM", "graphy", None, {}, [], "crown", {}, tenant_dir="T", tenant_id="graphy", last_walk=stamps[0])
     assert "dependents in graphy=2" in line
+
+
+def test_GREEN_a_crown_is_ranked_by_the_dependencies_the_store_declares_a_module_only_when_alone(tmp_path):
+    """An arm's crown was ranked by a hardcoded `calls · inherits · decorates` while `blast` walked the
+    store's declared DEPENDS family (graphyos #140). The fan-in now reads that family whole; a module node
+    crowns only an arm where nothing else is depended on, so a declared `imports` landing on a module never
+    outranks the symbols beside it, and an arm of modules alone keeps its crown."""
+    store = _store()
+    store._edges += [("pkg://func/pkg.misc.m", "pkg://class/pkg.base.Base", "references")] * 3 \
+        + [("pkg://func/pkg.misc.m", "pkg://module/pkg.base", "imports")] * 9
+    assert arms.fanin_relations_for(store) == arms.FANIN_RELATIONS
+    cut = _cut(tmp_path)
+    before = arms.render_all(store, "pkg", cut, tenant_dir="tenants/pkg", tenant_id="pkg")["BASE"].body
+    assert "graphy blast pkg://func/pkg.base.prim " in before               # undeclared: the old three, prim leads
+    store.relations = {"calls": ["depends", "reaches"], "inherits": ["depends"], "decorates": ["depends"],
+                       "imports": ["depends"], "references": ["depends"], "contains": ["structural"]}
+    assert arms.fanin_relations_for(store) == {"calls", "inherits", "decorates", "imports", "references"}
+    after = arms.render_all(store, "pkg", cut, tenant_dir="tenants/pkg", tenant_id="pkg")["BASE"].body
+    assert "graphy blast pkg://class/pkg.base.Base " in after and "pkg://module/pkg.base " not in after
+    only_modules = _Store(dict([_rec("pkg://module/pkg.base", "module"), _rec("pkg://module/pkg.misc", "module")]),
+                          [("pkg://module/pkg.misc", "pkg://module/pkg.base", "calls")] * 2)
+    assert "graphy blast pkg://module/pkg.base " in arms.render_all(only_modules, "pkg", cut, tenant_dir="tenants/pkg",
+                                                                     tenant_id="pkg")["BASE"].body

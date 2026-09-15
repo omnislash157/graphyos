@@ -24,14 +24,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from graphy.fanout import Cut
+from graphy.federated_store import relations_in
+from graphy.ir import DEPENDS
 from graphy.pillars import _module_of
 
-__all__ = ["ArmsError", "Region", "Verdict", "render_region", "render_all", "generate", "verify",
+__all__ = ["ArmsError", "fanin_relations_for", "Region", "Verdict", "render_region", "render_all", "generate", "verify",
            "read_region", "scaffold_block", "ensure_scaffold", "write_draw_band", "read_draw_band",
            "has_scaffold"]
 
 JOIN_RELATIONS = frozenset({"inherits"})
+# What an arm's crown is ranked by, for a store no producer declared a thing in (pre-#68). A store that
+# declares its relations is read through ``fanin_relations_for``: its DEPENDS family (graphyos #140).
 FANIN_RELATIONS = frozenset({"calls", "inherits", "decorates"})
+
+
+def fanin_relations_for(store) -> frozenset:
+    """The edge types a crown's fan-in counts over this store: the declared DEPENDS family `blast` walks, else
+    ``FANIN_RELATIONS``. The family is read whole and never trimmed by an edge type's name; a module node
+    crowns only an arm where nothing else is depended on (``_joins_and_crowns``)."""
+    return relations_in(store, DEPENDS, FANIN_RELATIONS)
 _OPEN = re.compile(r"<!-- graphy:arm (?P<name>[A-Za-z0-9_.-]+) generated[^\n]*\n"
                    r"\s*store=(?P<store>\S+) cut=(?P<cut>\S+) content=(?P<content>\S+) -->\n")
 _CLOSE_FMT = "<!-- /graphy:arm {name} -->"
@@ -116,10 +127,11 @@ def _inventory(store, corpus: str, cut: Cut) -> tuple[dict, dict, dict]:
 
 
 def _joins_and_crowns(store, corpus: str, group_of: dict, records: dict) -> tuple[dict, dict]:
-    """The inherits edges leaving each arm, and each arm's crown: the node with the greatest
-    fan-in (calls · inherits · decorates) from outside its own module."""
+    """The inherits edges leaving each arm, and each arm's crown: the node with the greatest fan-in
+    (``fanin_relations_for``) from outside its own module — a module only when the arm holds nothing else."""
     joins: dict[str, list[tuple[str, str]]] = defaultdict(list)
     fanin: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    counted = fanin_relations_for(store)
     for src, dst, rel in store.edges():
         gs = group_of.get(src)
         if gs is None:
@@ -127,12 +139,17 @@ def _joins_and_crowns(store, corpus: str, group_of: dict, records: dict) -> tupl
         gd = group_of.get(dst)
         if rel in JOIN_RELATIONS and gd != gs:
             joins[gs].append((src, dst))
-        if rel in FANIN_RELATIONS and gd is not None:
+        if rel in counted and gd is not None:
             ms = _module_of(records.get(src), src)
             md = _module_of(records.get(dst), dst)
             if ms != md:
                 fanin[gd][dst] += 1
-    crowns = {g: max(sorted(c), key=lambda n: c[n]) for g, c in fanin.items() if c}
+    crowns = {}
+    for g, c in fanin.items():
+        # a module crowns only an arm where nothing else is depended on: a declared `imports` lands on modules
+        # and would otherwise crown every arm with one, while a CommonJS module called as a function is its crown
+        pool = [n for n in c if (records.get(n) or {}).get("node_type") != "module"] or list(c)
+        crowns[g] = max(sorted(pool), key=lambda n: c[n])
     return joins, crowns
 
 

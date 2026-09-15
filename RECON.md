@@ -6632,3 +6632,19 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | production, linux | a fresh pallets/click clone: `graphy eat .` → `CHECK OK`; its references and annotations equal under both readers (911 references) |
 | the graphy tenant | `rebuild.sh` stopped on `ARMS DRIFT` standing from earlier rungs (cli · shell.install · traversal moved); regions re-rendered, the harness's draw region and products reverted → `ARMS OK: 6 arm(s) match the walk` |
 | the battery | `python3 review.py --diff 3dbb077 \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 156 · THE CUT COUNTS WHAT BLAST WALKS — `pillars` weighed units over a hardcoded `imports · calls · inherits · decorates`, `arms` ranked crowns over `calls · inherits · decorates` and `draw` imported the first, while `blast` has read the store's declared DEPENDS family since #68; after #94 a unit reached only through `references` weighed nothing in the cut. `pillars.relations_for` and `arms.fanin_relations_for` now read that family (`relations_in(store, DEPENDS, <the old constant>)`), `draw` weighs through the first, the `pillars` header names what it counted, and a module node crowns only an arm where nothing else is depended on — a declared `imports` lands on modules and would otherwise crown them (2026-09-15 · graphyos issue 140)
+
+- spec: `specs/140.md` · `python3 spec_lint.py specs/140.md` → `SPEC OK`
+- the issue's done block imports `graphy.tenant.load_tenant`, which does not exist; P1 opens the store through `cli._load_tenant` and `cli._roster`
+- left by name: `arms.JOIN_RELATIONS` (`inherits`) is the region's "inherits joins out" inventory — one named edge rendered, not a dependency family
+
+| check | result |
+|---|---|
+| red first | the two new floor tests fail on the old modules with a shim accessor returning their constants (`/tmp/p140/red.py`, P2) |
+| the proposal, same store a27be47e6a42c341 | old `pillars`: 528 cross-unit edges · 3 arms (CLI 37 · SMASH 4 · RESEED 2); this tree: 592 · 4 arms (CLI 37 · MESH_FEDERATION_GATE 3 · RESEED 2 · PORTABLE_FLOCK 1); moved: `smash` · `adapters` · `ir` · `parity` SMASH→CLI, `mesh_federation_gate` · `augment_registry` · `inventory` CLI→MESH_FEDERATION_GATE, `_portable_flock` CLI→PORTABLE_FLOCK |
+| the crowns, old `arms` against this tree over each tenant's store (`/tmp/p140/crowns.py`, P4, three runs identical) | graphy: SEAM `federated_store.open_for` (31 dependents) → `tenant.TenantError` (77), through `references`; fastapi · sqlalchemy · hono: 0 regions move; express: APPLICATION · REQUEST · RESPONSE had no crown and are crowned by their module (1 dependent, `imports`), UTILS keeps `express.view` |
+| the undeclared fallback | test_pillars · test_arms · test_draw · test_showcase · test_harness: 51 passed (P3) |
+| the graphy tenant | `rebuild.sh` stopped on `ARMS DRIFT` (SEAM moved, CUT's inventory); regions and docs/pillars.svg re-rendered → `ARMS OK: 6 arm(s) match the walk` |
+| production, linux | a fresh pallets/click clone eaten: `PILLARS: click … over 227 cross-unit edges (calls · decorates · imports · inherits · references)`, `relations_for == blast_relations == fanin_relations_for`, `CHECK OK` |
+| the battery | `python3 review.py --diff HEAD \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |

@@ -339,3 +339,29 @@ def test_GREEN_a_receipt_with_no_type_census_says_so_rather_than_rendering_nothi
     _shard(home / "old_graph", counts={"node_count": 5, "edge_count": 2})
     line = pillars.render_census(pillars.census(home, "old"))
     assert "the receipt carries no type census" in line
+
+
+def test_GREEN_the_module_graph_counts_the_dependencies_the_store_declares_never_a_constant():
+    """The cut counted a hardcoded `imports · calls · inherits · decorates` while `blast` walked the store's
+    declared DEPENDS family, so after #94 a unit reached only through `references` weighed nothing in the
+    crown ranking (graphyos #140). The module graph now reads the family the store's lanes declared, the set
+    `doors.blast_relations` walks; a store that declares nothing cuts over the old constant."""
+    import graphy.doors as doors
+    import graphy.draw as draw
+    base = _synthetic()
+    edges = base._edges + [("pkg://func/pkg.loner.go", "pkg://func/pkg.misc.m", "references")] * 7 \
+        + [("pkg://func/pkg.loner.go", "pkg://func/pkg.misc.m", "writes")] * 2
+    undeclared = _Store(base._records, edges)
+    assert pillars.relations_for(undeclared) == pillars.RELATIONS
+    assert pillars.module_graph(undeclared, "pkg").weight == pillars.module_graph(base, "pkg").weight
+    declared = _Store(base._records, edges)
+    declared.relations = {"calls": ["depends", "reaches"], "inherits": ["depends"], "decorates": ["depends"],
+                          "imports": ["lexical"], "references": ["depends"], "writes": ["depends", "reaches"],
+                          "contains": ["structural"]}
+    assert pillars.relations_for(declared) == doors.blast_relations(declared) \
+        == {"calls", "inherits", "decorates", "references", "writes"}
+    g = pillars.module_graph(declared, "pkg")
+    assert g.weight[("pkg.loner", "pkg.misc")] == 9                        # references and writes, as declared
+    assert ("pkg", "pkg.hub") not in g.weight and ("pkg.loner", "pkg.util") not in g.weight   # imports declared lexical
+    assert "(calls · decorates · inherits · references · writes)" in pillars.render(pillars.propose(g), g)
+    assert draw.units(declared, "pkg").weights == g.weight                 # the drawing counts what the cut counts

@@ -2,7 +2,7 @@
 
 Three doors, every one a query over the compiled store and never a shard load: the module
 graph (the pillars' unit rule — the first N dotted segments of every node's `module`, edges
-weighted by the calls · imports · inherits · decorates between units), one arm of a partition
+weighted by the declared dependencies between units), one arm of a partition
 (its modules, module to module), and a symbol's neighbourhood (the doors' reach, both ways, to a
 radius). Each yields (nodes, edges, labels, meta, title) and the sugiyama engine lays it out:
 ASCII for the terminal, one self-contained HTML+SVG page for a human, the same routes in both.
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from graphy import sugiyama as S
-from graphy.pillars import RELATIONS, _module_of
+from graphy.pillars import _module_of, relations_for
 
 __all__ = ["DrawError", "Picture", "units", "pillars", "arm", "neighbourhood", "render", "atlas", "RECEIPT", "emit_checked"]
 
@@ -48,7 +48,7 @@ def _short(dotted: str, root: str) -> str:
 
 def units(store, corpus: str, depth: int = 2, min_weight: int = 1) -> Picture:
     """The corpus's module graph collapsed to units of `depth` dotted segments; a unit is a node,
-    an edge carries the count of cross-unit calls · imports · inherits · decorates. The test
+    an edge carries the count of cross-unit dependencies (``pillars.relations_for``). The test
     role is skipped, as pillars skip it."""
     module_of: dict[str, str] = {}
     for nid, rec in store.owned(corpus):
@@ -65,8 +65,9 @@ def units(store, corpus: str, depth: int = 2, min_weight: int = 1) -> Picture:
         return ".".join(m.split(".")[:depth])
 
     weight: collections.Counter = collections.Counter()
+    relations = relations_for(store)
     for src, dst, rel in store.edges():
-        if rel not in RELATIONS:
+        if rel not in relations:
             continue
         ms, md = module_of.get(src), module_of.get(dst)
         if ms is None or md is None:
@@ -97,8 +98,9 @@ def pillars(store, corpus: str, cut, min_weight: int = 1) -> Picture:
     if not module_of:
         raise DrawError(f"the store owns no module-bearing node for corpus {corpus!r}")
     weight: collections.Counter = collections.Counter()
+    relations = relations_for(store)
     for src, dst, rel in store.edges():
-        if rel not in RELATIONS:
+        if rel not in relations:
             continue
         ms, md = module_of.get(src), module_of.get(dst)
         if ms is None or md is None:
@@ -129,8 +131,9 @@ def arm(store, corpus: str, cut, name: str, min_weight: int = 1) -> Picture:
     if not inside:
         raise DrawError(f"the partition places no module of {corpus!r} in {name}")
     weight: collections.Counter = collections.Counter()
+    relations = relations_for(store)
     for src, dst, rel in store.edges():
-        if rel not in RELATIONS:
+        if rel not in relations:
             continue
         ms, md = module_of.get(src), module_of.get(dst)
         if ms is None or md is None or ms == md:

@@ -6,7 +6,7 @@
 `tenant` is the declared identity everything refuses without; `converge` resolves text labels through scope and counts the wormholes; `federated_store` compiles and reads the sqlite store; `cross_substrate` loads and walks a set of shards; `journal` records born and died; `container` and `index_estate` are the parquet; `cartograph` runs declared build lanes and measures freshness.
 
 <!-- graphy:arm SEAM generated — do not edit inside this region; `graphy arms` regenerates it, `graphy arms --verify` names drift
-     store=0b1c6d8a78a74b49 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:052823cc2fe658962b6822c5cbbee5c9810bd7e7a0434a7f40507c588b490a3e -->
+     store=a27be47e6a42c341 cut=sha256:0f1d43aa1cb87a767f760bdce58094258cb244f46054c04b6f20ee098f6e3cd8 content=sha256:5b1b6134734277ddd76729b1f6bfefa8b1de3777a4c30a01331964500bf43fd4 -->
 ## The walk's inventory — generated
 
 Every symbol the partition places in this arm, by module; a class carries its method count. The prose above is judgment; this region is the walk, re-rendered from the store on every rebuild and refused when it drifts.
@@ -33,11 +33,11 @@ Every symbol the partition places in this arm, by module; a class carries its me
 
 ```bash
 T=tenants/graphy
-python3 -m graphy blast graphy://func/graphy.federated_store.open_for --tenant $T/tenant.json --tenant-id graphy
+python3 -m graphy blast graphy://class/graphy.tenant.TenantError --tenant $T/tenant.json --tenant-id graphy
 python3 -m graphy pillars --tenant $T/tenant.json --tenant-id graphy --corpus graphy --against $T/partition.json
 python3 -m graphy arms --tenant $T/tenant.json --tenant-id graphy --corpus graphy --partition $T/partition.json --dir $T/arms --verify
 ```
 
-Last walk: crown=`graphy://func/graphy.federated_store.open_for` dependents in graphy=31 → arms/SEAM.walk.txt
+Last walk: crown=`graphy://class/graphy.tenant.TenantError` dependents in graphy=77 → arms/SEAM.walk.txt
 
 <!-- /graphy:arm SEAM -->
