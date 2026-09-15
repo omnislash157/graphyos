@@ -523,7 +523,8 @@ def posted_texts(command: str, cwd: str | None, _depth: int = 0, _env: dict | No
     `gh pr create --fill`, or an editor is not seen; an argv-level `gh` shim is the complete form (#131)."""
     import os
     here: Path | None = Path(cwd or os.getcwd())
-    env = dict(_env) if _env is not None else {"HOME": os.path.expanduser("~"), "PWD": str(here)}   # a `$(…)` runs in this shell
+    # a `$(…)` runs in this shell; `~` is bash's `$HOME`, which Python's expanduser ignores on Windows (graphyos #127)
+    env = dict(_env) if _env is not None else {"HOME": os.environ.get("HOME") or os.path.expanduser("~"), "PWD": str(here)}
     texts: list[tuple[str, str]] = []
     parsed = _words(command)
     tokens, built, bare = parsed.words, parsed.built, parsed.bare

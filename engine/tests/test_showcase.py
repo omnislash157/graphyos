@@ -3,6 +3,8 @@ three cold showcases in RECON."""
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 
 import pytest
@@ -135,6 +137,18 @@ def test_GREEN_the_text_page_is_written_for_the_fence(tmp_path):
     assert sugi.check_artifact(page) == []
 
 
+def _posix_bash() -> str:
+    """The bash a workflow step runs under. On Windows the `bash` on PATH is WSL's stub, which prints a UTF-16
+    install hint and exits 1; the runner's steps run Git's bash, which sits beside its git (graphyos #127)."""
+    if os.name != "nt":
+        return "bash"
+    git = shutil.which("git")
+    bash = Path(git).resolve().parent.parent / "bin" / "bash.exe" if git else None
+    if bash is None or not bash.is_file():
+        pytest.skip("the step is a bash script and this box has no Git bash beside its git")
+    return str(bash)
+
+
 def test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carries(tmp_path):
     """The workflow's comment step computes its fence from the body it posts — the page or the
     refusal lines — one backtick longer than the longest run inside, never a fixed four; the step
@@ -142,7 +156,7 @@ def test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carrie
     import re
     import subprocess
     from test_workflows import ROOT, workflows as wf
-    src = (ROOT / ".github" / "workflows" / "showcase-on-issue.yml").read_text()
+    src = (ROOT / ".github" / "workflows" / "showcase-on-issue.yml").read_text(encoding="utf-8")
     doc = wf.parse(src)
     step = next(st for j in doc["jobs"].values() for st in j["steps"] if "comment.md" in (st.get("run") or ""))
     run = step["run"]
@@ -155,8 +169,10 @@ def test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carrie
         (home / "page" / "showcase.txt").write_text(body)
         (home / "showcase.log").write_text(log)
         script = run[run.index('page="$RUNNER_TEMP'):]
-        proc = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin", "RUNNER_TEMP": str(home),
-                                                            "URL": "https://example.invalid/x", "rc": str(rc)}, capture_output=True, text=True)
+        env = {"PATH": "/usr/bin:/bin", "RUNNER_TEMP": home.as_posix(), "URL": "https://example.invalid/x", "rc": str(rc)}
+        if os.name == "nt":
+            env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", "")          # MSYS bash cannot start without it
+        proc = subprocess.run([_posix_bash(), "-c", script], env=env, capture_output=True, text=True, encoding="utf-8")
         assert proc.returncode == 0, proc.stderr
         comment = (home / "comment.md").read_text()
         posted = body if rc == 0 else log.rstrip("\n")

@@ -7,9 +7,18 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+
 import graphy.cli as cli
 
 
+def _symlink(link: Path, target: Path, **kw) -> None:
+    """A probe's redirect. A seat that cannot create a symlink (Windows without the privilege or developer
+    mode) cannot stage it, and says so by name (graphyos #127)."""
+    try:
+        link.symlink_to(target, **kw)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"this seat cannot create a symlink, so the redirect it proves cannot be staged: {exc}")
 
 
 def _write_shard(dirpath: Path, nodes: dict, edges: list) -> None:
@@ -231,7 +240,7 @@ def test_fanout_receipt_and_content_share_one_pin(tmp_path, capsys, monkeypatch)
     _write_shard(v1, nodes_v1, [])
     _write_shard(v2, nodes_v2, [])
     link = tmp_path / "graph"
-    link.symlink_to(v1, target_is_directory=True)
+    _symlink(link, v1, target_is_directory=True)
 
     real_load = fanout_mod.load_graph_ir
 
@@ -560,8 +569,8 @@ def test_fanout_retires_legacy_reserved_case_alias(tmp_path, capsys):
 
     legacy = out / "toc.md"
     legacy.write_bytes(b"# legacy lowercase toc section from an older producer\n")
-    assert not legacy.samefile(out / "TOC.md"), (
-        "probe needs a case-sensitive seat: toc.md must be a distinct file")
+    if legacy.samefile(out / "TOC.md"):                     # a case-folding seat (Windows, macOS default): toc.md IS TOC.md
+        pytest.skip("this seat folds case, so a distinct lowercase alias cannot be staged beside TOC.md")
     assert cli.main(["fanout", "--graph-dir", str(graph), "--out", str(out)]) == 0
     capsys.readouterr()
 
@@ -778,16 +787,19 @@ def test_fanout_verify_contains_post_open_errors(tmp_path, capsys, monkeypatch):
 
     import graphy.fanout as fanout_mod
 
-    real_set_blocking = os.set_blocking
+    # the first call the reader makes after the descriptor is open: `set_blocking` where a fifo could have been
+    # opened non-blocking, `fdopen` on Windows, which has no fifo and never calls it — the same flaw either way
+    hook = "set_blocking" if os.name != "nt" else "fdopen"
+    real_hook = getattr(os, hook)
     calls = {"n": 0, "fail_at": 1}
 
-    def _eio_set_blocking(fd, blocking):
+    def _eio_after_open(*a, **kw):
         calls["n"] += 1
         if calls["n"] >= calls["fail_at"]:
             raise OSError(errno_mod.EIO, "forced post-open I/O error")
-        return real_set_blocking(fd, blocking)
+        return real_hook(*a, **kw)
 
-    monkeypatch.setattr(os, "set_blocking", _eio_set_blocking)
+    monkeypatch.setattr(os, hook, _eio_after_open)
 
     verdict = fanout_mod.verify_fanout(out)
     assert verdict["status"] == "INCOMPLETE", verdict
@@ -896,7 +908,7 @@ def test_fanout_verify_never_follows_redirected_entries(tmp_path, capsys):
     outside_copy = tmp_path / "outside_alpha.md"
     outside_copy.write_bytes((out / "alpha.md").read_bytes())
     (out / "alpha.md").unlink()
-    (out / "alpha.md").symlink_to(outside_copy)
+    _symlink(out / "alpha.md", outside_copy)
     verdict = fanout_mod.verify_fanout(out)
     assert verdict["status"] != "COHERENT", "a redirected entry certified green"
     assert any("alpha.md" in m and "redirected" in m
@@ -906,17 +918,18 @@ def test_fanout_verify_never_follows_redirected_entries(tmp_path, capsys):
     assert "redirected" in captured.out + captured.err
 
     (out / "alpha.md").unlink()
-    os.mkfifo(out / "alpha.md")
-    verdict = fanout_mod.verify_fanout(out)
-    assert verdict["status"] != "COHERENT"
-    assert any("alpha.md" in m and "regular" in m
-               for m in verdict["mismatched"]), verdict
+    if hasattr(os, "mkfifo"):                               # a host with fifos: an entry that is not a regular file
+        os.mkfifo(out / "alpha.md")
+        verdict = fanout_mod.verify_fanout(out)
+        assert verdict["status"] != "COHERENT"
+        assert any("alpha.md" in m and "regular" in m
+                   for m in verdict["mismatched"]), verdict
+        (out / "alpha.md").unlink()
 
-    (out / "alpha.md").unlink()
     receipt_copy = tmp_path / "outside_receipt.json"
     receipt_copy.write_bytes((out / "receipt.json").read_bytes())
     (out / "receipt.json").unlink()
-    (out / "receipt.json").symlink_to(receipt_copy)
+    _symlink(out / "receipt.json", receipt_copy)
     verdict = fanout_mod.verify_fanout(out)
     assert verdict["status"] == "INCOMPLETE", verdict
     assert "redirected" in verdict["detail"]
@@ -941,9 +954,10 @@ def test_fanout_verify_fallback_branch_is_race_safe(tmp_path, capsys, monkeypatc
     outside = tmp_path / "outside.md"
     outside.write_bytes((out / "alpha.md").read_bytes())
     (out / "alpha.md").unlink()
-    (out / "alpha.md").symlink_to(outside)
+    _symlink(out / "alpha.md", outside)
 
-    monkeypatch.setattr(fanout_mod.os, "O_NOFOLLOW", 0)
+    # a host with no O_NOFOLLOW (Windows) runs this branch every time; forcing it there sets what is already 0
+    monkeypatch.setattr(fanout_mod.os, "O_NOFOLLOW", 0, raising=False)
     verdict = fanout_mod.verify_fanout(out)
     assert verdict["status"] != "COHERENT", (
         "the forced-fallback branch certified a redirected entry")

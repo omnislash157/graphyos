@@ -118,4 +118,4 @@ def test_GREEN_svg_emit_is_a_standalone_file_for_a_readme(tmp_path, capsys):
     rc = cli.main(["draw", "--tenant", str(desc), "--tenant-id", "doors", "--corpus", "fastapi", "--pillars",
                    "--partition", str(_cut(tmp_path)), "--lr", "--emit", "svg", "-o", str(out)])
     assert rc == 0 and "CHECK GREEN" in capsys.readouterr().out
-    assert out.read_text() == svg                                      # the same bytes twice: the gate compares them
+    assert out.read_text(encoding="utf-8") == svg                      # the same bytes twice: the gate compares them

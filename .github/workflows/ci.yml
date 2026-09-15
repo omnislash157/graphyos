@@ -71,21 +71,6 @@ jobs:
         run: cd engine && pytest -q tests/test_store_lifecycle.py "tests/test_cli.py::test_GREEN_eat_no_provision_runs_nothing_of_the_repo_and_mints_an_empty_ring" "tests/test_federated_store.py::test_GREEN_advertised_warn_command_parses" "tests/test_federated_store.py::test_GREEN_advertised_refuse_command_parses"
       - name: "a cp1252 pipe never crashes a verb that draws — on the platform the issue names (graphyos #123)"
         run: cd engine && pytest -q "tests/test_cli.py::test_GREEN_a_cp1252_console_never_crashes_draw_and_eat_in_a_subprocess" "tests/test_provision.py::test_RED_a_failure_line_is_the_last_line_when_both_streams_share_a_pipe"
-      # the fifth mark (graphyos #125): the paths the engine writes into `shell install`'s wiring, every shard's
-      # PROVENANCE.json, the showcase page and the profile receipt are POSIX, as are the refusals and re-run
-      # commands the issue names; every template value filled into JSON is escaped by json.dumps, git's utf-8 is
-      # decoded as utf-8, and a drive-lettered path is a path to `showcase` (the rest of the engine's JSON is
-      # the issue this rung filed). The basetemp is short on
-      # purpose: a local path's clone key is every one of its segments, so under pytest's default ~100-char
-      # tmp the clone of a tmp-rooted repo doubles it and git hits MAX_PATH (260) — `Filename too long`.
-      # The selection is files with a DENY list, never a list of node ids (review rounds 4 and 5 of #125):
-      # an allow-list sees only the tests it is told, and twice a test that pinned the OS spelling of a
-      # symbol this rung re-spelled stayed green here and red on Windows because nobody had listed it.
-      # Six files run whole; six tests are deselected, each with its reason from the whole-floor run 34855052453:
-      # test_shell's bloodhound test needs ripgrep (absent on this runner, #88); test_showcase's comment-fence
-      # test runs the workflow's step under a POSIX bash PATH; test_cli's three `check` tests are #88's reds on
-      # this platform; test_measure's profile-dir test runs the profiled subprocess, which imports `resource`
-      # (cli.py's profiler; Windows has no such module, #88) — the file's other ten tests run here.
       # the sixth mark (graphyos #126): this runner's git has core.autocrlf on, and the whole-floor run 34855052453
       # checked the golden fixture shard out CRLF, so its nodes.json no longer matched the sha256 its PROVENANCE
       # declares. `.gitattributes` says `* -text`; the step reads the attribute git applied to the fixture and runs
@@ -97,8 +82,28 @@ jobs:
           if ($attr -notmatch 'text: unset$') { Write-Output "the fixture shard is not -text: a core.autocrlf checkout rewrites it"; exit 1 }
           git ls-files --eol engine/tests/fixtures/fastapi_graph docs/pillars.svg CHANGELOG.md
           cd engine && pytest -q tests/test_index.py
-      - name: "the path mark — a path the engine writes is POSIX on this platform, and the wiring it writes parses (graphyos #125)"
-        run: cd engine && pytest -q --basetemp "$env:RUNNER_TEMP\pt" tests/test_shell.py tests/test_history.py tests/test_showcase.py tests/test_burden.py tests/test_cli.py tests/test_measure.py --deselect tests/test_shell.py::test_GREEN_memory_bloodhound_answers_over_an_installed_repo_sessions --deselect tests/test_showcase.py::test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carries --deselect tests/test_cli.py::test_check_shard_unreadable_is_could_not_tell --deselect tests/test_cli.py::test_check_names_the_offending_shard_by_graph_name --deselect tests/test_cli.py::test_check_wrong_shape_findings_are_not_interchangeable --deselect tests/test_measure.py::test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss
+      # the fifth mark (graphyos #125), now inside the floor step: the paths the engine writes into `shell install`'s wiring, every shard's
+      # PROVENANCE.json, the showcase page and the profile receipt are POSIX, as are the refusals and re-run
+      # commands the issue names; every template value filled into JSON is escaped by json.dumps, git's utf-8 is
+      # decoded as utf-8, and a drive-lettered path is a path to `showcase` (the rest of the engine's JSON is
+      # the issue this rung filed). The basetemp the floor step passes is short on
+      # purpose: a local path's clone key is every one of its segments, so under pytest's default ~100-char
+      # tmp the clone of a tmp-rooted repo doubles it and git hits MAX_PATH (260) — `Filename too long`.
+      # That step's selection was files with a DENY list, never a list of node ids (review rounds 4 and 5 of #125) —
+      # the floor step below keeps the lesson by selecting everything:
+      # an allow-list sees only the tests it is told, and twice a test that pinned the OS spelling of a
+      # symbol this rung re-spelled stayed green here and red on Windows because nobody had listed it.
+      # the seventh mark (graphyos #127): the whole floor on this platform. The floor asserted POSIX (mode bits, fifos,
+      # O_NOFOLLOW, a case-sensitive seat, chmod as unreadable, a file symlink to a directory, a held store's generation
+      # removed, bash on PATH, and the locale as the encoding of utf-8 the engine wrote); each such test now asserts the
+      # platform's truth or skips by name with its reason, and the engine's own seams behind them are fixed (`resolve_graph`
+      # read a `\\?\`-prefixed link target as an escape; `discard_generations` removed a symlinked substrate, which
+      # Windows' rmdir does). Every test runs here except those an open issue owns, each deselected by name with its
+      # issue: test_mcp's rebuild-after-refusal holds a store across calls (#134); test_measure's profile-dir test runs
+      # the profiled subprocess, which imports `resource` (#88); test_rebuild's pruned-lane test pins a separator #88
+      # re-spells. A red here is a red on the platform: the deny list shrinks, never grows, and a new red files its issue first.
+      - name: "the floor on this platform — every test but those an open issue owns, each deselected by name (graphyos #127)"
+        run: cd engine && pytest -q -rfs --basetemp "$env:RUNNER_TEMP\pt" --deselect tests/test_mcp.py::test_mcp_answers_again_after_the_build_its_own_refusal_prescribes --deselect tests/test_measure.py::test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss --deselect tests/test_rebuild.py::test_RED_a_substrate_from_before_generations_never_brings_back_a_pruned_lane
 
   gate:
     runs-on: ubuntu-latest

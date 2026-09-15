@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -81,7 +82,9 @@ def test_keygen_writes_once_and_refuses_to_overwrite(tmp_path):
     key = tmp_path / ".private_key"
     assert scrub.keygen(key) == 0
     first = key.read_text().strip()
-    assert len(first) == 64 and (key.stat().st_mode & 0o777) == 0o600
+    assert len(first) == 64
+    if os.name != "nt":                      # Windows has no mode bits: the key's secrecy there is the profile dir's ACL (graphyos #127)
+        assert (key.stat().st_mode & 0o777) == 0o600
     assert scrub.keygen(key) == 2 and key.read_text().strip() == first
     assert scrub.load_key(key) == first.encode()
     empty = tmp_path / "empty"
@@ -132,7 +135,7 @@ def test_RED_a_post_to_github_carrying_a_marker_is_blocked_before_it_posts(tmp_p
     assert hook("gh issue comment 9 --repo o/r --body \"$(cat <<'EOF'\nfine\nfor acme widgets\nEOF\n)\"") == 2
     body = tmp_path / "body.md"
     body.write_text("line one\nZorblax\n")
-    assert hook(f"gh pr create --title t --body-file {body}") == 2
+    assert hook(f"gh pr create --title t --body-file {body.as_posix()}") == 2     # a bash word: POSIX on every host
     assert "body.md line 2" in capsys.readouterr().err
     assert hook('gh issue create --repo o/r --title x --body "a public sentence"') == 0
     assert hook("grep Zorblax notes.md") == 0                                   # not a post
@@ -143,20 +146,20 @@ def test_RED_a_post_to_github_carrying_a_marker_is_blocked_before_it_posts(tmp_p
     home.mkdir()
     clean = home / "clean.md"
     clean.write_text("a public sentence\n")
-    assert hook(f"gh issue create --repo o/r --title t --body-file {clean}") == 0
-    assert hook(f"cd {home} && gh issue close 91 --repo o/r --comment done") == 0
-    assert hook(f"gh issue create --title t --body-file {clean} && echo {home}") == 0
+    assert hook(f"gh issue create --repo o/r --title t --body-file {clean.as_posix()}") == 0
+    assert hook(f"cd {home.as_posix()} && gh issue close 91 --repo o/r --comment done") == 0
+    assert hook(f"gh issue create --title t --body-file {clean.as_posix()} && echo {home.as_posix()}") == 0
     # B2: a body the hook cannot read is refused, never passed
     planted = home / "body.md"
     planted.write_text("fine\nZorblax\n")
     pay = lambda cmd, cwd=None: scrub.gh_hook(json.dumps({"tool_name": "Bash", "cwd": str(cwd) if cwd else None,
                                                           "tool_input": {"command": cmd}}), hashes, k)
-    assert hook(f"gh issue create --title t --body-file={planted}") == 2        # the = form
+    assert hook(f"gh issue create --title t --body-file={planted.as_posix()}") == 2        # the = form
     assert pay("gh issue create --title t -F body.md", cwd=home) == 2           # relative to the payload's cwd
-    assert hook(f"cd {home} && gh issue create --title t -F body.md") == 2      # relative to a cd before it
-    assert hook(f"cat {planted} | gh issue create --title t --body-file -") == 2
+    assert hook(f"cd {home.as_posix()} && gh issue create --title t -F body.md") == 2      # relative to a cd before it
+    assert hook(f"cat {planted.as_posix()} | gh issue create --title t --body-file -") == 2
     assert "pipe" in capsys.readouterr().err
-    assert hook(f"gh issue create --title t --body-file {home / 'absent.md'}") == 2
+    assert hook(f"gh issue create --title t --body-file {(home / 'absent.md').as_posix()}") == 2
     assert "cannot be read" in capsys.readouterr().err
     assert hook("gh issue create --title t --body-file - <<'EOF'\nfor acme widgets\nEOF") == 2
     assert hook("gh issue create --title t --body-file - <<'EOF'\na public sentence\nEOF") == 0
@@ -167,23 +170,23 @@ def test_RED_a_post_to_github_carrying_a_marker_is_blocked_before_it_posts(tmp_p
                 "sh -c 'gh issue comment 1 --body Zorblax'"):
         assert hook(cmd) == 2, cmd
     # B4: a value the shell builds (a substitution, a variable) is posted unread — refused, by name
-    for cmd in (f"gh issue create -t x -b \"$(cat {planted})\"", f"gh issue create -t x -b \"`cat {planted}`\"",
-                f"B=$(cat {planted}); gh issue create -t x -b \"$B\"", "cat notes | xargs gh issue comment 1 -b"):
+    for cmd in (f"gh issue create -t x -b \"$(cat {planted.as_posix()})\"", f"gh issue create -t x -b \"`cat {planted.as_posix()}`\"",
+                f"B=$(cat {planted.as_posix()}); gh issue create -t x -b \"$B\"", "cat notes | xargs gh issue comment 1 -b"):
         assert hook(cmd) == 2, cmd
         assert "SCRUB REFUSED" in capsys.readouterr().err
     # a word the shell builds is read when it can be: a literal assignment, the environment, `$(cat F)`
-    assert hook(f"gh issue create -t x -b \"$(cat {clean})\"") == 0
-    assert hook(f"D={home}; gh issue create -t x --body-file \"$D/clean.md\"") == 0
-    assert hook(f"D={home}; gh issue create -t x --body-file \"$D/body.md\"") == 2
+    assert hook(f"gh issue create -t x -b \"$(cat {clean.as_posix()})\"") == 0
+    assert hook(f"D={home.as_posix()}; gh issue create -t x --body-file \"$D/clean.md\"") == 0
+    assert hook(f"D={home.as_posix()}; gh issue create -t x --body-file \"$D/body.md\"") == 2
     assert hook("gh issue comment 1 --body \"$(git log -1 --format=%s)\"") == 2              # another command's output
     assert "another command's output" in capsys.readouterr().err
     assert hook("gh issue comment 1 --body \"closed as $UNSET_IN_THIS_COMMAND_ZZ\"") == 2
     # review round 3 — B5: every word after the post head travels except its envelope (a repo, a body-file path)
     assert hook("gh pr review 7 --comment --body Zorblax") == 2 and hook("gh pr review 7 -c -b Zorblax") == 2
     assert hook("gh issue edit 3 --add-label Zorblax") == 2
-    assert hook(f"gh issue close 3 --comment done > {home}/log 2>&1") == 0          # a redirect target never travels
-    assert hook(f"gh issue close 3 --comment done >{home}/log") == 0
-    assert hook(f"gh release create v1 --notes-file {clean}") == 0 and hook(f"gh release edit v1 --notes-file {planted}") == 2
+    assert hook(f"gh issue close 3 --comment done > {home.as_posix()}/log 2>&1") == 0          # a redirect target never travels
+    assert hook(f"gh issue close 3 --comment done >{home.as_posix()}/log") == 0
+    assert hook(f"gh release create v1 --notes-file {clean.as_posix()}") == 0 and hook(f"gh release edit v1 --notes-file {planted.as_posix()}") == 2
     # B6: what the shell would expand is expanded or refused, never read as its spelling
     note = home / "note.md"
     note.write_text("Zorblax\n")
@@ -202,7 +205,7 @@ def test_RED_a_post_to_github_carrying_a_marker_is_blocked_before_it_posts(tmp_p
     assert hook("gh issue create --title t --body '## What\n`scrub.py` costs $5 and '\"'\"'$(nothing)'\"'\"' runs'") == 0
     assert hook("gh issue create --title t --body '## What\n`scrub.py` is for Zorblax'") == 2
     # a heredoc that feeds something else is never posted: a script beside a post in one command passes
-    assert hook(f"python3 - <<'PY'\nsp = '{home}'\nprint(\"gh issue comment 1 --body x\")\nPY\ngh issue close 3 --comment done") == 0
+    assert hook(f"python3 - <<'PY'\nsp = '{home.as_posix()}'\nprint(\"gh issue comment 1 --body x\")\nPY\ngh issue close 3 --comment done") == 0
     assert hook("gh issue comment 9 --body \"$(cat <<'EOF'\nit's fine\nEOF\n)\"") == 0
     assert hook("gh issue create --title \"a (parenthesised) title\" --body \"$(cat <<'EOF'\nfor acme widgets\nEOF\n)\"") == 2
     assert hook("gh issue comment 9 --body \"$(cat <<'EOF'\n1) the first\n2) a :) face\nEOF\n)\"") == 0

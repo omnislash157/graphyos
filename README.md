@@ -156,7 +156,10 @@ spelling: the paths the engine writes into the wiring `shell install` writes, ev
 profile receipt are POSIX (`C:/work/src`, which every Windows shell and interpreter accepts), as are the
 refusals and re-run commands the issue names; every template value filled into JSON is escaped, git's utf-8
 is decoded as utf-8, and a drive-lettered path is a path to `showcase`, so the wiring parses and a shard
-minted there reads as one minted here (graphyos #125). The engine's other receipts (`ring.json`,
+minted there reads as one minted here (graphyos #125) — and the floor itself: the same job runs every
+test on windows-latest but those an open issue owns, each deselected by name with that issue, so a test that asserts POSIX (a mode bit, a fifo, a case-sensitive seat, `chmod` as unreadable, the
+locale as the encoding of utf-8 the engine wrote) either asserts the platform's truth or skips with its
+reason, and a new red there is a red on the platform (graphyos #127). The engine's other receipts (`ring.json`,
 `tenant.json`, the refresh, rebuild, farm and index receipts) still spell the OS way — one shared writer
 for all of them is graphyos #142.
 `[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build

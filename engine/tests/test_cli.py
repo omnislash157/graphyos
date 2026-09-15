@@ -15,6 +15,32 @@ import graphy.federated_store as fs
 
 CURSOR = "sha256:" + "0" * 64
 
+
+class _unreadable:
+    """A file the process cannot open for reading, the platform's way: mode 0 where there are mode bits,
+    an explicit deny ACE for Everyone (`S-1-1-0`, which binds an administrator too) on Windows, where
+    `chmod(0)` only clears the read-only bit (graphyos #127). The deny is `RD` (read data) alone: a deny
+    of generic read takes READ_CONTROL with it, and then nothing can read the ACL back to lift it. Restored on exit."""
+
+    def __init__(self, path: Path):
+        self.path = path
+
+    def __enter__(self):
+        if os.name == "nt":
+            subprocess.run(["icacls", str(self.path), "/deny", "*S-1-1-0:(RD)"], check=True, capture_output=True)
+        else:
+            self.path.chmod(0)
+        return self.path
+
+    def __exit__(self, *exc):
+        if os.name == "nt":
+            lifted = subprocess.run(["icacls", str(self.path), "/remove:d", "*S-1-1-0"], capture_output=True)
+            if lifted.returncode != 0:
+                subprocess.run(["icacls", str(self.path), "/reset"], check=True, capture_output=True)
+        else:
+            self.path.chmod(0o644)
+
+
 _WALK_STATES = (
     "WALK PATH:",
     "WALK NO-PATH:",
@@ -381,12 +407,8 @@ def test_check_shard_unreadable_is_could_not_tell(tmp_path, capsys):
     assert cli.main(["build", "--tenant", str(descriptor),
                      "--tenant-id", "cli-build"]) == 0
     capsys.readouterr()
-    nodes = tmp_path / "data/widgets_graph/nodes.json"
-    nodes.chmod(0)
-    try:
+    with _unreadable(tmp_path / "data/widgets_graph/nodes.json"):
         rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
-    finally:
-        nodes.chmod(0o644)
     out = capsys.readouterr()
     combined = out.out + out.err
     assert rc == 1
@@ -476,12 +498,8 @@ def test_check_names_the_offending_shard_by_graph_name(tmp_path, capsys):
     assert cli.main(["build", "--tenant", str(descriptor),
                      "--tenant-id", "cli-build"]) == 0
     capsys.readouterr()
-    nodes = tmp_path / "data/widgets_graph/nodes.json"
-    nodes.chmod(0)
-    try:
+    with _unreadable(tmp_path / "data/widgets_graph/nodes.json"):
         rc = cli.main(["check", "--tenant", str(descriptor), "--tenant-id", "cli-check"])
-    finally:
-        nodes.chmod(0o644)
     out = capsys.readouterr()
     combined = out.out + out.err
     assert rc == 1
@@ -511,13 +529,9 @@ def test_check_wrong_shape_findings_are_not_interchangeable(tmp_path, capsys):
     idx_err = capsys.readouterr().err
     _write_scheme_index(tmp_path / "data")
 
-    nodes = tmp_path / "data/widgets_graph/nodes.json"
-    nodes.chmod(0)
-    try:
+    with _unreadable(tmp_path / "data/widgets_graph/nodes.json"):
         assert cli.main(["check", "--tenant", str(descriptor),
                          "--tenant-id", "cli-check"]) == 1
-    finally:
-        nodes.chmod(0o644)
     shard_err = capsys.readouterr().err
 
     reg_store = next(line for line in reg_err.splitlines() if "store lane" in line)

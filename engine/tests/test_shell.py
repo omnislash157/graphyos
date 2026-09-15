@@ -51,7 +51,7 @@ def test_GREEN_memory_bloodhound_answers_over_an_installed_repo_sessions(tmp_pat
     router = (repo / "GRAPHY.md").read_text(encoding="utf-8")
     tap = next(ln for ln in router.splitlines() if "-m graphy.lightning.bloodhound" in ln and ln.startswith("| "))
     cmd = tap.split("`")[1].replace('"<A>"', "gate").replace('"<B>"', "walk")
-    out = subprocess.run(cmd.split(), capture_output=True, text=True, timeout=60)
+    out = subprocess.run(cmd.split(), capture_output=True, text=True, encoding="utf-8", timeout=60)   # the child writes utf-8
     assert out.returncode == 0, out.stderr
     assert "gate" in out.stdout and "001.md" in out.stdout
 

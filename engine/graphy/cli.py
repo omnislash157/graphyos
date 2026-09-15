@@ -2159,10 +2159,11 @@ def discard_generations(sub: Path, *, live: Path | None, previous: Path | None =
                 shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
             except OSError:
                 pass
-        try:
-            sub.rmdir()
-        except OSError:
-            pass
+        if not sub.is_symlink():          # Windows' rmdir removes a directory link; a symlinked substrate is the tenant's
+            try:
+                sub.rmdir()
+            except OSError:
+                pass
 
 
 def _eat_run(args: argparse.Namespace, repo: Path, package: str, corpus: Path, producer: str) -> int:

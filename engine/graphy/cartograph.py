@@ -174,6 +174,8 @@ def resolve_graph(graph_dir: Path) -> Path:
             target = os.readlink(p)
         except OSError:
             target = ""
+        if target.startswith("\\\\?\\"):                 # Windows spells an absolute link target extended-length
+            target = "\\\\" + target[8:] if target[4:8].upper() == "UNC\\" else target[4:]
         if target:
             resolved = (p.parent / target).resolve()
             escapes = p.parent.resolve() not in resolved.parents

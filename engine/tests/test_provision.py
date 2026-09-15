@@ -3,6 +3,7 @@ pip and npm injected; the proof is the three cold eats in RECON."""
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import sysconfig
@@ -38,11 +39,13 @@ def test_GREEN_python_repo_gets_a_venv_and_pip_install(tmp_path):
     def runner(cmd, cwd=None, timeout=0):
         calls.append(cmd)
         if cmd[1:3] == ["-m", "venv"]:
-            _fake_venv(Path(cmd[3]), layout="posix")
+            _fake_venv(Path(cmd[3]), layout=os.name)             # what this host's `python -m venv` leaves behind
         return 0, ""
 
     pv = provision.provision(repo, "python_ast", runner=runner)
-    assert pv.installed and pv.site == repo / ".graphy" / "venv" / "lib" / "python3.12" / "site-packages"
+    venv = repo / ".graphy" / "venv"
+    site = venv / "Lib" / "site-packages" if os.name == "nt" else venv / "lib" / "python3.12" / "site-packages"
+    assert pv.installed and pv.site == site
     assert calls[0][1:3] == ["-m", "venv"] and calls[1][-1] == str(repo) and "pip" in calls[1]
     # the receipt beside the venv pins the declaration: a second provision under the same
     # pyproject skips pip and says so; the declaration moving runs it again
@@ -115,8 +118,8 @@ def test_RED_venv_layout_is_sysconfig_on_both_hosts(tmp_path):
     (broken / "pyproject.toml").write_text("[project]\nname='x'\nversion='0'\n")
     (broken / ".graphy" / "venv").mkdir(parents=True)
     (broken / ".graphy" / "venv" / "pyvenv.cfg").write_text("version = 3.12.0\n")
-    with pytest.raises(RuntimeError, match=r"no site-packages at .*lib/python3\.12/site-packages \(posix_prefix layout\)"):
-        provision.provision(broken, "python_ast", runner=runner)
+    with pytest.raises(RuntimeError, match=r"no site-packages at .*lib[/\\]python3\.12[/\\]site-packages \(posix_prefix layout\)"):
+        provision.provision(broken, "python_ast", runner=runner, os_name="posix")    # the posix layout, named on both hosts
 
 
 def test_GREEN_package_json_repo_gets_npm_install(tmp_path, monkeypatch):

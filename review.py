@@ -529,6 +529,38 @@ def check_template_tokens(repo: Path) -> list[Finding]:
     return found
 
 
+REVIEW_ROW = re.compile(r"^\|\s*review round (\d+)\b")
+
+
+def check_review_row_order(repo: Path) -> list[Finding]:
+    """review-row-order: inside one RECON section, a `| review round N |` row never follows a row of a
+    round at or past N. A section's rounds are its own rung's ledger, written in order; a row out of order
+    was written into the wrong section — graphyos #127 review round 2, where a text replace matched the
+    first identical `the gate` row and landed round 1 of #127 under #132's round 2 SHIP."""
+    recon = repo / "RECON.md"
+    if not recon.is_file():
+        raise CheckError("RECON.md is absent — no record to read the review rows of")
+    found: list[Finding] = []
+    sections = rows = 0
+    last = 0
+    for i, line in enumerate(recon.read_text(encoding="utf-8", errors="replace").split("\n"), 1):
+        if re.match(r"^## \d+ ", line):
+            sections, last = sections + 1, 0
+            continue
+        m = REVIEW_ROW.match(line)
+        if m:
+            rows += 1
+            n = int(m.group(1))
+            if n <= last:
+                found.append(Finding("review-row-order", f"RECON.md:{i}",
+                                     f"review round {n} follows round {last} in its section — a row written into the wrong section"))
+            last = max(last, n)
+    if not sections:
+        raise CheckError("review-row-order found ZERO sections in RECON.md — the parse is broken, not the record")
+    NOTES["review-row-order"] = f"{rows} review row(s) over {sections} section(s)"
+    return found
+
+
 # ── the shas the record names ─────────────────────────────────────────────────────────────────────
 
 def check_sha_liveness(repo: Path) -> list[Finding]:
@@ -1578,6 +1610,7 @@ CHECKS = {
     "argparse-dest-never-read": check_argparse_dests,
     "path-literal-names-nothing": check_paths,
     "template-token": check_template_tokens,
+    "review-row-order": check_review_row_order,
     "sha-liveness": check_sha_liveness,
     "cache-key-closure": check_cache_key_closure,
     "cache-write-guarded": check_cache_write_guarded,
@@ -1598,7 +1631,7 @@ def _seed(files: dict[str, str]) -> Path:
     for rel, body in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body, encoding="utf-8")
+        p.write_text(body, encoding="utf-8", newline="\n")     # the bytes as written: text mode would commit CRLF on Windows
     for cmd in (["git", "init", "-q"], ["git", "add", "-A"], ["git", "commit", "-q", "-m", "fixture"]):
         _fixture_git(root, cmd)
     return root
@@ -1651,6 +1684,9 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
         "template-token": (
             {"RECON.md": "| the review | REVIEW_ROW_62 |\n"},
             {"RECON.md": "| the review | four findings, every one fixed |\n"}),
+        "review-row-order": (
+            {"RECON.md": "## 1 · a\n\n| review round 1 | REVISE |\n| review round 2 | SHIP |\n| review round 1 | REVISE |\n\n## 2 · b\n"},
+            {"RECON.md": "## 1 · a\n\n| review round 1 | REVISE |\n| review round 2 | SHIP |\n\n## 2 · b\n\n| review round 1 | REVISE |\n"}),
         "sha-liveness": (
             {"RECON.md": "## 1 · x (2026-01-01)\n\nlanded at commit deadbeef0\n"},
             {"RECON.md": "## 1 · x (2026-01-01)\n\nthe store generation 24eecb50371f9e1d is not a commit\n"}),

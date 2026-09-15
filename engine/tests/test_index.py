@@ -194,9 +194,17 @@ def test_verify_index_fans_out_over_threads_and_reads_the_same_rows(tmp_path: Pa
     serial = shard_index.verify_index(str(idx), threads=1)
     seen: set[int] = set()
     real = shard_index._verify_entry_streaming
+    # two workers must be inside at once: a pool hands the next entry to an idle thread, so on a fast box
+    # twelve small shards can all hash on one thread and a bare thread count reads 1 (windows-latest, #127);
+    # a worker held here forces the pool to start another, and a pool that never does breaks the barrier
+    meet = threading.Barrier(2, timeout=10)
 
     def spy(src, address):
         seen.add(threading.get_ident())
+        try:
+            meet.wait()
+        except threading.BrokenBarrierError:
+            pass
         return real(src, address)
     monkeypatch.setattr(shard_index, "_verify_entry_streaming", spy)
     pooled = shard_index.verify_index(str(idx), threads=4)

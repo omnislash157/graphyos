@@ -8,6 +8,7 @@ lane the engine did not mint survives it.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -496,9 +497,14 @@ def test_GREEN_store_stays_servable_through_a_rebuild(tmp_path, capsys, monkeypa
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "three"], cwd=repo, check=True)
     run()
-    assert not old_home.exists() and _generations(repo) == sorted([new_home.name, cli.served_data_home(desc).name])
+    if os.name == "nt":
+        # the store `held` keeps open pins its files here (#98, #124): the discard is best-effort, the generation
+        # older than the replaced one stays on disk until the handle closes, and the landing still served every step
+        assert old_home.exists() and {new_home.name, cli.served_data_home(desc).name} <= set(_generations(repo))
+    else:
+        assert not old_home.exists() and _generations(repo) == sorted([new_home.name, cli.served_data_home(desc).name])
     from graphy import doors, traversal
-    if traversal.have_duckdb():
+    if traversal.have_duckdb() and os.name != "nt":            # on Windows the pinned generation is not gone yet
         # the held door's cache has nowhere to land: the discarded generation is never recreated to hold one
         out = traversal.door(held, old_home / traversal.DIRNAME, "blast", doors.resolve(held, "core.mod.run"), 1)
         assert out.source == "live" and out.stored is None and "is gone" in (out.note or ""), out
@@ -656,7 +662,10 @@ def test_RED_a_symlinked_substrate_keeps_one_generation_back_and_no_more(tmp_pat
     real.mkdir()
     (repo / ".graphy").mkdir()
     sub, desc = repo / ".graphy" / "substrate", repo / ".graphy" / "tenant.json"
-    sub.symlink_to(real)
+    try:                                   # a directory link, which Windows distinguishes and grants only to a privileged seat
+        sub.symlink_to(real, target_is_directory=True)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"this seat cannot create a symlink, so the symlinked substrate cannot be staged: {exc}")
     _place_foreign_lane(sub)
     for n in range(4):
         if n:
