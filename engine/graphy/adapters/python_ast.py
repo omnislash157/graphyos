@@ -5,6 +5,7 @@ import ast
 import hashlib
 import io
 import re
+import symtable
 import tokenize
 from collections import deque
 from pathlib import Path
@@ -131,8 +132,8 @@ _BOUND_LISTS = frozenset({"decorator_list", "bases"})
 _NAME_KINDS = (ast.Name, ast.Attribute)
 
 
-def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, int]]],
-                                  dict[ast.AST | None, list[tuple[str, int]]]]:
+def _scan(tree: ast.AST, src: str) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, int]]],
+                                            dict[ast.AST | None, list[tuple[str, int]]], _Scopes]:
     """One level-order pass over every node of a file — the order ``ast.walk`` yields them, so the
     records read the same — visiting no node twice. It collects the import statements wherever
     they sit and, keyed by the tracked definition that owns them, every call: a definition is
@@ -145,30 +146,35 @@ def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, i
     The same pass collects every REFERENCE (graphyos #94): a name read as a value — ``handler=fn``,
     ``{"x": fn}``, ``@d(fn)``, ``def f(x=fn)``, ``mod.fn`` — whose head the module's own scope binds
     (``_module_bindings``: a tracked def or class, a module-level import) and that no scope between the
-    reader and the module rebinds — the module's own top level (``_shadow_in``: a for target, a comprehension
-    target, a lambda's parameter, a walrus, an assignment), the class body around a class-level reference,
-    and the owning function (a parameter, an assignment, a nested def's name — ``_rebound_names``). It is
+    reader and the module rebinds, each read from ``scopes`` (``scope_bindings`` over the file's ``symtable``,
+    graphyos #141) — the module's own top level (a for target, a comprehension target, a lambda's parameter,
+    a walrus, an assignment), the class body around a class-level reference, and the owning function (a
+    parameter, an assignment, a nested def's name). It is
     keyed by the tracked def or class that holds it, ``None`` for the module's own top level. A call's
     callee is a ``calls`` edge already and is not a reference; a bare decorator is ``decorates``; a bare or
     subscripted base is ``inherits``; a name under an annotation is a type, not a value; the inner names of
     a dotted chain are the chain's, not their own. Every push is unchanged: a node the old pass visited is
-    visited once, with two more flags. ``rebound`` — each function's own rebindings, computed once here and
-    handed to ``_bindable_annotations`` — is returned beside the records."""
+    visited once, with three more fields. The same pass hands ``_Scopes`` what ``symtable`` cannot: every def
+    and class (its stand-in) and every comprehension's target keyed by the def or class whose body holds it
+    (``scope``); a candidate is checked against the scopes once the pass is done, and the ``_Scopes`` —
+    whose function answers ``_bindable_annotations`` reads — is returned beside the records."""
     imports: list[ast.AST] = []
     calls: dict[ast.AST, list[tuple[str, int]]] = {}
     refs: dict[ast.AST | None, list[tuple[str, int]]] = {}
     body = getattr(tree, "body", []) or []
     bound = _module_bindings(body)
-    module_shadow = _shadow_in(body)
-    shadows: dict[ast.AST | None, set[str]] = {None: module_shadow}
-    rebound: dict[ast.AST, set[str]] = {}
+    definitions: list[ast.AST] = []
+    comprehensions: list[tuple[ast.AST | None, ast.AST]] = []
+    candidates: list[tuple[ast.AST | None, ast.AST | None, str, str, int]] = []
     # (node, owner: the tracked function whose calls these are, tracked, holder: the tracked def or class
-    #  a reference belongs to, ref_ok: a name here is a value and not a callee, a decorator or a type)
-    todo: deque[tuple[ast.AST, ast.AST | None, bool, ast.AST | None, bool]] = deque([(tree, None, True, None, True)])
+    #  a reference belongs to, ref_ok: a name here is a value and not a callee, a decorator or a type,
+    #  scope: the def or class whose body the node sits in, None for the module's)
+    todo: deque[tuple[ast.AST, ast.AST | None, bool, ast.AST | None, bool, ast.AST | None]] = \
+        deque([(tree, None, True, None, True, None)])
     pop, push = todo.popleft, todo.append
     visited, cached, class_info = _VISITED, _CLASS_INFO.get, _class_info
     while todo:
-        node, owner, tracked, holder, ref_ok = pop()
+        node, owner, tracked, holder, ref_ok, scope = pop()
         cls = type(node)
         kind, fields = cached(cls) or class_info(cls)
         callee: ast.AST | None = None
@@ -180,50 +186,52 @@ def _scan(tree: ast.AST) -> tuple[list[ast.AST], dict[ast.AST, list[tuple[str, i
         elif kind == _IMPORT:
             imports.append(node)
         elif kind == _FUNC_KIND:
+            definitions.append(node)
             if owner is None and tracked:
                 owner = node
                 holder = node
             tracked = False
         elif kind == _SCOPE_KIND:
-            if cls is ast.ClassDef and tracked:
-                holder = node
+            if cls is ast.ClassDef:
+                definitions.append(node)
+                if tracked:
+                    holder = node
         elif kind == _OTHER:
             tracked = False
+            if cls is ast.comprehension:
+                comprehensions.append((scope, node.target))
             if ref_ok and cls in _NAME_KINDS:
                 label = node.id if cls is ast.Name else _name_chain(node)
                 if label is not None:
                     ref_ok = False                      # the chain's inner names are the chain's own
                     head = label.split(".", 1)[0]
-                    if head in bound and isinstance(node.ctx, ast.Load) and head not in module_shadow:
-                        shadow = shadows.get(holder)
-                        if shadow is None:                  # a class body's own rebindings, once per class
-                            shadow = shadows[holder] = _shadow_in(holder.body) if isinstance(holder, ast.ClassDef) else set()
-                        if head not in shadow and owner is not None:
-                            own = rebound.get(owner)
-                            if own is None:
-                                own = rebound[owner] = _rebound_names(owner)
-                            if head in own or head in _param_names(owner):
-                                shadow = None               # the function's own scope rebinds it
-                        if shadow is not None and head not in shadow:
-                            refs.setdefault(holder, []).append((label, getattr(node, "lineno", 0)))
+                    if head in bound and isinstance(node.ctx, ast.Load):
+                        candidates.append((holder, owner, head, label, getattr(node, "lineno", 0)))
         values = node.__dict__
+        inner = node if kind == _FUNC_KIND or cls is ast.ClassDef else None
         for name in fields:
             value = values.get(name)
             if value is None:
                 continue
             ok = ref_ok and name not in _TYPE_FIELDS
+            at = inner if inner is not None and name == "body" else scope
             if type(value) is list:
                 if name in _BOUND_LISTS:
                     for child in value:
                         if type(child) in visited:  # a bare decorator or base is its own edge; a call's arguments are values
-                            push((child, owner, tracked, holder, ok and not _is_bound_shape(child)))
+                            push((child, owner, tracked, holder, ok and not _is_bound_shape(child), at))
                     continue
                 for child in value:
                     if type(child) in visited:
-                        push((child, owner, tracked, holder, ok))
+                        push((child, owner, tracked, holder, ok, at))
             elif type(value) in visited:
-                push((value, owner, tracked, holder, ok and value is not callee))
-    return imports, calls, refs, rebound
+                push((value, owner, tracked, holder, ok and value is not callee, at))
+    scopes = _Scopes(src, definitions, comprehensions)
+    for holder, owner, head, label, line in candidates:
+        if head not in scopes.of(None) and (not isinstance(holder, ast.ClassDef) or head not in scopes.of(holder)) \
+                and (owner is None or (head not in scopes.of(owner) and head not in _param_names(owner))):
+            refs.setdefault(holder, []).append((label, line))
+    return imports, calls, refs, scopes
 
 
 def _is_bound_shape(node: ast.AST) -> bool:
@@ -327,67 +335,186 @@ def _name_chain(node: ast.AST) -> str | None:
     return None
 
 
-def _rebound_names(fn: ast.AST) -> set[str]:
-    """Every name the function's body binds again, anywhere under it — an assignment or augmented
-    assignment target, a for/with/except alias, a comprehension target, a walrus, a nested def or lambda's
-    own parameter or name, an import, a global/nonlocal — so a parameter's annotation binds only a name that
-    means one thing from the signature to the last line."""
+class _Everything(frozenset):
+    """The answer when CPython's own scope analysis refuses a file ``ast.parse`` accepted (a duplicate
+    parameter, a ``nonlocal`` at module level) or a definition's name cannot be found where the tree puts
+    it: every name is rebound, so the scope mints no reference and binds no annotation — fail-closed."""
+
+    def __contains__(self, name: object) -> bool:
+        return True
+
+
+_EVERYTHING = _Everything()
+_MODULE = ""
+# a def's or a class's name, from the column the tree gives its keyword — a line continuation may sit between
+_NEWLINE = re.compile(r"\r\n|\r|\n")
+_DEF_HEAD = re.compile(r"(?:async(?:[ \t\f]|\\\r?\n)+)?(?:def|class)(?:[ \t\f]|\\\r?\n)+")
+
+
+def _is_comprehension(table: symtable.SymbolTable) -> bool:
+    """A comprehension's own table — 3.10 only (3.12+ inlines it, PEP 709): a function whose ``.0`` is its iterator."""
+    return table.get_type() == "function" and ".0" in table.get_identifiers()
+
+
+def _demangle(name: str, klass: str | None) -> str:
+    """The name as the source spells it: inside a class ``symtable`` reports ``__x`` as ``_Klass__x``."""
+    prefix = f"_{klass.lstrip('_')}__" if klass and klass.lstrip("_") else None
+    return "__" + name[len(prefix):] if prefix and name.startswith(prefix) else name
+
+
+def _bound_here(table: symtable.SymbolTable, klass: str | None, names: dict[str, str], *, definitions: bool) -> set[str]:
+    """The names one symbol table binds: assigned (a store, a walrus, a ``match`` capture, an except alias,
+    a loop target), a parameter, a ``nonlocal``, an assigned ``global``, and — with ``definitions`` — a def,
+    a class, an import or any ``global``. ``names`` maps each definition's stand-in (``_Scopes``) back to the
+    name it replaced; the interpreter's own names (``.0``, ``.format``, ``.type_params``) never are a head."""
     out: set[str] = set()
-    for node in ast.walk(fn):
-        if node is fn:
+    for sym in table.get_symbols():
+        name = _demangle(sym.get_name(), klass)
+        if name.startswith("."):
             continue
-        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
-            out.add(node.id)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            out.add(node.name); out.update(_param_names(node))
-        elif isinstance(node, ast.Lambda):
-            out.update(_param_names(node))
-        elif isinstance(node, ast.ClassDef):
-            out.add(node.name)
-        elif isinstance(node, ast.ExceptHandler) and node.name:
-            out.add(node.name)
-        elif isinstance(node, (ast.Global, ast.Nonlocal)):
-            out.update(node.names)
-        elif isinstance(node, ast.alias):
-            out.add((node.asname or node.name).split(".")[0])
-        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
-            out.add(node.name)
-        elif isinstance(node, ast.MatchMapping) and node.rest:
-            out.add(node.rest)
+        if name in names:
+            if definitions:
+                out.add(names[name])
+        elif sym.is_parameter() or sym.is_nonlocal() or sym.is_assigned() \
+                or (definitions and (sym.is_imported() or sym.is_declared_global())):
+            out.add(name)
     return out
 
 
-def _shadow_in(body: list) -> set[str]:
-    """Every name a module's or a class's own scope rebinds by anything but a def, a class or an
-    import — an assignment, a for/with/except target, a comprehension target, a walrus, a lambda's
-    parameter, a global — never descending into a function (its rebindings are its own,
-    ``_rebound_names``) or a nested class (its own scope). A reference whose head is here is not the
-    definition it spells, so it mints nothing (graphyos #94, review round 1)."""
+def scope_bindings(table: symtable.SymbolTable, names: dict[str, str],
+                   comprehension_targets: dict[str, set[str]], *, whole: bool = False,
+                   klass: str | None = None) -> set[str]:
+    """What a scope rebinds, read from CPython's own scope analysis (``symtable``, the stdlib) — never a
+    hand list of Python's binders, which #94's two review rounds found holed twice (graphyos #141). The
+    table is of the file with every def and class renamed to a stand-in (``names`` maps it back), so a name
+    ``symtable`` still reports assigned was bound by something other than a def or a class.
+
+    A module or a class body (``whole`` false): every name it binds by anything but a def, a class or an
+    import, together with every scope under it that is not a def or a class — a lambda's parameters, a
+    generic's type parameters, a default's or a decorator's walrus — because the scan keys a read inside
+    those to the module or the class.
+
+    A function (``whole`` true): every name bound anywhere under it — its own rebindings (not its
+    parameters, which it binds once), a def, a class, an import, and every nested scope's own names and
+    parameters — so a parameter's annotation binds only a name that means one thing from the signature to
+    the last line, and a read anywhere in the function is checked against all of it.
+
+    The one binder the oracle cannot report is a comprehension's target: 3.12+ inlines the comprehension
+    (PEP 709) and keeps its target only when the enclosing scope names it nowhere else, so ``symtable``
+    answers it differently by interpreter and by what else the scope reads. ``comprehension_targets``
+    (the AST's own ``comprehension.target``, which ``_scan`` collects, keyed by the stand-in of the def or
+    class whose body holds it) supplies it, folded into that scope on every interpreter — the 3.10
+    comprehension table skipped for it — so one tree mints one shard on both: fail-closed for a read, and
+    never a function's own parameter, which a comprehension cannot rebind. ``klass`` is the stand-in of
+    the class whose body the table sits in, for ``_demangle``."""
+    kind = table.get_type()
     out: set[str] = set()
-    todo = list(body)
-    while todo:
-        node = todo.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
-            out.add(node.id)
-        elif isinstance(node, ast.Lambda):
-            out.update(_param_names(node))
-        elif isinstance(node, ast.ExceptHandler) and node.name:
-            out.add(node.name)
-        elif isinstance(node, (ast.Global, ast.Nonlocal)):
-            out.update(node.names)
-        elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
-            out.add(node.name)
-        elif isinstance(node, ast.MatchMapping) and node.rest:
-            out.add(node.rest)
-        todo.extend(ast.iter_child_nodes(node))
+    for child in table.get_children():
+        inner = child.get_name() if child.get_type() == "class" else klass
+        if _is_comprehension(child):
+            out |= scope_bindings(child, names, comprehension_targets, whole=whole, klass=inner)
+        elif whole or child.get_name() not in names:
+            out |= scope_bindings(child, names, comprehension_targets, whole=whole, klass=inner) \
+                | _bound_here(child, inner, names, definitions=whole)
+    if _is_comprehension(table):
+        return out
+    own = comprehension_targets.get(_MODULE if kind == "module" else table.get_name(), set())
+    if whole:
+        params = {_demangle(p, klass) for p in table.get_parameters()} if kind == "function" else set()
+        assigned = {_demangle(s.get_name(), klass) for s in table.get_symbols() if s.is_assigned()}
+        out |= {n for n in _bound_here(table, klass, names, definitions=True) | own if n not in params or n in assigned}
+    elif kind in ("module", "class"):
+        out |= _bound_here(table, klass, names, definitions=False) | own
     return out
 
 
-def _bindable_annotations(fn: ast.AST, rebound: set[str] | None = None) -> dict[str, str] | None:
+class _Scopes:
+    """One file's scope analysis, built on first need and read per scope: the module's and each class's
+    ``scope_bindings``, and each tracked function's whole one, keyed by the def or class node. ``symtable``
+    reads the source with every def and class renamed to a stand-in no line of the file spells — the lines
+    unchanged — which names each definition's table uniquely and separates a def's own binding from any
+    other binding of its name. ``definitions`` and ``comprehensions`` (each target with the def or class
+    whose body holds it) come from ``_scan``'s one pass. A file ``symtable`` refuses, or a definition whose
+    name is not where its keyword's column says, answers ``_EVERYTHING``."""
+
+    def __init__(self, src: str, definitions: list[ast.AST], comprehensions: list[tuple[ast.AST | None, ast.AST]]):
+        self._src, self._definitions, self._comprehensions = src, definitions, comprehensions
+        self._stand_in: dict[int, str] = {}
+        self._names: dict[str, str] = {}
+        self._tables: dict[str, tuple[symtable.SymbolTable, str | None]] = {}
+        self._root: symtable.SymbolTable | None = None
+        self._targets: dict[str, set[str]] = {}
+        self._memo: dict[ast.AST | None, frozenset[str]] = {}
+        self._indexed = False
+
+    def _renamed(self) -> str | None:
+        src = self._src
+        starts = [0] + [m.end() for m in _NEWLINE.finditer(src)]      # the parser's own line breaks, never splitlines'
+        edits: list[tuple[int, int, str]] = []
+        base = "graphy_def_"
+        while base in src:
+            base = "g" + base
+        for node in self._definitions:
+            if node.lineno > len(starts):
+                return None
+            start = starts[node.lineno - 1]         # col_offset counts utf-8 bytes; the keyword starts on a character
+            at = start + len(src[start:start + node.col_offset].encode("utf-8")[:node.col_offset].decode("utf-8", "ignore"))
+            head = _DEF_HEAD.match(src, at)
+            at = head.end() if head else -1
+            if at < 0 or src[at:at + len(node.name)] != node.name:
+                return None
+            stand_in = f"{base}{len(edits)}_"
+            self._stand_in[id(node)] = stand_in
+            self._names[stand_in] = node.name
+            edits.append((at, at + len(node.name), stand_in))
+        out, last = [], 0
+        for begin, end, text in sorted(edits):
+            out.append(src[last:begin]); out.append(text); last = end
+        out.append(src[last:])
+        return "".join(out)
+
+    def _index(self) -> None:
+        self._indexed = True
+        renamed = self._renamed()
+        if renamed is None:
+            return
+        try:
+            self._root = symtable.symtable(renamed, "<graphy>", "exec")
+        except (SyntaxError, ValueError, RecursionError, MemoryError):
+            return
+        for scope, target in self._comprehensions:
+            key = _MODULE if scope is None else self._stand_in[id(scope)]
+            self._targets.setdefault(key, set()).update(n.id for n in ast.walk(target) if isinstance(n, ast.Name))
+        todo: list[tuple[symtable.SymbolTable, str | None]] = [(self._root, None)]
+        while todo:
+            table, klass = todo.pop()
+            inner = table.get_name() if table.get_type() == "class" else klass
+            todo.extend((child, inner) for child in table.get_children())
+            if table.get_name() in self._names and table.get_type() in ("function", "class"):
+                self._tables[table.get_name()] = (table, klass)
+
+    def of(self, node: ast.AST | None) -> frozenset[str]:
+        """The module's bindings for ``None``, a class body's for a ``ClassDef``, a function's whole."""
+        got = self._memo.get(node)
+        if got is None:
+            if not self._indexed:
+                self._index()
+            found = self._tables.get(self._stand_in.get(id(node), "")) if node is not None else None
+            if self._root is None or (node is not None and found is None):
+                got = _EVERYTHING
+            elif node is None:
+                got = frozenset(scope_bindings(self._root, self._names, self._targets))
+            else:
+                table, klass = found
+                is_class = isinstance(node, ast.ClassDef)
+                got = frozenset(scope_bindings(table, self._names, self._targets, whole=not is_class,
+                                               klass=table.get_name() if is_class else klass))
+            self._memo[node] = got
+        return got
+
+
+def _bindable_annotations(fn: ast.AST, rebound: frozenset[str]) -> dict[str, str] | None:
     a = fn.args
-    rebound = _rebound_names(fn) if rebound is None else rebound
     out = {}
     for p in (*a.posonlyargs, *a.args, *a.kwonlyargs):
         if p.annotation is None or p.arg in rebound:
@@ -408,11 +535,10 @@ def _walk_stmt(
     local_packages: frozenset[str] = frozenset(),
     calls: dict[ast.AST, list[tuple[str, int]]] | None = None,
     refs: dict[ast.AST | None, list[tuple[str, int]]] | None = None,
-    rebound: dict[ast.AST, set[str]] | None = None,
+    scopes: _Scopes | None = None,
 ) -> Iterator[dict]:
     calls = calls if calls is not None else {}
     refs = refs if refs is not None else {}
-    rebound = rebound if rebound is not None else {}
     if isinstance(stmt, ast.ClassDef):
         class_dotted = f"{parent_dotted}.{stmt.name}"
         class_id = _node_id("class", class_dotted)
@@ -447,7 +573,7 @@ def _walk_stmt(
         for sub in _defs_in(stmt.body):
             yield from _walk_stmt(sub, class_id, class_dotted, file_rel,
                                   container_class=stmt.name, package=package,
-                                  local_packages=local_packages, calls=calls, refs=refs, rebound=rebound)
+                                  local_packages=local_packages, calls=calls, refs=refs, scopes=scopes)
     elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
         kind = "method" if container_class else "func"
         func_dotted = f"{parent_dotted}.{stmt.name}"
@@ -465,7 +591,7 @@ def _walk_stmt(
             # a parameter's annotation when it is a name the resolver can bind (graphyos #57): `ctx: Context`
             # makes `ctx.invoke` `Context.invoke` the way `self.` binds the container — by scope. Only a bare
             # or dotted name is kept, and only when the body never rebinds the parameter; the rest is text
-            "annotations": _bindable_annotations(stmt, rebound.get(stmt)),
+            "annotations": _bindable_annotations(stmt, scopes.of(stmt)) if scopes is not None else None,
             "returns": _expr_repr(stmt.returns) if stmt.returns else None,
             "docstring": (ast.get_docstring(stmt) or "")[:200],
             "container_class": container_class,
@@ -587,7 +713,7 @@ def _emit_raw_records_for_file(
         "docstring": (ast.get_docstring(tree) or "")[:200],
     }
 
-    imports, calls, refs, rebound = _scan(tree)
+    imports, calls, refs, scopes = _scan(tree, src)
     yield from _emit_import_edges(imports, module_id, module_dotted, package,
                                   local_packages,
                                   is_package=file.name == "__init__.py")
@@ -595,7 +721,7 @@ def _emit_raw_records_for_file(
 
     for stmt in _defs_in(tree.body):
         yield from _walk_stmt(stmt, module_id, module_dotted, file_rel,
-                              package=package, local_packages=local_packages, calls=calls, refs=refs, rebound=rebound)
+                              package=package, local_packages=local_packages, calls=calls, refs=refs, scopes=scopes)
 
 
 
@@ -705,8 +831,10 @@ def mint_records(corpus_dir: str | Path, *, reuse=None) -> tuple[_NodeRecords, l
         local_packages = frozenset() if is_package_dir(root) else _local_package_names(root)
         rel_base, rel_root = base.parent, root
     # `references` is in the pin: a span a mint before graphyos #94 wrote holds no reference edge, and a
-    # re-mint that spliced it would answer zero for every handler in the file it never re-read
-    pin = f"python_ast:references:{package}:{'package' if is_package_dir(root) or root.is_file() else 'tree'}:" \
+    # re-mint that spliced it would answer zero for every handler in the file it never re-read; `symtable`:
+    # a span before #141 read a parameter a comprehension or a decorator's lambda repeats as rebound, so a
+    # splice would keep an annotation a fresh mint binds
+    pin = f"python_ast:references:symtable:{package}:{'package' if is_package_dir(root) or root.is_file() else 'tree'}:" \
           + ",".join(sorted(local_packages))
     receipt = Receipt("last")
     files, skipped = walk_files_naming_skips(root)

@@ -464,3 +464,60 @@ def test_GREEN_a_function_referenced_as_a_value_mints_a_references_edge_bound_th
     recs = list(python_ast._emit_records_for_file(cli, GRAPHOS / "graphy", "graphy"))
     binders = {r["src"].rsplit(".", 1)[1] for r in recs if r.get("edge_type") == "references" and r["dst_repr"] == "_cmd_check"}
     assert binders == {"_build_parser"}, binders
+
+
+def test_GREEN_a_reference_and_an_annotation_read_the_scope_symtable_binds_not_a_hand_list(tmp_path):
+    """Whether a name a scope reads is the definition it spells was two hand lists of Python's binders
+    (`_rebound_names` · `_shadow_in`), holed twice in one rung (graphyos #141). One reader over CPython's
+    `symtable` answers it: a def's decorator and defaults are the scope around the def, a comprehension
+    cannot rebind a function's parameter, a file the interpreter's own scope analysis refuses mints
+    nothing — and a name a def binds and an assignment binds again still shadows, as it did."""
+    from graphy.adapters import python_ast
+    mod = tmp_path / "sample.py"
+    mod.write_text(
+        "class Ctx: pass\n"
+        "def helper(): pass\n"
+        "def wrap(f): return f\n"
+        "def reg(*a): return wrap\n"
+        "@reg(lambda ctx: ctx)\n"                   # the lambda is the module's, not `run`'s
+        "def run(ctx: Ctx):\n"
+        "    return ctx.go\n"
+        "def each(ctx: Ctx):\n"
+        "    return [ctx for ctx in ()]\n"          # the comprehension's own ctx: the parameter still means Ctx
+        "def again(ctx: Ctx):\n"
+        "    ctx = 1\n"                             # a real rebinding: no annotation
+        "@reg(helper := 1)\n"                       # a decorator's walrus rebinds helper on the module
+        "def dec(): pass\n"
+        "USE = helper\n"
+        "def twice(): pass\n"
+        "twice = wrap(twice)\n"                     # a def bound again by an assignment still shadows
+        "T = twice\n"
+        "class K:\n"
+        "    def m(self, __p: Ctx):\n"
+        "        __p = 1\n"                         # symtable spells it `_K__p`: still a rebinding
+        "    def n(self, __q: Ctx):\n"
+        "        return [__q for __q in ()]\n"
+        "    W = [wrap for wrap in ()]\n"           # a class body's comprehension target
+        "    V = wrap\n",
+        encoding="utf-8",
+    )
+    records = list(python_ast._emit_records_for_file(mod, tmp_path, "sample"))
+    ann = {r["dotted"]: r["annotations"] for r in records if r.get("node_type") in ("func", "method")}
+    assert ann["sample.run"] == {"ctx": "Ctx"} and ann["sample.each"] == {"ctx": "Ctx"}, ann
+    assert ann["sample.again"] is None and ann["sample.K.m"] is None and ann["sample.K.n"] == {"__q": "Ctx"}, ann
+    refs = sorted((r["src"].rsplit("/", 1)[1], r["dst_repr"]) for r in records if r.get("edge_type") == "references")
+    assert ("sample", "helper") not in refs and ("sample", "twice") not in refs and ("sample.K", "wrap") not in refs, refs
+    # the interpreter's own scope analysis refuses a file ast.parse accepts: nothing is bound, nothing minted
+    bad = tmp_path / "dup.py"
+    bad.write_text("class Ctx: pass\ndef f(ctx: Ctx, ctx: Ctx):\n    return Ctx\nX = Ctx\n", encoding="utf-8")
+    recs = list(python_ast._emit_records_for_file(bad, tmp_path, "dup"))
+    assert [r for r in recs if r.get("edge_type") == "references"] == []
+    assert [r["annotations"] for r in recs if r.get("node_type") == "func"] == [None]
+    # the reader is the oracle's: every scope of the engine answers what symtable says it binds
+    import symtable
+    src = (GRAPHOS / "graphy" / "cli.py").read_text(encoding="utf-8")
+    import ast as _ast
+    *_, scopes = python_ast._scan(_ast.parse(src), src)
+    table = symtable.symtable(src, "cli.py", "exec")
+    assigned = {s.get_name() for s in table.get_symbols() if s.is_assigned() and not s.is_namespace()}
+    assert assigned <= scopes.of(None), assigned - scopes.of(None)

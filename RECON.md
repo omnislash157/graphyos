@@ -6615,3 +6615,20 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | production, linux | the same on this tree: `DESCEND REFUSED: … is STALE: the declared relations moved (calls: ['depends'] -> ['depends', 'reaches']) over generation …`; `graphy build` → the descend answers |
 | the upgrade | a store eaten by `graphyos==0.2.6`, checked by this tree → `CHECK OK` |
 | the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 155 · ONE SCOPE READER OVER SYMTABLE — `python_ast` decided whether a name a scope reads is the definition it spells from two hand lists of Python's binders (`_rebound_names` for a function, `_shadow_in` for a module or a class body), holed twice by #94's review rounds; `scope_bindings` now reads CPython's own `symtable` over the file with every def and class renamed to a stand-in (lines unchanged), so a name still assigned was bound by something other than its def, and the two lists are gone; the one binder the oracle cannot report — a comprehension target, which 3.12+ inlines (PEP 709) and keeps only when the enclosing scope names it nowhere else — `_scan` collects from the tree and folds into the enclosing scope on every interpreter (2026-09-15 · graphyos issue 141)
+
+- spec: `specs/141.md` · `python3 spec_lint.py specs/141.md` → `SPEC OK`
+- the issue's comprehension clause (a target is the comprehension's, not the module's) is refuted by the oracle it named: on 3.12 and 3.14 `symtable` reports `[d for d in ()]`'s `d` as the module's, and drops it entirely when the module reads `d` elsewhere — so the target stays fail-closed on the enclosing scope, the same answer on 3.10; the def-header clause is settled: a decorator's or a default's lambda and walrus are the scope around the def
+- a class's private names are mangled in `symtable` (`__p` → `_K__p`) and read back demangled; a file `symtable` refuses (a duplicate parameter) mints no reference and binds no annotation; the mint pin gains `symtable`, so a re-mint over an older shard reads every file again
+
+| check | result |
+|---|---|
+| references, hand lists against the reader | `/tmp/p141_dump.py` over engine/graphy · engine/tests · the venv's site-packages · staging/corpora/fastapi · sqlalchemy (5,334 files): the references outside the two changed files equal edge for edge (`specs/141.md` P4) |
+| annotations that moved | 9 functions, each a parameter a comprehension target or a decorator's lambda repeats — e.g. `sqlalchemy.engine.events.ConnectionEvents.before_execute` now binds all five; the new floor test is red on 3dbb077 (P2) |
+| interpreters | the dump three times each on 3.10 · 3.12 · 3.14: nine files byte-identical (P4) |
+| fallback | `_Scopes` fell back on 0 of the 5,334 files |
+| time | `/tmp/p141_time.py` over sqlalchemy, best of three: hand 1.99 s · reader 2.02 s (P6) |
+| production, linux | a fresh pallets/click clone: `graphy eat .` → `CHECK OK`; its references and annotations equal under both readers (911 references) |
+| the graphy tenant | `rebuild.sh` stopped on `ARMS DRIFT` standing from earlier rungs (cli · shell.install · traversal moved); regions re-rendered, the harness's draw region and products reverted → `ARMS OK: 6 arm(s) match the walk` |
+| the battery | `python3 review.py --diff 3dbb077 \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
