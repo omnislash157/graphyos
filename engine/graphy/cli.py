@@ -32,6 +32,29 @@ def _flatten(text: str) -> str:
 
 
 
+# A missing or forbidden path is the user's mistake and a lane names it; every other OSError is the platform failing
+# under a verb, and printed as a refusal it had no path, no operation and no frame (graphyos #78, #95).
+_EXPECTED_OS = (FileNotFoundError, NotADirectoryError, IsADirectoryError, PermissionError)
+
+
+def _failed(verb: str, exc: OSError, doing: str = "") -> int:
+    """The one shape of an OSError no lane named: `<VERB> FAILED: unexpected <Type> (errno, filename)`, the traceback, exit 2."""
+    import traceback
+    print(f"{verb} FAILED: unexpected {type(exc).__name__} (errno={exc.errno}, filename={exc.filename!r})"
+          + (f" while {doing}" if doing else "") + " — this is not a refusal; the traceback follows", file=sys.stderr)
+    traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+    return 2
+
+
+def _os_detail(exc: OSError) -> str:
+    """An OSError an audit or a fallback names and goes on past: its type, errno and filename, always; its frame on stderr
+    when it is not a missing or forbidden path."""
+    if not isinstance(exc, _EXPECTED_OS):
+        import traceback
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+    return f"{type(exc).__name__} (errno={exc.errno}, filename={exc.filename!r}): {exc.strerror or exc}"
+
+
 def _load_tenant(descriptor: str) -> Tenant:
     p = Path(descriptor)
     if not p.is_file():
@@ -135,7 +158,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
             policy=args.policy,
             journal=Path(args.journal),
         )
-    except (TenantError, ValueError, OSError, TypeError) as exc:
+    except (TenantError, ValueError, TypeError) as exc:
         print(f"INIT REFUSED: {exc}", file=sys.stderr)
         return 2
 
@@ -202,12 +225,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
     except OSError as exc:
         # Not a refusal: the platform failed under the compile. Printed as one, an EBADF was the
         # whole symptom of a Windows store bug — no path, no operation, no frame (graphyos #78).
-        import traceback
-        print(f"BUILD FAILED: unexpected {type(exc).__name__} (errno={exc.errno}, "
-              f"filename={exc.filename!r}) while compiling {store_path or 'the store path'} "
-              f"— this is not a refusal; the traceback follows", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        return 2
+        return _failed("BUILD", exc, f"compiling {store_path or 'the store path'}")
     print(f"BUILD OK: compiled {info['nodes']} nodes / {info['edges']} edges "
           f"-> {info['db']}")
     dirs = [Path(tenant.data_home) / f"{s}_graph" for s in substrates]
@@ -274,7 +292,7 @@ def _cmd_walk(args: argparse.Namespace) -> int:
     except fstore.StoreError as exc:
         print(fstore.refused('WALK', exc), file=sys.stderr)
         return 2
-    except (AttributeError, TypeError, KeyError, OSError) as exc:
+    except (AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused('WALK', exc), file=sys.stderr)
         return 2
     with store:
@@ -323,7 +341,7 @@ def _cmd_bridge(args: argparse.Namespace) -> int:
         except bridge_lane.BridgeError as exc:
             print(f"BRIDGE REFUSED: {exc}", file=sys.stderr)
             return 2
-        except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+        except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
             print(fstore.refused('BRIDGE', exc), file=sys.stderr)
             return 2
         counted = [bridge_lane.Side(s.tenant_id, s.tenant, traversal.Counting(s.store)) for s in sides]
@@ -370,7 +388,7 @@ def _cmd_arms(args: argparse.Namespace) -> int:
         return 2
     try:
         store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+    except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused('ARMS', exc), file=sys.stderr)
         return 2
     with store:
@@ -400,13 +418,17 @@ def _cmd_farm(args: argparse.Namespace) -> int:
     if bool(args.top) == bool(args.packages):
         print("FARM REFUSED: exactly one of --top N or --packages <file> names what to mint", file=sys.stderr)
         return 2
+    if args.packages and not Path(args.packages).is_file():
+        print(f"FARM REFUSED: no package list at {args.packages} — --packages names a file of specs, one per line",
+              file=sys.stderr)
+        return 2
     try:
         if args.top:
             specs = farm_lane.top_packages(args.top, producer=args.producer)
         else:
             specs = [ln.split("#", 1)[0].strip() for ln in Path(args.packages).read_text(encoding="utf-8").splitlines()]
             specs = [s for s in specs if s]
-    except (farm_lane.FarmError, OSError) as exc:
+    except farm_lane.FarmError as exc:
         print(f"FARM REFUSED: {exc}", file=sys.stderr)
         return 2
     if args.skip:
@@ -460,7 +482,7 @@ def _cmd_draw(args: argparse.Namespace) -> int:
         corpus = roster[0]
     try:
         store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+    except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused('DRAW', exc), file=sys.stderr)
         return 2
     with store:
@@ -520,7 +542,7 @@ def _cmd_showcase(args: argparse.Namespace) -> int:
     try:
         r = showcase_lane.showcase(args.target, out=args.out, work=args.work, log=print, no_provision=args.no_provision)
     except (showcase_lane.ShowcaseError, TenantError, fstore.StoreError, fanout.FanoutError,
-            pillars_lane.PillarsError, OSError) as exc:
+            pillars_lane.PillarsError) as exc:
         # one line, never a stack: the partition and the proposal refuse by name (graphyos #46)
         print(f"SHOWCASE REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -569,7 +591,7 @@ def _cmd_harness(args: argparse.Namespace) -> int:
         print(_flatten(f"HARNESS REFUSED: {exc}"), file=sys.stderr)
         return 2
     except (arms_lane.ArmsError, draw_lane.DrawError, fanout.FanoutError, pillars_lane.PillarsError,
-            fstore.StoreError, OSError) as exc:
+            fstore.StoreError) as exc:
         print(_flatten(f"HARNESS REFUSED: {exc}"), file=sys.stderr)
         return 2
     return 0 if receipt else 1
@@ -594,7 +616,7 @@ def _cmd_hunt(args: argparse.Namespace) -> int:
     try:
         store = fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id,
                                 on_stale=args.on_stale)
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+    except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused("HUNT", exc), file=sys.stderr)
         return 2
     with store:
@@ -623,7 +645,7 @@ def _cmd_door(args: argparse.Namespace) -> int:
     try:
         store = fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id,
                                 on_stale=args.on_stale)
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+    except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused(verb, exc), file=sys.stderr)
         return 2
     with store:
@@ -640,7 +662,7 @@ def _cmd_door(args: argparse.Namespace) -> int:
             return 0
         try:                                   # descend and blast land their rows and recall them (graphyos #111)
             o = traversal.door(store, traversal.home_for(tenant), args.door, seed, args.depth, save=not args.no_store)
-        except (traversal.TraversalError, OSError) as exc:
+        except traversal.TraversalError as exc:
             print(_flatten(f"{verb} REFUSED: {exc}"), file=sys.stderr)
             return 2
         render = doors.render_descend if args.door == "descend" else doors.render_blast
@@ -675,7 +697,7 @@ def _cmd_recon(args: argparse.Namespace) -> int:
     try:
         store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id,
                                 on_stale=args.on_stale)
-    except (fstore.StoreError, OSError) as exc:
+    except fstore.StoreError as exc:
         print(_flatten(f"RECON REFUSED: {exc} — build the store with `graphy build`"), file=sys.stderr)
         return 2
     with store:
@@ -725,7 +747,7 @@ def _cmd_pillars(args: argparse.Namespace) -> int:
         return 2
     try:
         store = fstore.open_for(roster, tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+    except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused('PILLARS', exc), file=sys.stderr)
         return 2
     with store:
@@ -793,7 +815,7 @@ def _cmd_refresh(args: argparse.Namespace) -> int:
         print(f"REFRESH CHECK FAILED: {exc}\n  the sibling stays on disk; the current substrate is untouched",
               file=sys.stderr)
         return 1
-    except (refresh_lane.RefreshError, smash_lane.SmashError, TenantError, OSError, ValueError) as exc:
+    except (refresh_lane.RefreshError, smash_lane.SmashError, TenantError, ValueError) as exc:
         print(f"REFRESH REFUSED: {exc}", file=sys.stderr)
         return 2
     if receipt["verdict"] == "NEWER":
@@ -817,14 +839,14 @@ def repo_tenant(repo: str | Path) -> tuple[Path, str]:
         raise TenantError(f"no tenant at {desc} — run `graphy eat {root}` first")
     try:
         data_home = Path(json.loads(desc.read_text(encoding="utf-8"))["data_home"])
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError) as exc:
         raise TenantError(f"the descriptor at {desc} names no data_home ({type(exc).__name__}: {exc})") from exc
     ring = data_home / smash_lane.RING_NAME
     if not ring.is_file():
         raise TenantError(f"no ring receipt at {ring} beside the tenant — re-run `graphy eat {root}`")
     try:
         package = json.loads(ring.read_text(encoding="utf-8"))["root"]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError) as exc:
         raise TenantError(f"the ring receipt at {ring} names no root package ({type(exc).__name__}: {exc})") from exc
     if not isinstance(package, str) or not package.strip():
         raise TenantError(f"the ring receipt at {ring} names an empty root package")
@@ -867,7 +889,7 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
     try:
         tools = mcp_server.open_tools(tenant, args.tenant_id, _roster(tenant), on_stale=args.on_stale,
                                       descriptor=args.tenant)   # followed per call: a landing renames it (graphyos #97)
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+    except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused('MCP', exc), file=sys.stderr)
         return 2
     print(f"graphy mcp: serving tenant {args.tenant_id!r} generation {tools.generation} on stdio "
@@ -1008,7 +1030,9 @@ def _render_walk(args: argparse.Namespace, result) -> int:
 def _torn_line(jfile: Path) -> tuple[str, str] | None:
     try:
         lines = jfile.read_text(encoding="utf-8").splitlines()
-    except (OSError, ValueError, AttributeError, TypeError, KeyError) as exc:
+    except OSError as exc:
+        return ("COULD-NOT-TELL", f"unreadable ({_os_detail(exc)})")
+    except (ValueError, AttributeError, TypeError, KeyError) as exc:
         return ("COULD-NOT-TELL", f"unreadable ({type(exc).__name__}: {exc})")
     for i, line in enumerate(lines, 1):
         if not line.strip():
@@ -1136,8 +1160,13 @@ def _cmd_check(args: argparse.Namespace) -> int:
             from graphy.native_json_graph_ir import load_graph_ir as _load_ir
             _load_ir(graph_dir)                 # the audit parses — once per shard per process
             fstore._shard_input_digest(graph_dir)
-        except (fstore.StoreError, AttributeError, TypeError, KeyError,
-                ValueError, OSError) as exc:
+        except OSError as exc:
+            store_blocked = (
+                "COULD-NOT-TELL",
+                f"store lane: cannot measure the shard for graph {s!r} at "
+                f"{graph_dir}: {_os_detail(exc)}",
+                "restore the unreadable input and re-run graphy check")
+        except (fstore.StoreError, AttributeError, TypeError, KeyError, ValueError) as exc:
             store_blocked = (
                 "COULD-NOT-TELL",
                 f"store lane: cannot measure the shard for graph {s!r} at "
@@ -1147,8 +1176,13 @@ def _cmd_check(args: argparse.Namespace) -> int:
         try:
             fstore._scheme_index_input_digest(
                 data_home / fstore._INDEX_INPUT_KEY, sorted(substrates))
-        except (fstore.StoreError, AttributeError, TypeError, KeyError,
-                ValueError, OSError) as exc:
+        except OSError as exc:
+            store_blocked = (
+                "COULD-NOT-TELL",
+                f"store lane: cannot measure the scheme index at "
+                f"{data_home / fstore._INDEX_INPUT_KEY}: {_os_detail(exc)}",
+                "restore the unreadable input and re-run graphy check")
+        except (fstore.StoreError, AttributeError, TypeError, KeyError, ValueError) as exc:
             store_blocked = (
                 "COULD-NOT-TELL",
                 f"store lane: cannot measure the scheme index at "
@@ -1157,8 +1191,13 @@ def _cmd_check(args: argparse.Namespace) -> int:
     if store_blocked is None:
         try:
             fstore._registry_input_digest(Path(tenant.join_keys))
-        except (fstore.StoreError, AttributeError, TypeError, KeyError,
-                ValueError, OSError) as exc:
+        except OSError as exc:
+            store_blocked = (
+                "COULD-NOT-TELL",
+                f"store lane: cannot measure the registry at "
+                f"{tenant.join_keys}: {_os_detail(exc)}",
+                "restore the unreadable input and re-run graphy check")
+        except (fstore.StoreError, AttributeError, TypeError, KeyError, ValueError) as exc:
             store_blocked = (
                 "COULD-NOT-TELL",
                 f"store lane: cannot measure the registry at "
@@ -1175,7 +1214,12 @@ def _cmd_check(args: argparse.Namespace) -> int:
                 "RED",
                 f"store lane: {exc}",
                 "rebuild the store with `graphy build`"))
-        except (AttributeError, TypeError, KeyError, ValueError, OSError) as exc:
+        except OSError as exc:
+            findings.append((
+                "COULD-NOT-TELL",
+                f"store lane: {_os_detail(exc)}",
+                "restore the unreadable input and re-run graphy check"))
+        except (AttributeError, TypeError, KeyError, ValueError) as exc:
             findings.append((
                 "COULD-NOT-TELL",
                 f"store lane: {exc}",
@@ -1213,12 +1257,17 @@ def _cmd_check(args: argparse.Namespace) -> int:
         from graphy.adapters import history as history_lane
         from graphy.cartograph import repo_toplevel
         hist_dir = Path(tenant.data_home) / f"{HISTORY_SLUG}_graph"
+        unreadable = None
         try:
             fresh, why = history_lane.verify(hist_dir, repo=repo_toplevel(Path(tenant.root)) or Path(tenant.root))
-        except (history_lane.HistoryError, OSError, ValueError) as exc:
+        except OSError as exc:
+            unreadable = _os_detail(exc)
+        except (history_lane.HistoryError, ValueError) as exc:
+            unreadable = str(exc)
+        if unreadable is not None:
             findings.append((
                 "COULD-NOT-TELL",
-                f"history lane: {exc}",
+                f"history lane: {unreadable}",
                 # Never `eat` here either: a house tenant reaches this branch when a receipt input moved, and
                 # `eat` would prune its lanes to restore one (graphyos #132, review round 1).
                 "restore the shard's inputs and re-run graphy check, or mint the lane again from named inputs "
@@ -1277,13 +1326,18 @@ def _cmd_check(args: argparse.Namespace) -> int:
     states = {}
     for graph_class in sorted(tenant.build_lanes):
         _base, slug = journal._names(graph_class)
+        detail = None
         try:
             states[slug] = container.verify(Path(tenant.data_home) / f"{slug}_graph")
-        except (OSError, ValueError) as exc:           # a shard the container cannot read is named, never a crash
+        except OSError as exc:                         # a shard the container cannot read is named, never a crash
+            detail = _os_detail(exc)
+        except ValueError as exc:
+            detail = f"{type(exc).__name__}: {exc}"
+        if detail is not None:
             states[slug] = "unreadable"
             findings.append((
                 "COULD-NOT-TELL",
-                f"container lane: shard {slug}_graph unreadable ({type(exc).__name__}: {exc})",
+                f"container lane: shard {slug}_graph unreadable ({detail})",
                 "restore the shard, then graphy build"))
     stale = sorted(s for s, st in states.items() if st == "stale")
     if stale:
@@ -1345,7 +1399,7 @@ def _cmd_fanout(args: argparse.Namespace) -> int:
     except fanout.FanoutError as exc:
         print(f"FANOUT REFUSED: {exc}", file=sys.stderr)
         return 2
-    except (OSError, ValueError) as exc:
+    except ValueError as exc:
         print(f"FANOUT REFUSED: {exc}", file=sys.stderr)
         return 2
     how = receipt["cut"]
@@ -1379,7 +1433,7 @@ def _cmd_timeline(args: argparse.Namespace) -> int:
         return 2
     try:
         store = fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id, on_stale=args.on_stale)
-    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+    except (fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
         print(fstore.refused('HISTORY', exc), file=sys.stderr)
         return 2
     with store:
@@ -1436,7 +1490,7 @@ def _cmd_history(args: argparse.Namespace) -> int:
             return 0 if fresh else 1
         prov = history_lane.mint(args.repo, args.out, sessions=args.sessions, recon=args.recon, code=args.code,
                                  aliases=args.aliases, names=args.names)
-    except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
+    except (history_lane.HistoryError, IRError, ValueError) as exc:
         print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
         return 2
     for line in _history_report(prov, Path(args.out)):
@@ -1504,7 +1558,11 @@ def eat_history(repo: Path, sub: Path, home: Path, package: str, *, log=print) -
     try:
         prov = history_lane.mint(repo, out, sessions=sessions if sessions.is_dir() else None,
                                  code=[sub / f"{package}_graph"], names=_ring_code(sub, package), aliases=aliases if aliases.is_file() else None)
-    except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
+    except OSError as exc:
+        shutil.rmtree(out, ignore_errors=True)
+        log(f"HISTORY SKIPPED: {_os_detail(exc)} — the code shard stands alone")
+        return False
+    except (history_lane.HistoryError, IRError, ValueError) as exc:
         shutil.rmtree(out, ignore_errors=True)
         log(f"HISTORY SKIPPED: {exc} — the code shard stands alone")
         return False
@@ -1627,7 +1685,7 @@ def _history_remint_stage(args: argparse.Namespace, tenant: Tenant, desc: Path, 
         return p
     try:
         prov = history_lane.remint(home / lane, repo=repo, out=stage / lane, relocate=relocate)
-    except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
+    except (history_lane.HistoryError, IRError, ValueError) as exc:
         print(f"HISTORY REFUSED: {exc} — the served generation stands", file=sys.stderr)
         return 2
     for line in _history_report(prov, stage / lane):
@@ -1640,7 +1698,7 @@ def _history_remint_stage(args: argparse.Namespace, tenant: Tenant, desc: Path, 
             own, out = smash_lane.shard_schemes(stage / lane)
             index[HISTORY_SLUG] = {"own": sorted(own), "out": sorted(out)}
             index_path.write_text(json.dumps(index, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-        except (OSError, ValueError, TypeError) as exc:
+        except (ValueError, TypeError) as exc:
             print(f"HISTORY REFUSED: the scheme index at {index_path} could not be re-read ({exc})", file=sys.stderr)
             return 2
     # The staged descriptor: the served one with every path that sat in the served generation moved one over.
@@ -1682,7 +1740,7 @@ def _cmd_smash(args: argparse.Namespace) -> int:
         receipt = smash_lane.smash(args.package, site_packages=args.site_packages, out=args.out,
                                    corpus=args.corpus, ring=not args.no_ring, log=print,
                                    producer=args.producer)
-    except (smash_lane.SmashError, smash_lane.typescript_ast.ProducerUnavailable, OSError, ValueError) as exc:
+    except (smash_lane.SmashError, smash_lane.typescript_ast.ProducerUnavailable, ValueError) as exc:
         print(f"SMASH REFUSED: {exc}", file=sys.stderr)
         return 2
     unresolved = receipt["unresolved"]
@@ -1720,7 +1778,7 @@ def _cmd_converge(args: argparse.Namespace) -> int:
         return 2
     try:
         ring = converge_lane.load_ring(tenant.data_home, slugs)
-    except (OSError, ValueError) as exc:
+    except ValueError as exc:
         print(f"CONVERGE REFUSED: {exc}", file=sys.stderr)
         return 2
     if args.resolve:
@@ -1924,7 +1982,7 @@ def _eat_typescript(args: argparse.Namespace, repo: Path) -> int:
     from graphy import smash as smash_lane
     try:
         meta = json.loads((repo / "package.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+    except ValueError as exc:
         print(f"EAT REFUSED: {repo / 'package.json'} unreadable ({exc})", file=sys.stderr)
         return 2
     name = args.package or (meta.get("name") if isinstance(meta.get("name"), str) else None) or repo.name
@@ -2435,7 +2493,7 @@ def _cmd_push(args: argparse.Namespace) -> int:
     for shard in args.shard:
         try:
             m = shard_index.push(shard, args.index, name=args.name)
-        except (shard_index.IndexError_, OSError) as exc:
+        except shard_index.IndexError_ as exc:
             print(f"PUSH REFUSED: {shard}: {exc}", file=sys.stderr)
             return 2
         c = m.get("counts") or {}
@@ -2452,7 +2510,7 @@ def _cmd_pull(args: argparse.Namespace) -> int:
         return 2
     try:
         m = shard_index.pull(args.ref, args.index, args.out)
-    except (shard_index.IndexError_, OSError) as exc:
+    except shard_index.IndexError_ as exc:
         print(f"PULL REFUSED: {exc}", file=sys.stderr)
         return 2
     c = m.get("counts") or {}
@@ -2476,7 +2534,7 @@ def _cmd_index(args: argparse.Namespace) -> int:
             print(f"INDEX {'OK' if not bad else 'BROKEN'}: {len(rows)} named shard(s), {bad} broken")
             return 1 if bad else 0
         cat = shard_index.catalog(args.index)
-    except (shard_index.IndexError_, OSError) as exc:
+    except shard_index.IndexError_ as exc:
         print(f"INDEX REFUSED: {exc}", file=sys.stderr)
         return 2
     for name, address in sorted(cat.items()):
@@ -2566,7 +2624,7 @@ def _cmd_generation(args: argparse.Namespace) -> int:
             tenant = _load_tenant(str(staged))
             with fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id, on_stale="refuse") as store:
                 gen = store.generation()
-        except (TenantError, fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+        except (TenantError, fstore.StoreError, AttributeError, TypeError, KeyError) as exc:
             print(_flatten(f"GENERATION REFUSED: the stage holds no fresh store to land — run `graphy build --tenant "
                            f"{staged} --tenant-id {args.tenant_id}` first ({exc})"), file=sys.stderr)
             return 2
@@ -3043,7 +3101,13 @@ def _main(argv: list[str] | None = None) -> int:
     if handler is None:
         parser.print_usage(sys.stderr)
         return 2
-    return handler(args)
+    try:
+        return handler(args)
+    except OSError as exc:
+        # A verb's refusals name the errors its lanes raise; an OSError none of them named lands here, one copy for
+        # every verb, as a failure with its frame (graphyos #95).
+        verb = next((a for a in (sys.argv[1:] if argv is None else argv) if not a.startswith("-")), "graphy")
+        return _failed(verb.upper(), exc)
 
 
 def _peak_rss_kb() -> int:

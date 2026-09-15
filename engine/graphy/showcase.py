@@ -199,6 +199,8 @@ def _shown(url: str) -> str:
 
 def _clone(url: str, work: Path, log) -> Path:
     repo = clone_dir(work, url)
+    if shutil.which("git") is None:                              # the missing program is named, never a raw FileNotFoundError (graphyos #95)
+        raise ShowcaseError("git is not on PATH — a url is cloned with git; install it, or showcase a local path")
     if (repo / ".git").is_dir():
         # A directory that stands is reused only when it is a clone of the url asked for: the origin is read
         # from the clone itself, and a mismatch refuses by name — never a page drawn from another repo's tree.

@@ -1188,6 +1188,27 @@ def check_generation_identity(repo: Path) -> list[Finding]:
     return found
 
 
+def check_oserror_folded(repo: Path) -> list[Finding]:
+    """oserror-folded: no verb in `engine/graphy/cli.py` catches `OSError` in one tuple with the errors its lanes name. A
+    lane names what it expects (a missing shard, an unreadable store) in its own error type; an OSError that reaches a verb
+    unnamed is the platform failing, and folded into a refusal it printed as `BUILD REFUSED: [Errno 9] Bad file descriptor`
+    — no path, no operation, no frame (graphyos #78). Nine more handlers carried it (#95); one-line greps missed the ones a
+    line break split. `except OSError as exc:` on its own names it; `_main` prints what nothing caught as `<VERB> FAILED`."""
+    cli = repo / "engine" / "graphy" / "cli.py"
+    if not cli.is_file():
+        raise CheckError("oserror-folded found no engine/graphy/cli.py — the scan is broken")
+    tree = ast.parse(cli.read_text(encoding="utf-8"))
+    handlers = [n for n in ast.walk(tree) if isinstance(n, ast.ExceptHandler)]
+    found = [Finding("oserror-folded", f"{_rel(repo, cli)}:{n.lineno}",
+                     f"`except ({', '.join(ast.unparse(e) for e in n.type.elts)}) as {n.name}` folds OSError into the "
+                     f"lane errors — split it: `except OSError` names errno and filename (`_failed` · `_os_detail`)")
+             for n in handlers
+             if isinstance(n.type, ast.Tuple) and n.name
+             and any(isinstance(e, ast.Name) and e.id == "OSError" for e in n.type.elts)]
+    NOTES["oserror-folded"] = f"{len(handlers)} handler(s) in cli.py"
+    return found
+
+
 _HOST_PY = re.compile(
     r"(?:^|[;&|(`]|\$\()\s*"                                                    # command position: line start, after ; & | ( ` $(
     r"(?:(?:if|then|do|else|elif|while|until|exec|time|env|command|sudo|nohup|!|timeout\s+\S+|[A-Za-z_]\w*=\S*)\s+)*"
@@ -1644,6 +1665,7 @@ CHECKS = {
     "data-home-by-descriptor": check_data_home_by_descriptor,
     "cursor-exclude-by-tenant": check_cursor_exclude_by_tenant,
     "generation-identity": check_generation_identity,
+    "oserror-folded": check_oserror_folded,
     "host-interpreter": check_host_interpreter,
     "import-time-glyph": check_import_time_glyph,
     "mcp-cli-twins": check_mcp_cli_twins,
@@ -1763,6 +1785,14 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
             {"engine/graphy/_shared.py": "GENERATION_INFIX = '.gen-'\nGENERATION_IDENTITY = ('generation_of',)\ndef generation_of(n):\n    return n\n",
              "engine/graphy/cli.py": "from graphy._shared import generation_of\ndef fam(sub, home):\n    \"\"\"`<substrate>.gen-<token>` is its own.\"\"\"\n    return generation_of(home.name) == sub.name\n",
              "engine/graphy/cartograph.py": "def base(p):\n    return p\n"}),
+        "oserror-folded": (
+            # red: a one-line fold · a fold a line break split — two
+            {"engine/graphy/cli.py": "def walk():\n    try:\n        pass\n    except (StoreError, OSError) as exc:\n        return 2\n"
+                                     "def draw():\n    try:\n        pass\n    except (StoreError, KeyError,\n            OSError) as exc:\n        return 2\n"},
+            # green: OSError on its own · a tuple of named errors · an unbound best-effort fallback
+            {"engine/graphy/cli.py": "def walk():\n    try:\n        pass\n    except StoreError as exc:\n        return 2\n    except OSError as exc:\n        return 3\n"
+                                     "def draw():\n    try:\n        pass\n    except (StoreError, KeyError) as exc:\n        return 2\n"
+                                     "def home():\n    try:\n        pass\n    except (OSError, ValueError):\n        return None\n"}),
         "host-interpreter": (
             # red: the gate's march floor · cd-chained · after then · indented · if-led · env-assigned · versioned · absolute ·
             # a flag before -m · a timeout-led -W flag · a workflow run: — eleven

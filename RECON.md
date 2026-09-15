@@ -6648,3 +6648,15 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | the graphy tenant | `rebuild.sh` stopped on `ARMS DRIFT` (SEAM moved, CUT's inventory); regions and docs/pillars.svg re-rendered → `ARMS OK: 6 arm(s) match the walk` |
 | production, linux | a fresh pallets/click clone eaten: `PILLARS: click … over 227 cross-unit edges (calls · decorates · imports · inherits · references)`, `relations_for == blast_relations == fanin_relations_for`, `CHECK OK` |
 | the battery | `python3 review.py --diff HEAD \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
+
+## 157 · NO VERB FOLDS AN UNEXPECTED OSERROR INTO ITS REFUSALS — #78 split `build`'s catch, and 31 more handlers in `cli.py` still held `OSError` in one tuple with their lanes' named errors (27 on one line, 5 a line break hid from the issue's grep), so an errno the engine never named printed as `<VERB> REFUSED: [Errno n] …` with no filename and no frame; every verb now keeps only the errors its lanes name, `_main` prints whatever OSError is left as `<VERB> FAILED: unexpected <Type> (errno, filename)` with the traceback and exit 2, and `check` and eat's history fallback name the type, errno and filename (with the frame when it is not a missing or forbidden path) (2026-09-15 · graphyos issue 95)
+
+- spec: `specs/95.md` · `python3 spec_lint.py specs/95.md` → `SPEC OK`
+- the walk before the edit: every verb fed a missing input. Each lane already named its own except `farm --packages <missing file>`, which arrived as a raw `FileNotFoundError` and is now refused by name before the read. A url `showcase` on a box with no git refuses by name too.
+- left by name: the single-`OSError` handlers that print a refusal while staging or landing a generation (`init`'s writes, `history --remint`, `generation stage|land`) name their operation and are not this rung's fold. graphyos #146 is the unreadable-PROVENANCE STALE verdict found while probing.
+
+| check | result |
+|---|---|
+| no tests | this rung adds none: the proof is the real verbs below, run on a fresh clone. The old tree printed the same ENAMETOOLONG as `SMASH REFUSED: [Errno 36] …` with no frame |
+| the lint | `review.py oserror-folded` (AST, so a multi-line tuple counts): selftest `red=2 green=0`; the live tree → 0 |
+| production, linux | a fresh pallets/itsdangerous clone eaten. `smash --out <300-char name>` → `SMASH FAILED: unexpected OSError (errno=36, filename='/tmp/p95/aaa…')`, the traceback, rc 2, three runs alike; old code printed it as `SMASH REFUSED`. `chmod 000` on the shard's nodes.json → `CHECK COULD-NOT-TELL: store lane: … PermissionError (errno=13, filename='…/nodes.json'): Permission denied`, no traceback, rc 1 |
