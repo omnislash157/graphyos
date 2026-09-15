@@ -6636,7 +6636,7 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 ## 156 · THE CUT COUNTS WHAT BLAST WALKS — `pillars` weighed units over a hardcoded `imports · calls · inherits · decorates`, `arms` ranked crowns over `calls · inherits · decorates` and `draw` imported the first, while `blast` has read the store's declared DEPENDS family since #68; after #94 a unit reached only through `references` weighed nothing in the cut. `pillars.relations_for` and `arms.fanin_relations_for` now read that family (`relations_in(store, DEPENDS, <the old constant>)`), `draw` weighs through the first, the `pillars` header names what it counted, and a module node crowns only an arm where nothing else is depended on — a declared `imports` lands on modules and would otherwise crown them (2026-09-15 · graphyos issue 140)
 
 - spec: `specs/140.md` · `python3 spec_lint.py specs/140.md` → `SPEC OK`
-- the issue's done block imports `graphy.tenant.load_tenant`, which does not exist; P1 opens the store through `cli._load_tenant` and `cli._roster`
+- the issue's done block imports a `load_tenant` the tenant module never defined; P1 opens the store through `cli._load_tenant` and `cli._roster`
 - left by name: `arms.JOIN_RELATIONS` (`inherits`) is the region's "inherits joins out" inventory — one named edge rendered, not a dependency family
 
 | check | result |
