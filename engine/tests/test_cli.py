@@ -1475,6 +1475,81 @@ def test_GREEN_a_cp1252_console_never_crashes_draw_and_eat_in_a_subprocess(tmp_p
     assert lit_out.count("slow Python fallback") == 1 and "—" in lit_out, lit_out
 
 
+# ── graphyos #136: a cp1252 stdin reads the utf-8 a client wrote, never its mojibake ────────────────────────
+
+
+def test_GREEN_a_cp1252_stdin_is_reconfigured_before_the_first_read():
+    """The unit: no streams named now judges stdin too; a cp1252 read stream becomes utf-8 and the bytes a client
+    wrote decode as what it wrote."""
+    import io
+    cp = io.TextIOWrapper(io.BytesIO("José\n".encode("utf-8")), encoding="cp1252")
+    assert cli.utf8_streams(cp) == ["cp1252->utf-8"]
+    assert cp.read() == "José\n"
+
+
+def _cp1252_env():
+    env = {**os.environ, "PYTHONPATH": str(Path(cli.__file__).parents[1]), "PYTHONIOENCODING": "cp1252"}
+    for k in ("PYTHONUTF8", "CLAUDE_PROJECT_DIR", "GRAPHY_TENANT", "GRAPHY_TENANT_ID"):
+        env.pop(k, None)
+    return env
+
+
+def _eaten_under_a_non_ascii_path(tmp_path, env):
+    repo = tmp_path / "José" / "repo"
+    (repo / "pkg_a").mkdir(parents=True)
+    (repo / "pkg_a" / "__init__.py").write_bytes(b"def f():\n    return g()\n\ndef g():\n    return 1\n")
+    eaten = subprocess.run([sys.executable, "-m", "graphy", "eat", str(repo), "--package", "pkg_a",
+                            "--site-packages", str(repo)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           env=env, cwd=repo, timeout=300)
+    assert eaten.returncode == 0, eaten.stdout.decode("utf-8", "replace")
+    return repo
+
+
+def test_RED_cp1252_stdin_the_mcp_face_answers_the_symbol_the_client_sent(tmp_path):
+    """The MCP face: `hunt` over a cp1252 stdin answered about 'JosÃ©' (graphyos #136)."""
+    env = _cp1252_env()
+    repo = _eaten_under_a_non_ascii_path(tmp_path, env)
+    lines = ('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n'
+             '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"hunt","arguments":{"symbol":"José"}}}\n')
+    served = subprocess.run([sys.executable, "-m", "graphy", "mcp", "--tenant", str(repo / ".graphy" / "tenant.json"),
+                             "--tenant-id", "pkg_a"], input=lines.encode("utf-8"), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=env, timeout=120)
+    out = served.stdout.decode("utf-8")
+    assert "'José'" in out and "JosÃ©" not in out, out
+
+
+def test_RED_cp1252_stdin_the_gate_blocks_an_edit_under_a_non_ascii_path(tmp_path):
+    """The gate: the hook JSON's file_path under `…/José/…` decoded as mojibake, resolved outside the root, and the
+    gate opened on an edit it must block (graphyos #136)."""
+    from graphy import traversal
+    if not traversal.have_duckdb():
+        pytest.skip("the gate opens without duckdb; the block needs graphyos[estate]")
+    env = _cp1252_env()
+    repo = _eaten_under_a_non_ascii_path(tmp_path, env)
+    payload = json.dumps({"tool_name": "Edit", "cwd": str(repo), "tool_input": {
+        "file_path": str(repo / "pkg_a" / "__init__.py"), "old_string": "def g():"}}, ensure_ascii=False)
+    gate = subprocess.run([sys.executable, "-m", "graphy.shell.gate"], input=payload.encode("utf-8"),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=repo, timeout=120)
+    err = gate.stderr.decode("utf-8")
+    assert gate.returncode == 2 and "GATE BLOCKED" in err and "José" in err, (gate.returncode, err)
+
+
+def test_RED_cp1252_stdin_the_hook_captures_a_transcript_under_a_non_ascii_path(tmp_path):
+    """The hook: capture read transcript_path as `…/JosÃ©/…`, named it missing, and wrote no tail (graphyos #136)."""
+    import shutil
+    home = tmp_path / "José"
+    home.mkdir()
+    transcript = home / "session.jsonl"
+    shutil.copyfile(Path(__file__).parent / "fixtures" / "transcript" / "session.jsonl", transcript)
+    payload = json.dumps({"session_id": "fx-session-0001", "transcript_path": str(transcript),
+                          "hook_event_name": "PreCompact", "trigger": "manual"}, ensure_ascii=False)
+    rec = home / "recovery"
+    hook = subprocess.run([sys.executable, "-m", "graphy.reseed", "--recovery-dir", str(rec), "capture"],
+                          input=payload.encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          env=_cp1252_env(), timeout=120)
+    assert (rec / "reseed_tail.md").is_file(), hook.stderr.decode("utf-8", "replace")
+
+
 def test_GREEN_blast_names_the_binder_of_a_handler_referenced_as_a_value(tmp_path, capsys):
     """The issue's own red (graphyos #94): every CLI verb is wired `set_defaults(handler=_cmd_x)` and
     called once, dynamically, so `blast _cmd_x` answered a confident zero. Eaten cold, the handler's

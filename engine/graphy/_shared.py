@@ -36,10 +36,15 @@ def utf8_streams(*streams) -> list[str]:
     streams share. The stream's handler is kept. A stream that refuses the encoding is reconfigured
     to replace what it cannot encode instead; one whose encoding carries the glyphs already (utf-8)
     is left as it is; one with no ``reconfigure`` (a capture, a wrapper) is left alone. Returns what
-    changed, ``<encoding>->utf-8`` or ``<encoding>->replace`` per stream, for the tests."""
+    changed, ``<encoding>->utf-8`` or ``<encoding>->replace`` per stream, for the tests.
+
+    stdin is judged the same way (graphyos #136): the hook JSON, the MCP client's lines and a
+    `--files-from -` list arrive as utf-8, and a cp1252 stdin read them as mojibake — the gate missed
+    the walk under ``C:\\Users\\José`` and allowed the edit. It is reconfigured here, before any entry
+    point's first read, which is the only moment a text stream accepts a new encoding."""
     import sys
     if not streams:
-        streams = (sys.stdout, sys.stderr)
+        streams = (sys.stdout, sys.stderr, sys.stdin)
     changed: list[str] = []
     for stream in streams:
         encoding = getattr(stream, "encoding", None)

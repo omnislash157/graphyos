@@ -6558,3 +6558,13 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 |---|---|
 | the cut | `bash release.sh \| tail -1` → `RELEASE OK: graphyos 0.2.6 built and checked` |
 | published | `pip index versions graphyos \| head -1` → `graphyos (0.2.6)` |
+
+## 150 · A CP1252 STDIN READS THE UTF-8 A CLIENT WROTE — #123 reconfigured stdout and stderr and left stdin as the pipe gave it, so under a cp1252 stdin (what a Windows pipe gives Python) `graphy mcp` answered about `'JosÃ©'`, the gate resolved an edit under `…/José/…` outside the root and allowed it, and the capture hook named a transcript under that path missing; `_shared.utf8_streams` now judges stdin by the same rule, before any entry point's first read (2026-09-15 · graphyos issue 136)
+
+- spec: `specs/136.md` · `python3 spec_lint.py specs/136.md` → `SPEC OK`
+
+| check | result |
+|---|---|
+| red first, production | pallets/itsdangerous cloned under `/tmp/p136/José/repo` and eaten, on HEAD: the MCP `hunt` · the gate on an unwalked `class Signer:` edit · the capture each exit 1 in the spec's production block; P6 (the installed SessionEnd hook through `sh`) exit 1 |
+| production, linux | the same block on this tree: `HUNT: 'José'` · the gate exit 2 `GATE BLOCKED` · `reseed_tail.md` written; P6 exit 0, the tail with no CR |
+| the battery | `python3 review.py \| tail -1` → `REVIEW OK` · `bash standalone_check.sh \| tail -1` → `GRAPHY_STANDALONE_OK` |
