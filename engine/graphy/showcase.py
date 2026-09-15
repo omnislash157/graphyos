@@ -290,7 +290,7 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
         (out_dir / PAGE).write_text(html, encoding="utf-8")
         (out_dir / TEXT).write_text(text, encoding="utf-8")
         from graphy import scene as scene_lane           # the 3D galaxy beside the page: the one drawing that fetches (three.js)
-        (out_dir / GALAXY).write_text(scene_lane.emit_page(scene_lane.scene(store, package, cut), generation=store.generation()),
+        (out_dir / GALAXY).write_text(scene_lane.emit_page(scene_lane.scene(store, package, cut), generation=store.generation(), showcase=True),
                                       encoding="utf-8", newline="\n")
         red = S.check_artifact(out_dir / PAGE)
         # showcase.txt is a receipt too: the same output property the page holds (graphyos #125)
