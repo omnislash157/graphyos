@@ -86,6 +86,17 @@ jobs:
       # test runs the workflow's step under a POSIX bash PATH; test_cli's three `check` tests are #88's reds on
       # this platform; test_measure's profile-dir test runs the profiled subprocess, which imports `resource`
       # (cli.py's profiler; Windows has no such module, #88) — the file's other ten tests run here.
+      # the sixth mark (graphyos #126): this runner's git has core.autocrlf on, and the whole-floor run 34855052453
+      # checked the golden fixture shard out CRLF, so its nodes.json no longer matched the sha256 its PROVENANCE
+      # declares. `.gitattributes` says `* -text`; the step reads the attribute git applied to the fixture and runs
+      # the test that measured the corruption, on the platform whose default did it.
+      - name: "the byte mark — a checkout on this platform never rewrites a tracked byte, so the fixture shard matches its PROVENANCE (graphyos #126)"
+        run: |
+          $attr = git check-attr text engine/tests/fixtures/fastapi_graph/nodes.json
+          Write-Output $attr
+          if ($attr -notmatch 'text: unset$') { Write-Output "the fixture shard is not -text: a core.autocrlf checkout rewrites it"; exit 1 }
+          git ls-files --eol engine/tests/fixtures/fastapi_graph docs/pillars.svg CHANGELOG.md
+          cd engine && pytest -q tests/test_index.py
       - name: "the path mark — a path the engine writes is POSIX on this platform, and the wiring it writes parses (graphyos #125)"
         run: cd engine && pytest -q --basetemp "$env:RUNNER_TEMP\pt" tests/test_shell.py tests/test_history.py tests/test_showcase.py tests/test_burden.py tests/test_cli.py tests/test_measure.py --deselect tests/test_shell.py::test_GREEN_memory_bloodhound_answers_over_an_installed_repo_sessions --deselect tests/test_showcase.py::test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carries --deselect tests/test_cli.py::test_check_shard_unreadable_is_could_not_tell --deselect tests/test_cli.py::test_check_names_the_offending_shard_by_graph_name --deselect tests/test_cli.py::test_check_wrong_shape_findings_are_not_interchangeable --deselect tests/test_measure.py::test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss
 

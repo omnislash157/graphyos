@@ -1,0 +1,8 @@
+# A tracked byte is never a line ending git may rewrite. A shard is content-addressed (its PROVENANCE
+# digests nodes.json and edges.json), the gate cmp's docs/pillars.svg and CHANGELOG.md against what it
+# derives, and the arm regions are verified byte for byte — so a client with core.autocrlf, which is
+# Git for Windows' default, corrupted every one of them on checkout (graphyos #126: the golden fixture's
+# nodes.json came out CRLF, sha256 18c13a… against the declared 59e173…). `-text` on everything: git
+# checks out exactly the bytes it holds, on every host. review.py's `eol-rewritable` reads what git will
+# do, file by file, and refuses a tracked file this rule no longer covers.
+* -text

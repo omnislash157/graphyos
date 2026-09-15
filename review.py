@@ -11,7 +11,8 @@ advertise parse against the argparse it names; does every dotted symbol the docs
 every argparse dest read; does every path the router names sit on disk; is a template token still
 unfilled; is every sha the record's newest section names an ancestor of HEAD; does a stored answer's key
 cover every module the code that computed it imports; did a deletion leave
-a caller behind; do the pages this engine emits hold their own contract. A check that cannot run
+a caller behind; does git check out every tracked byte as it holds it, on a client that would
+rewrite line endings; do the pages this engine emits hold their own contract. A check that cannot run
 RAISES — a silent zero reads exactly like a clean tree — and every check is proven by use: the
 selftest seeds a fixture that trips it and one that does not, and `gate-selftest` runs that proof
 inside the flat run so a check that has stopped going red is itself a finding.
@@ -1474,6 +1475,103 @@ def check_specimen_corpus(repo: Path) -> list[Finding]:
 
 # ── the battery ───────────────────────────────────────────────────────────────────────────────────
 
+# ── the byte git checks out ───────────────────────────────────────────────────────────────────────
+
+REWRITING_ATTRS = ("text", "ident", "working-tree-encoding", "filter")   # the attributes under which a checkout is not the blob
+
+
+def _rewrite_attrs(repo: Path, files: list[str], cached: bool) -> dict[str, dict[str, str]]:
+    """Every attribute that makes git write a working file that is not the blob it holds — `text`
+    (line endings), `ident` (`$Id$` expansion), `working-tree-encoding` (a transcode), `filter` (a
+    clean/smudge program, git-lfs's for one) — per tracked file, read from the rule files that SHIP:
+    the index's (`--cached`, what a commit holds) or the worktree's (what `git add -A` will commit),
+    never this box's: the user's file is pointed at /dev/null and the system's is switched off."""
+    cmd = ["git", "-c", "core.attributesFile=/dev/null", "check-attr", *(["--cached"] if cached else []), *REWRITING_ATTRS, "-z", "--stdin"]
+    r = subprocess.run(cmd, cwd=repo, input="\0".join(files) + "\0", capture_output=True, text=True,
+                       env={**os.environ, "GIT_ATTR_NOSYSTEM": "1"})
+    if r.returncode != 0:
+        raise CheckError(f"git check-attr{' --cached' if cached else ''} failed in {repo}: {r.stderr.strip()[:200]}")
+    parts = r.stdout.split("\0")
+    triples = [parts[i:i + 3] for i in range(0, len(parts) - 2, 3)]
+    out: dict[str, dict[str, str]] = {}
+    for path, attr, value in triples:
+        out.setdefault(path, {})[attr] = value
+    if len(out) != len(files) or any(set(v) != set(REWRITING_ATTRS) for v in out.values()):
+        unmerged = [f for f in _git(repo, "ls-files", "-u", "-z").split("\0") if f]
+        if unmerged:
+            raise CheckError(f"the index holds {len(unmerged)} unmerged entr{'y' if len(unmerged) == 1 else 'ies'} — resolve the merge, then the attributes can be read")
+        raise CheckError(f"git check-attr answered {len(out)} of {len(files)} tracked file(s) — the parse is broken")
+    return out
+
+
+def _rewrites(attrs: dict[str, str]) -> str | None:
+    """Why git would write this file differently from the blob, or None: `text` anything but `unset`,
+    `ident` or `filter` switched on, a `working-tree-encoding` that is not off (`unset`, round 5's
+    innocent: `-working-tree-encoding` is the switch the attribute exists for) and not UTF-8."""
+    if attrs["text"] != "unset":
+        return f"`text` is {attrs['text']}: a core.autocrlf client rewrites its line endings on checkout"
+    for a in ("ident", "filter"):
+        if attrs[a] not in ("unspecified", "unset"):
+            return f"`{a}` is {attrs[a]}: git writes the checkout through it, not the blob"
+    enc = attrs["working-tree-encoding"]
+    if enc not in ("unspecified", "unset") and enc.lower().replace("-", "") != "utf8":     # git's own no-op spellings
+        return f"`working-tree-encoding` is {enc}: git transcodes the checkout"
+    return None
+
+
+def check_eol_rewritable(repo: Path) -> list[Finding]:
+    """eol-rewritable: every tracked file reads `text: unset` from `git check-attr` — a client with
+    core.autocrlf (Git for Windows' default) rewrites the line endings of every tracked file whose
+    `text` attribute nobody set, and a shard is content-addressed: on windows-latest the golden
+    fixture's nodes.json came out CRLF and its digest no longer matched its PROVENANCE, and the same
+    checkout corrupts docs/pillars.svg, CHANGELOG.md and every arm region the gate compares byte for
+    byte (graphyos #126). `.gitattributes` says `* -text`; this reads what git will actually do, file
+    by file, so a rule narrowed or a file it no longer covers is named, never found on a runner.
+    Round 4 found `ident`, `working-tree-encoding` and `filter` rewrite a checkout the same way while `text`
+    reads `unset`, so the reads cover every attribute under which a checkout is not the blob (`REWRITING_ATTRS`).
+    It asks git, never a hand-built list of git's sources — every review round of #126 found the next
+    one (an untracked rule file, a global one, a linked worktree's common dir, a worktree edit the
+    next `add -A` ships). Two reads over every tracked file, the box's own sources off in both: the
+    index's rules (`--cached`, what a commit holds) and the worktree's (what `git add -A` will commit);
+    a file not `unset` in the index, or answered differently by the two, is the finding by name. An
+    untracked, unignored `.gitattributes` is named as a cause, and one deleted from the worktree (both
+    reads fall back to the index's copy, and the next `add -A` ships the deletion) is a finding; `<git-dir>/info/attributes` (located by
+    `git rev-parse --git-path`, so a linked worktree's common dir is read) applies to both reads and
+    ships with neither, so a non-empty one is a finding. And no tracked file holds CRLF in the index
+    (`git ls-files --eol` `i/crlf`): `-text` also stops git normalising a CRLF a Windows editor commits,
+    and the svg's `cmp` would find it late."""
+    files = [f for f in _git(repo, "ls-files", "-z").split("\0") if f]
+    if not files:
+        raise CheckError("eol-rewritable found ZERO tracked files — the listing is broken, not the tree")
+    found: list[Finding] = []
+    loose = [f for f in _git(repo, "ls-files", "-o", "--exclude-standard", "-z").split("\0") if f.rsplit("/", 1)[-1] == ".gitattributes"]
+    for rel in loose:
+        found.append(Finding("eol-rewritable", rel, "a rule file git reads here that no clone will: it is not tracked — `git add` it"))
+    gone = [f for f in _git(repo, "ls-files", "-d", "-z").split("\0") if f.rsplit("/", 1)[-1] == ".gitattributes"]
+    for rel in gone:
+        # absent from the worktree, git reads the index's copy for both reads — the deletion the next add -A ships is invisible to them
+        found.append(Finding("eol-rewritable", rel, "a rule file deleted from the worktree: git still reads the index's copy here, and the next `git add -A` ships the deletion"))
+    info = repo / _git(repo, "rev-parse", "--git-path", "info/attributes").strip()
+    if info.is_file() and info.read_text(encoding="utf-8", errors="replace").strip():
+        found.append(Finding("eol-rewritable", info.as_posix(), "a rule file only this box holds, read for the index and the worktree alike: every attribute this tree needs lives in a tracked `.gitattributes`"))
+    index = _rewrite_attrs(repo, files, cached=True)
+    worktree = _rewrite_attrs(repo, files, cached=False)
+    NOTES["eol-rewritable"] = f"{len(files)} tracked file(s) × {len(REWRITING_ATTRS)} attribute(s), the index's and the worktree's rules"
+    for path in files:
+        why = _rewrites(index[path])
+        if why:
+            found.append(Finding("eol-rewritable", path, f"{why} (the index's rules) — a tracked `.gitattributes` must leave every byte as the blob holds it: the shard digests, the svg and the changelog are byte checks"))
+            continue
+        if worktree[path] != index[path]:
+            diff = ", ".join(f"`{a}` {index[path][a]} → {worktree[path][a]}" for a in REWRITING_ATTRS if index[path][a] != worktree[path][a])
+            found.append(Finding("eol-rewritable", path, f"the index's rules and this checkout's answer differently ({diff}): a clone and this box do not hold the same bytes, and what the next commit ships is whichever rule file it adds"))
+    for row in _git(repo, "ls-files", "--eol", "-z").split("\0"):
+        if row.startswith("i/crlf"):
+            found.append(Finding("eol-rewritable", row.split("\t", 1)[1],
+                                 "the index holds CRLF: `-text` stops git normalising it, so every host checks out the CRLF — commit it LF"))
+    return found
+
+
 CHECKS = {
     "advertised-argv-parses": check_advertised_argv,
     "cites-nonexistent": check_cites,
@@ -1490,6 +1588,7 @@ CHECKS = {
     "import-time-glyph": check_import_time_glyph,
     "json-template-spliced": check_json_template_spliced,
     "specimen-corpus": check_specimen_corpus,
+    "eol-rewritable": check_eol_rewritable,
 }
 
 
@@ -1659,6 +1758,22 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
                                              "0\t-\tgh issue comment 1 -b {M}\n"},   # + the oracle: bash posts the marker, the line says 0
             {"scrub.py": (HERE / "scrub.py").read_text(encoding="utf-8"),
              "review_specimens/gh_hook.tsv": "# corpus\n0\t-\tgh issue create --title t --body \"a public sentence\"\n2\t-\tgh issue comment 1 -b {M}\n"}),
+        "eol-rewritable": (
+            # red: a rule narrowed to the shard leaves the svg rewritable (the attribute), a `-text` file with `ident` on is
+            # rewritten on every clone all the same (round 4: `$Id$` expanded, `text` unset), a CRLF file sits in the index,
+            # and _run_fixture drops an UNTRACKED `docs/.gitattributes` covering the svg (round 1: green on the box, red on a
+            # clone) and points the repo's core.attributesFile at a box-only `* -text` (round 2: the same, through git's
+            # global source) — the svg must still be named, from the index's rules alone.
+            # green: the blanket rule tracked, and a `* text=auto` under a gitignored .venv/ that git never reads (round 2's
+            # false red: a stranger's checkout under staging/ or a venv must not turn the gate red)
+            {"engine/tests/fixtures/g/nodes.json": "{}\n", "engine/tests/fixtures/g/PROVENANCE.json": "{}\n",
+             "docs/pillars.svg": "<svg/>\n", "notes.txt": "a\r\nb\r\n", "probe.txt": "id: $Id$\n",
+             ".gitattributes": "engine/tests/fixtures/** -text\nprobe.txt -text ident\n"},
+            {"engine/tests/fixtures/g/nodes.json": "{}\n", "engine/tests/fixtures/g/PROVENANCE.json": "{}\n",
+             "docs/pillars.svg": "<svg/>\n", ".gitignore": ".venv/\n", ".venv/probe/.gitattributes": "* text=auto\n",
+             # round 5's innocent: every rewriting attribute switched OFF by name, and git's own no-op encoding — 0 findings
+             ".gitattributes": "* -text\ndocs/pillars.svg -text -working-tree-encoding -ident -filter\n"
+                               "engine/tests/fixtures/g/nodes.json -text working-tree-encoding=UTF-8\n"}),
         "severance": (
             {"engine/graphy/a.py": "try:\n    import fcntl\nexcept ImportError:\n    def f():\n        pass\n\ndef g():\n    pass\n", "engine/graphy/b.py": "from graphy.a import f\nf()\n",
              "engine/graphy/c.py": "from graphy import a\na.f()\nimport sqlite3\nsqlite3.connect(':memory:').g()\n"},
@@ -1683,6 +1798,45 @@ def _run_fixture(check: str, root: Path, red: bool) -> list[Finding]:
         if n == 0:
             raise CheckError("the visual fixture holds no page — the glob is broken")
         return found
+    if check == "eol-rewritable" and red:
+        # a rule file written and never added, and a global one the repo's own config points at: git reads
+        # both on this box, no clone ever will — the svg must be named from the index's rules regardless
+        (root / "docs" / ".gitattributes").write_text("* -text\n", encoding="utf-8")
+        (root / "box_only_attributes").write_text("* -text\n", encoding="utf-8")
+        _fixture_git(root, ["git", "config", "core.attributesFile", str(root / "box_only_attributes")])
+        # round 3's two: a linked worktree (`.git` a file) whose common dir holds a box-only `* -text` — the
+        # index reads unset there and the finding is the info file, located by git and not by a built path;
+        # and a worktree whose rule is narrower than the index's — the index says unset, the next add -A
+        # ships the narrowing, and only the second read sees it
+        wt = root.parent / (root.name + "-wt")
+        shutil.rmtree(wt, ignore_errors=True)
+        _fixture_git(root, ["git", "worktree", "add", "-q", str(wt), "HEAD"])
+        (root / ".git" / "info").mkdir(exist_ok=True)
+        (root / ".git" / "info" / "attributes").write_text("* -text\n", encoding="utf-8")
+        w2 = _seed({"a.json": "{}\n", "b.svg": "<svg/>\n", ".gitattributes": "* -text\n"})
+        (w2 / ".gitattributes").write_text("a.json -text\n", encoding="utf-8")
+        # and the rule file DELETED from the worktree, index intact: both reads fall back to the index's copy
+        w3 = _seed({"a.json": "{}\n", ".gitattributes": "* -text\n"})
+        (w3 / ".gitattributes").unlink()
+        try:
+            wt_found = check_eol_rewritable(wt)
+            w2_found = check_eol_rewritable(w2)
+            w3_found = check_eol_rewritable(w3)
+        finally:
+            _fixture_git(root, ["git", "worktree", "remove", "--force", str(wt)])
+            shutil.rmtree(w2, ignore_errors=True)
+            shutil.rmtree(w3, ignore_errors=True)
+        if not any(f.where.endswith("info/attributes") for f in wt_found):
+            raise CheckError("eol-rewritable's worktree fixture: the common dir's info/attributes was not named")
+        if not any("this checkout's answer differently" in f.what for f in w2_found):
+            raise CheckError("eol-rewritable's narrowed-worktree fixture: the index/worktree disagreement was not named")
+        if not any("deleted from the worktree" in f.what for f in w3_found):
+            raise CheckError("eol-rewritable's deleted-rule fixture: the deletion was not named")
+        (root / ".git" / "info" / "attributes").unlink()
+        root_found = CHECKS[check](root)
+        if not any(f.what.startswith("`ident`") for f in root_found):
+            raise CheckError("eol-rewritable's ident fixture: a `-text` file with `ident` on was not named")
+        return root_found + wt_found + w2_found + w3_found
     if check == "sha-liveness" and red:
         # a commit that resolves and is not an ancestor: an orphan branch, then back to the first
         branch = _fixture_git(root, ["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
