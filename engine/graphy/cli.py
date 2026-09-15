@@ -575,6 +575,34 @@ def _cmd_harness(args: argparse.Namespace) -> int:
     return 0 if receipt else 1
 
 
+def _cmd_hunt(args: argparse.Namespace) -> int:
+    """The MCP tool's twin at a terminal: the nodes a bare name could mean (graphyos #92)."""
+    from graphy import doors
+    from graphy import federated_store as fstore
+    if not args.tenant or not args.tenant_id:
+        print("HUNT REFUSED: --tenant and --tenant-id are required — graphy resolves identity "
+              "only through a declared Tenant", file=sys.stderr)
+        return 2
+    if not args.symbol:
+        print("HUNT REFUSED: a name is required — an exact id, a dotted tail, or a substring of an id", file=sys.stderr)
+        return 2
+    try:
+        tenant = _load_tenant(args.tenant)
+    except TenantError as exc:
+        print(f"HUNT REFUSED: {exc}", file=sys.stderr)
+        return 2
+    try:
+        store = fstore.open_for(_roster(tenant), tenant=tenant, tenant_id=args.tenant_id,
+                                on_stale=args.on_stale)
+    except (fstore.StoreError, AttributeError, TypeError, KeyError, OSError) as exc:
+        print(fstore.refused("HUNT", exc), file=sys.stderr)
+        return 2
+    with store:
+        ids, how = doors.hunt(store, args.symbol)
+        print(doors.render_hunt(store, args.symbol, ids, how, args.limit))
+        return 0 if ids else 1
+
+
 def _cmd_door(args: argparse.Namespace) -> int:
     from graphy import federated_store as fstore
     from graphy import doors
@@ -2852,6 +2880,15 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="recall: every stored traversal under the live generation that reached this symbol, with its hop and edge")
     p_trav.add_argument("--on-stale", default="refuse", help="refuse|warn")
     p_trav.set_defaults(handler=_cmd_traversals)
+
+    p_hunt = sub.add_parser("hunt", help="the nodes a bare name could mean: exact id, dotted tail, or a substring of the id — "
+                                         "id · owner · file:line, the MCP tool's twin")
+    p_hunt.add_argument("symbol", nargs="?", default=None, help="an exact node id, its dotted tail, or a substring of an id")
+    p_hunt.add_argument("--tenant", default=None, help="path to the tenant descriptor JSON")
+    p_hunt.add_argument("--tenant-id", default=None, help="the receipt name open_for refuses to open without")
+    p_hunt.add_argument("--limit", type=int, default=25, help="ids to print (default 25)")
+    p_hunt.add_argument("--on-stale", default="refuse", help="refuse|warn")
+    p_hunt.set_defaults(handler=_cmd_hunt)
 
     for door, blurb, depth in (
             ("descend", "the callees down through the ring to the primitives, and every package crossing", 4),

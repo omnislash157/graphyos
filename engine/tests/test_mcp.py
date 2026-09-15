@@ -212,3 +212,16 @@ def test_RED_the_server_reports_the_packages_version(tmp_path):
                         "params": {"protocolVersion": "2025-03-26"}})[0]["result"]
     assert init["serverInfo"] == {"name": "graphy", "version": graphy.__version__}
     assert init["serverInfo"]["version"] != "0.1.0"
+
+
+def test_GREEN_hunt_at_the_terminal_prints_the_mcp_tools_answer(tmp_path, capsys):
+    """`graphy hunt` is the MCP tool's twin: the same bytes, by tail, by substring, and the named empty (graphyos #92)."""
+    from graphy import cli
+    tenant, desc, roster = _fixture(tmp_path)
+    tools = mcp.open_tools(tenant, "doors", roster)
+    argv = ["--tenant", str(desc), "--tenant-id", "doors"]
+    for name, code in (("gadget", 0), ("gadg", 0), ("zzz_nothing", 1)):
+        capsys.readouterr()
+        assert cli.main(["hunt", name, *argv]) == code
+        assert capsys.readouterr().out.rstrip("\n") == tools.hunt(name)
+    assert cli.main(["hunt", *argv]) == 2 and "HUNT REFUSED" in capsys.readouterr().err

@@ -99,7 +99,7 @@ ANTHROPIC_API_KEY=… .venv/bin/python engine/tenants/fastapi/demo.py      # or 
 
 Point any MCP client at the same server: Claude Code reads it from this repo's `.mcp.json`;
 anywhere else, `bash engine/tenants/fastapi/mcp.sh` on stdio, or `graphy mcp --tenant … --tenant-id …`
-over any eaten repo. Six tools: `hunt` · `descend` · `blast` · `walk` · `draw` · `explain`.
+over any eaten repo. The tools are `hunt` · `descend` · `blast` · `walk` · `draw` · `explain` · `history`, and each is a `graphy` verb of the same name at a terminal.
 
 Over your own repo, no pointer to write: `graphy eat .` once, then the Claude Code plugin at
 [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) runs `graphy mcp --repo "${CLAUDE_PROJECT_DIR}"` —
@@ -280,8 +280,9 @@ literal it would need and the reason no node carries it. No name match is ever a
 | the showcase: one page of your codebase, made by one command — the modules drawn (click to light what reaches what), the pillars the walk proposes, the ring, the MCP block, three questions, how to add a model | `graphy showcase .` · `graphy showcase https://github.com/encode/httpx.git` → `.graphy/showcase/index.html` + `showcase.txt` |
 | the gallery: the same page over ten repos people know, one index, one receipt — the site at graphy-os.com, built inside the Dockerfile at the root so every deploy is a fresh gallery on the current engine | `bash gallery.sh gallery $(cat gallery.txt)` → `gallery/index.html` + `gallery.json`; `docker build -t graphy-gallery .` |
 | draw it for the human: the pillars, the module map, one arm, a symbol's neighbourhood — computed from the store, ASCII in the terminal or one self-contained HTML+SVG page, no drawing by hand | `graphy draw --tenant … --tenant-id … --pillars --partition <json> --lr` · `--symbol get_request_handler --radius 2 --emit html --interactive -o page.html` — the MCP server has `draw` too |
+| a bare name: the nodes it could mean, exact id · dotted tail · substring, each with its owner and file:line | `graphy hunt <name> --tenant … --tenant-id …` — the MCP tool's twin; exit 1 when nothing matches |
 | the doors: what a symbol calls down to the primitives, who depends on it, what explains it | `graphy descend\|blast\|explain <symbol> --tenant … --tenant-id …` — `descend get_request_handler` on the FastAPI tenant crosses fastapi → starlette → anyio |
-| the MCP server over an eaten repo, for Claude Code / Cursor / any client | `graphy mcp --tenant … --tenant-id …` on stdio — `hunt` · `descend` · `blast` · `walk` · `draw` · `explain` |
+| the MCP server over an eaten repo, for Claude Code / Cursor / any client | `graphy mcp --tenant … --tenant-id …` on stdio — `hunt` · `descend` · `blast` · `walk` · `draw` · `explain` · `history`, every one a CLI verb too |
 | the hooks and the gate, bolted onto your repo — and the memory lane with them: every session captured as 1:1 exchanges under `.claude/recovery/`, re-seeded on the next start, and the seven doors that read the archive (`lightning` · `bloodhound` · `reseed_graph`) named in the installed `GRAPHY.md` | `graphy shell install --repo <abs>` — [`engine/graphy/shell/README.md`](engine/graphy/shell/README.md) |
 | the pillars proposed from the walk, with the evidence per unit; a partition file the fan-out takes | `graphy pillars --tenant <descriptor> --tenant-id <name> [--corpus <slug>] [--write <partition.json>] [--against <partition.json>]` |
 | the fan-out a cold agent reads; one package cut into named pillars | `graphy fanout --graph-dir <shard> --out <dir> [--depth N \| --partition <json>]` · `--verify` |

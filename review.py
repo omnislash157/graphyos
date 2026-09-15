@@ -1332,6 +1332,66 @@ def _writes_output(call: ast.Call) -> str | None:
     return None
 
 
+def _verb_dests() -> dict[str, set[str]]:
+    """verb → every dest its subparser writes, from the engine's own argparse."""
+    from graphy import cli
+    out: dict[str, set[str]] = {}
+    for a in cli._build_parser()._actions:
+        if isinstance(a, argparse._SubParsersAction):
+            for name, sub in a.choices.items():
+                out[name] = {b.dest for b in sub._actions}
+    return out
+
+
+def check_mcp_cli_twins(repo: Path) -> list[Finding]:
+    """mcp-cli-twins: every tool the MCP server lists (`graphy.mcp.TOOLS`) is a verb the CLI parser has,
+    and every argument the tool takes is a dest that verb reads — `mcp.CLI_DESTS` the one declared
+    rename. A tool with no terminal twin sent a reader following the orientation into an argparse error
+    on the first command (graphyos #92). TOOLS is read from the tree by its AST, the verbs from the parser."""
+    path = repo / "engine" / "graphy" / "mcp.py"
+    if not path.is_file():
+        raise CheckError("mcp-cli-twins: engine/graphy/mcp.py is not in the tree")
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tools: list[tuple[str, list[str], int]] = []
+    renames: dict = {}
+    for node in tree.body:
+        if not (isinstance(node, (ast.Assign, ast.AnnAssign))):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        names = {t.id for t in targets if isinstance(t, ast.Name)}
+        if "CLI_DESTS" in names:
+            renames = ast.literal_eval(node.value)
+        if "TOOLS" in names and isinstance(node.value, ast.List):
+            for el in node.value.elts:
+                d = {k.value: v for k, v in zip(el.keys, el.values) if isinstance(k, ast.Constant)}
+                name = d.get("name")
+                if not isinstance(name, ast.Constant):
+                    raise CheckError(f"mcp-cli-twins: a TOOLS entry at mcp.py:{el.lineno} has no literal name")
+                props: list[str] = []
+                schema = d.get("inputSchema")
+                if isinstance(schema, ast.Dict):
+                    sd = {k.value: v for k, v in zip(schema.keys, schema.values) if isinstance(k, ast.Constant)}
+                    if isinstance(sd.get("properties"), ast.Dict):
+                        props = [k.value for k in sd["properties"].keys if isinstance(k, ast.Constant)]
+                tools.append((name.value, props, el.lineno))
+    if not tools:
+        raise CheckError("mcp-cli-twins found ZERO tools in mcp.TOOLS — the parse is broken, not the tree")
+    dests = _verb_dests()
+    found: list[Finding] = []
+    for name, props, line in tools:
+        if name not in dests:
+            found.append(Finding("mcp-cli-twins", f"engine/graphy/mcp.py:{line}",
+                                 f"the MCP tool `{name}` has no `graphy {name}` verb — a terminal reader gets an argparse error"))
+            continue
+        for p in props:
+            dest = renames.get(name, {}).get(p, p)
+            if dest not in dests[name]:
+                found.append(Finding("mcp-cli-twins", f"engine/graphy/mcp.py:{line}",
+                                     f"the MCP tool `{name}` takes `{p}`, which `graphy {name}` never reads as `{dest}`"))
+    NOTES["mcp-cli-twins"] = f"{len(tools)} tool(s) against {len(dests)} verb(s)"
+    return found
+
+
 def check_import_time_glyph(repo: Path) -> list[Finding]:
     """import-time-glyph: a line printed while a module IMPORTS runs before any entry point's `utf8_streams` has made
     the streams utf-8, so a glyph in it is the cp1252 crash #123 fixed, one hop earlier. Review round 2 of #123:
@@ -1586,6 +1646,7 @@ CHECKS = {
     "generation-identity": check_generation_identity,
     "host-interpreter": check_host_interpreter,
     "import-time-glyph": check_import_time_glyph,
+    "mcp-cli-twins": check_mcp_cli_twins,
     "json-template-spliced": check_json_template_spliced,
     "specimen-corpus": check_specimen_corpus,
     "eol-rewritable": check_eol_rewritable,
@@ -1715,6 +1776,13 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
              "gate.sh": "#!/usr/bin/env bash\n\"$PY\" -m pytest -q x.py\npython3 -m venv v && v/bin/python -m pytest\n$HERE/.venv/bin/python -m pytest\n"
                         "  python3 -m json.tool a\n# python3 -m pytest in a comment\n"
                         "python3 - <<'X'\ncmd = f\"python3 -m graphy pull {n}\"\nX\n"}),
+        "mcp-cli-twins": (
+            # red: a tool with no verb · a tool argument its verb never reads — two
+            {"engine/graphy/mcp.py": "X = {'type': 'string'}\nTOOLS = [\n    {'name': 'seek', 'inputSchema': {'properties': {'symbol': X}}},\n"
+                                     "    {'name': 'walk', 'inputSchema': {'properties': {'seed': X, 'hops': X}}},\n]\n"},
+            {"engine/graphy/mcp.py": "X = {'type': 'string'}\nCLI_DESTS = {'history': {'term': 'terms'}}\nTOOLS = [\n"
+                                     "    {'name': 'hunt', 'inputSchema': {'properties': {'symbol': X, 'limit': X}}},\n"
+                                     "    {'name': 'history', 'inputSchema': {'properties': {'term': X, 'symbol': X}}},\n]\n"}),
         "import-time-glyph": (
             # red: the specimen (a logger.warning under a module-level if) · a print in a try · a class-body print ·
             # a sys.stderr.write in an else · a logging.error with the glyph in an f-string — five

@@ -32,6 +32,8 @@ _SYMBOL = {"type": "string", "description": "an exact node id (fastapi://func/fa
 _DEPTH = lambda d: {"type": "integer", "default": d, "minimum": 1, "maximum": 12, "description": f"hops to walk (default {d})"}  # noqa: E731
 _LIMIT = {"type": "integer", "default": 12, "minimum": 1, "description": "rows per section (default 12)"}
 
+CLI_DESTS = {"history": {"term": "terms"}}    # a tool argument the verb reads under another dest (review.py mcp-cli-twins)
+
 TOOLS = [
     {"name": "hunt",
      "description": "Find the nodes a symbol names in the compiled store: exact id, dotted tail, or a substring of the id. Returns id · owner · file:line. Use it first when a name is bare or ambiguous — every other tool needs one node.",
@@ -139,21 +141,8 @@ class Doors:
         return c
 
     def hunt(self, symbol: str, limit: int = 25) -> str:
-        ids = sorted(self.store.find(symbol))
-        how = "tail"
-        if not ids:
-            ids = sorted(self.store.grep(symbol))
-            how = "substring"
-        if not ids:
-            return f"HUNT: {symbol!r} names no node in this store (tail and substring both empty)"
-        lines = [f"HUNT: {symbol!r} → {len(ids)} node(s) by {how}"]
-        for nid in ids[:limit]:
-            rec = self.store.record(nid) or {}
-            where = f"{rec.get('file')}:{rec.get('line')}" if rec.get("file") else ""
-            lines.append(f"  {nid}  [{self.store.membership(nid)}]  {where}".rstrip())
-        if len(ids) > limit:
-            lines.append(f"  … {len(ids) - limit} more (limit)")
-        return "\n".join(lines)
+        ids, how = doors.hunt(self.store, symbol)
+        return doors.render_hunt(self.store, symbol, ids, how, limit)
 
     def _door(self, which: str, symbol: str, depth: int, limit: int) -> str:
         c = self._counted()

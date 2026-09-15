@@ -64,6 +64,30 @@ def resolve(store, symbol: str) -> str:
     raise DoorError(f"{symbol!r} names {len(hits)} nodes; a door never guesses. Pick one:\n    {shown}{more}")
 
 
+def hunt(store, symbol: str) -> tuple[list[str], str]:
+    """The nodes a bare name could mean: the dotted-tail matches, else the ids holding it as a
+    substring — the one list both the MCP tool and `graphy hunt` print (graphyos #92)."""
+    ids = sorted(store.find(symbol))
+    if ids:
+        return ids, "tail"
+    return sorted(store.grep(symbol)), "substring"
+
+
+def render_hunt(store, symbol: str, ids: list[str], how: str, limit: int = 25) -> str:
+    if not ids:
+        return f"HUNT: {symbol!r} names no node in this store (tail and substring both empty)"
+    lines = [f"HUNT: {symbol!r} → {len(ids)} node(s) by {how}"]
+    for nid in ids[:limit]:
+        rec = store.record(nid) or {}
+        where = rec.get("file") or ""
+        if where and rec.get("line") is not None:
+            where = f"{where}:{rec['line']}"
+        lines.append(f"  {nid}  [{store.membership(nid)}]  {where}".rstrip())
+    if len(ids) > limit:
+        lines.append(f"  … {len(ids) - limit} more (limit)")
+    return "\n".join(lines)
+
+
 @dataclass
 class Reach:
     node: str
