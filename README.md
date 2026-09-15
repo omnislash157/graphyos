@@ -148,7 +148,15 @@ What is proven on the platform on every push is the store lane — CI's `store-w
 the same job proves a concurrent append blocks instead of minting a duplicate seq (graphyos #122) — and
 the handles: every verb closes the store it opened before it returns, so the rename or replace that
 follows it (a re-eat landing, a rebuild pruning, the recompile a stale refusal advertises) is never a
-sharing violation there, and the job renames the home after an eat to prove it (graphyos #124).
+sharing violation there, and the job renames the home after an eat to prove it (graphyos #124) — and the
+spelling: the paths the engine writes into the wiring `shell install` writes, every shard's
+`PROVENANCE.json`, the showcase's page and `showcase.txt` (its commands and MCP block included) and the
+profile receipt are POSIX (`C:/work/src`, which every Windows shell and interpreter accepts), as are the
+refusals and re-run commands the issue names; every template value filled into JSON is escaped, git's utf-8
+is decoded as utf-8, and a drive-lettered path is a path to `showcase`, so the wiring parses and a shard
+minted there reads as one minted here (graphyos #125). The engine's other receipts (`ring.json`,
+`tenant.json`, the refresh, rebuild, farm and index receipts) still spell the OS way — one shared writer
+for all of them is graphyos #142.
 `[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build
 says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the TypeScript
 and JavaScript producer.

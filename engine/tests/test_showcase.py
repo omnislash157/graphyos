@@ -167,6 +167,43 @@ def test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carrie
         assert ("It refused" in comment) == (rc != 0)
 
 
+def test_RED_the_hub_line_and_every_emitted_path_are_posix_and_the_checker_refuses_the_os_spelling(tmp_path):
+    """graphyos #125, review round 3: every eaten repo has a GRAPH.md, so every real showcase wrote
+    `THE HUB: C:\\work\\src\\.graphy\\GRAPH.md` into showcase.txt and the page on Windows, and no
+    test built a hub so no run saw it. The hub spells POSIX; and the page's done token refuses any
+    path spelled the OS way, in the page and in showcase.txt — the output property, so the next
+    f-string over a Path is caught on the page it reaches."""
+    tenant, desc, roster = _fixture(tmp_path)
+    store = fs.open_for(roster, tenant=tenant, tenant_id="doors")
+    part = tmp_path / "partition.json"
+    part.write_text(json.dumps({"groups": {"ROUTING": ["fastapi.routing"], "DEPS": ["fastapi.dependencies"]}, "rest": "EDGE"}), encoding="utf-8")
+    (tmp_path / "GRAPH.md").write_text("# hub\n", encoding="utf-8")
+    proposal = pillars.Proposal(corpus="fastapi", depth=2, floor=5, owned=2 / 3, client=1 / 3, rest="EDGE",
+                                crowns={"ROUTING": "fastapi.routing", "DEPS": "fastapi.dependencies"}, floor_arm=None,
+                                arms={"ROUTING": ["fastapi.routing"], "DEPS": ["fastapi.dependencies"]}, rulings=[], total=10)
+    html, text = showcase.compose(store, package="fastapi", desc=desc, home=tmp_path, proposal=proposal, cut=fanout.load_partition(part),
+                                  ring={"root": "fastapi", "minted": {"fastapi": {}}, "unresolved": {}}, graphy_cmd=["graphy"], origin="x")
+    hub = f"{tmp_path.as_posix()}/GRAPH.md"
+    assert f"THE HUB: {hub}" in text and f"<code>{hub}</code>" in html
+    assert sugi.os_spelled_paths(text) == [] and sugi.os_spelled_paths(html) == []
+    page = tmp_path / "index.html"
+    page.write_text(html, encoding="utf-8")
+    assert sugi.check_artifact(page) == []
+    # the doctored page: the hub spelled the Windows way, in the page and in the text
+    bad = tmp_path / "bad.html"
+    bad.write_text(html.replace(hub, r"C:\work\src\.graphy\GRAPH.md"), encoding="utf-8")
+    red = sugi.check_artifact(bad)
+    assert red and all("path spelled the OS way" in r and repr(r"C:\work\src\.graphy\GRAPH.md") in r for r in red), red
+    assert sugi.os_spelled_paths(text.replace(hub, r"D:\a\_temp\pt\repo\.graphy\GRAPH.md")) == [r"D:\a\_temp\pt\repo\.graphy\GRAPH.md"]
+    assert sugi.os_spelled_paths("hot: graphy\\cli.py:main 0.30s  ENGINE") == ["graphy\\cli.py"]
+    # innocents: an escaped fence, an escape sequence, a regex, a url, a POSIX path, a lone backslash
+    for ok in ("  \\`\\`\\`\\`.ts", "a\\nb", r"\d+\.py", "https://x/y/z.py", "/home/u/graphy/cli.py", "C:", "a \\ b", "é.py"):
+        assert sugi.os_spelled_paths(ok) == [], ok
+    # named and left (round 4): a JSON-escaped newline before a file name, `"a\nb.py"`, reads as a separator — `graphy\tests\x.py`
+    # is a real path, so the letter cannot decide; no emitted page carries a multi-line JSON string today
+    assert sugi.os_spelled_paths(r"a\nb.py") == [r"a\nb.py"]
+
+
 def test_RED_showcase_without_work_says_where_the_clone_lands(tmp_path, monkeypatch):
     """A url with no --work clones under ./showcase in the current directory; the run says so
     before the clone, and names the reuse when the clone already stands (graphyos #43)."""
@@ -184,7 +221,7 @@ def test_RED_showcase_without_work_says_where_the_clone_lands(tmp_path, monkeypa
     monkeypatch.setattr(showcase.subprocess, "run", fake_run)
     with pytest.raises(showcase.ShowcaseError):        # the clone stands, then the eat refuses an empty repo
         showcase.showcase("https://example.invalid/o/thing.git", log=logged.append, no_provision=True)
-    where = str((tmp_path / "showcase").resolve())
+    where = (tmp_path / "showcase").resolve().as_posix()          # a message spells its path POSIX (graphyos #125)
     assert any(line.startswith("SHOWCASE: no --work") and where in line and "--work <dir>" in line for line in logged), logged
     assert calls and calls[0][-1] == str(tmp_path / "showcase" / "o" / "thing")   # keyed on owner and name
     logged.clear()
@@ -220,6 +257,24 @@ def test_GREEN_repo_of_and_clone_dir_key_on_owner_and_name(tmp_path):
     assert showcase._shown("https://x-access-token:abc@github.com/pallets/click") == "https://github.com/pallets/click"
 
 
+def test_RED_a_drive_lettered_path_is_a_path_never_an_ssh_host(tmp_path):
+    """graphyos #125: `C:\\work\\src/` matched the ssh `host:` arm as host `C` and was refused as no
+    <owner>/<name> url, while git spells the same clone's origin `C:/work/src`. Both spellings are one
+    repo, keyed the way a POSIX path is — every segment the owner, the drive one of them (`c`), so two drives
+    never share a clone directory; a url is still not a path."""
+    assert showcase.repo_of(r"C:\Users\me\work\src/") == ("c/Users/me/work", "src")
+    assert showcase.repo_of("C:/Users/me/work/src") == ("c/Users/me/work", "src")
+    assert showcase.repo_of(r"D:\a\b\src.git") == ("d/a/b", "src")
+    assert showcase._same_repo(r"C:\Users\me\work\src", "c:/Users/me/work/src/")
+    assert not showcase._same_repo(r"C:\a\src", "D:/a/src")           # as `/x/a/src` and `/y/a/src` differ
+    assert not showcase._same_repo(r"C:\Users\me\work\src", "https://github.com/me/src")
+    assert showcase.clone_dir(tmp_path, r"D:\a\b\src.git") == tmp_path / "d" / "a" / "b" / "src"
+    assert showcase.repo_of(r"C:\src") == ("c", "src")              # the drive is the owner, as `/x/src` makes `x` one
+    with pytest.raises(showcase.ShowcaseError, match="not an <owner>/<name> git url"):
+        showcase.repo_of(r"C:\\")                                    # a bare drive names no repo
+    assert showcase.repo_of("git@host:o/n.git") == ("o", "n")        # the ssh arm still answers
+
+
 def test_RED_showcase_refuses_a_standing_clone_of_another_repo(tmp_path):
     """A directory under --work that is a clone of another url is never reused (graphyos #58): the
     origin read from the clone itself decides, and the refusal names both. Proven on a real git."""
@@ -234,7 +289,8 @@ def test_RED_showcase_refuses_a_standing_clone_of_another_repo(tmp_path):
     logged = []
     with pytest.raises(showcase.ShowcaseError) as exc:
         showcase._clone("https://github.com/some-fork/click.git", work, logged.append)
-    assert str(exc.value) == f"{stands} is a clone of {src}, not https://github.com/some-fork/click.git"
+    # the refusal spells the directory POSIX and the origin as git recorded it (graphyos #125)
+    assert str(exc.value) == f"{stands.as_posix()} is a clone of {src}, not https://github.com/some-fork/click.git"
     assert not logged
     # the same repo, spelled with or without .git or a trailing slash, is the clone it stands for
     assert showcase._clone(f"{src}/", work.parent / "w2", logged.append) == showcase.clone_dir(work.parent / "w2", str(src))

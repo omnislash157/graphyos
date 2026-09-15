@@ -113,6 +113,16 @@ def test_GREEN_summarize_names_the_hot_frames_the_rss_and_whether_the_engine_is_
     assert "ENGINE" in measure._fmt_frame(str(measure.ENGINE / "graphy" / "smash.py"), 1, "mint", 1.5)
 
 
+def test_RED_a_frame_spelled_with_backslashes_is_the_engines_and_reads_posix():
+    """graphyos #125: cProfile on Windows names a frame `graphy\\cli.py`, so the engine's own hottest frame
+    was neither judged nor spelled the way the receipt's other rows are. A frame's file is read POSIX
+    whatever the profiler spelled, and shown as `graphy/cli.py`."""
+    win = str(measure.ENGINE / "graphy" / "cli.py").replace("/", "\\")
+    assert measure._engine_owned(win)
+    assert measure._fmt_frame(win, 1, "main", 0.3) == "graphy/cli.py:main 0.30s  ENGINE"
+    assert not measure._engine_owned(str(measure.ENGINE / "tests" / "t.py").replace("/", "\\"))
+
+
 def test_GREEN_the_pass_number_counts_engine_hot_lanes_and_rss_regresses_like_a_time():
     r = {"floor": {"stdlib_hot": True}, "tenants": {"a": {"stdlib_hot": False}, "b": {"stdlib_hot": True}},
          "quickstart": {"q": {"stdlib_hot": False}}, "index": {}}

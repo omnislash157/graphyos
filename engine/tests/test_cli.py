@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -809,9 +810,9 @@ def test_repo_tenant_reads_the_descriptor_eat_wrote_and_the_root_the_ring_names(
     repo = _eaten_repo(tmp_path)
     desc, package = cli.repo_tenant(repo)
     assert desc == repo / ".graphy" / "tenant.json" and package == "click"
-    assert cli.mcp_args(desc, package) == ["mcp", "--repo", str(repo)]
+    assert cli.mcp_args(desc, package) == ["mcp", "--repo", repo.as_posix()]                # the page's MCP block carries it: POSIX (graphyos #125)
     # a descriptor anywhere else keeps the explicit pair — the plugin form only fits eat's layout
-    assert cli.mcp_args(tmp_path / "t.json", "x") == ["mcp", "--tenant", str(tmp_path / "t.json"), "--tenant-id", "x"]
+    assert cli.mcp_args(tmp_path / "t.json", "x") == ["mcp", "--tenant", (tmp_path / "t.json").as_posix(), "--tenant-id", "x"]
 
 
 def _printed_mcp(block: str) -> dict:
@@ -844,12 +845,12 @@ def test_next_steps_prints_a_project_mcp_json_that_runs_the_graphy_that_ate(tmp_
     if venv_inside_repo:
         assert server["command"] == ".venv/bin/graphy"
     else:
-        assert server["command"] == str(venv / "graphy")
+        assert server["command"] == (venv / "graphy").as_posix()          # the block spells POSIX on every host (graphyos #125)
     # no console script beside the interpreter: that interpreter with -m, still not PATH
     (venv / "graphy").unlink()
     server = _printed_mcp(cli._next_steps(desc, "click", "s", "t", repo / ".graphy", repo=repo))["mcpServers"]["graphy"]
     assert server["args"] == ["-m", "graphy", "mcp", "--repo", "."]
-    assert server["command"] == (".venv/bin/python" if venv_inside_repo else str(venv / "python"))
+    assert server["command"] == (".venv/bin/python" if venv_inside_repo else (venv / "python").as_posix())
 
 
 @pytest.mark.parametrize("breakage", ["no-repo", "no-ring", "no-root", "empty-root", "no-data-home"])
@@ -1080,7 +1081,8 @@ def test_RED_eat_refuses_to_delete_a_lane_it_did_not_mint_and_force_is_the_delib
     assert "EAT REFUSED" in err and "pkg_a_graph" in err and "--force" in err
     assert "NOTHING WAS DELETED" in err
     # the advice is this eat again, so a monorepo is not sent back into the several-packages refusal (graphyos #84)
-    assert f"`graphy eat {repo} --package pkg_b --site-packages {repo} --force`" in err
+    # spelled POSIX on every host, so the command is never single-quoted for a Windows separator (graphyos #125)
+    assert f"`graphy eat {repo.as_posix()} --package pkg_b --site-packages {repo.as_posix()} --force`" in err
     # the served generation stands untouched: pkg_b was staged beside it and the stage is discarded (graphyos #98)
     assert _lanes(repo) == ["history_graph", "pkg_a_graph"]
     assert sorted(p.name for p in (repo / ".graphy").iterdir() if ".gen-" in p.name) == [_served(repo).name]
@@ -1285,7 +1287,7 @@ def test_GREEN_a_cp1252_console_never_crashes_the_stream_becomes_utf8_or_replace
     assert cli.utf8_streams(cp) == ["cp1252->utf-8"]
     print(cli.GLYPHS, file=cp)
     cp.flush()
-    assert raw.getvalue() == (cli.GLYPHS + "\n").encode("utf-8")
+    assert raw.getvalue() == (cli.GLYPHS + os.linesep).encode("utf-8")   # the wrapper translates the newline on Windows (graphyos #125)
 
     err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="backslashreplace")
     assert cli.utf8_streams(err) == ["cp1252->utf-8"]
@@ -1305,7 +1307,7 @@ def test_GREEN_a_cp1252_console_never_crashes_the_stream_becomes_utf8_or_replace
     assert cli.utf8_streams(stubborn) == ["cp1252->replace"]
     print("┌─┐", file=stubborn)
     stubborn.flush()
-    assert stubborn.buffer.getvalue() == b"???\n"
+    assert stubborn.buffer.getvalue() == ("???" + os.linesep).encode()          # the only other newline pin in this test
 
 
 def test_GREEN_a_cp1252_console_never_crashes_draw_and_eat_in_a_subprocess(tmp_path):

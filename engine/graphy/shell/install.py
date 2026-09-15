@@ -26,9 +26,25 @@ class ShellError(RuntimeError):
     pass
 
 
+def _spell(v) -> str:
+    """A template value as it travels: a path is POSIX on every host (`C:/venv/Scripts/python.exe`, which
+    every Windows shell and interpreter accepts), so no separator the reader must escape is ever written."""
+    return Path(v).as_posix() if isinstance(v, Path) else str(v)
+
+
 def _fill(text: str, values: dict) -> str:
+    """The shell and markdown templates: each `{{key}}` becomes its value's spelling."""
     for k, v in values.items():
-        text = text.replace("{{" + k + "}}", str(v))
+        text = text.replace("{{" + k + "}}", _spell(v))
+    return text
+
+
+def _fill_json(text: str, values: dict) -> str:
+    """The JSON templates (`codex/hooks.json` · `cursor/hooks.json`): every value is escaped by `json.dumps`
+    inside its string, never spliced raw — a path carrying a backslash or a quote wrote a file the harness
+    could not parse (`Invalid \\escape`, graphyos #125). The templates keep their own quotes."""
+    for k, v in values.items():
+        text = text.replace("{{" + k + "}}", json.dumps(_spell(v), ensure_ascii=False)[1:-1])
     return text
 
 
@@ -75,7 +91,7 @@ def install(repo: str | Path, python: str | None = None, *, log=print, harness: 
                          f"--site-packages <its venv's site-packages>` first")
     tid = json.loads(ring.read_text(encoding="utf-8"))["root"]
     py = python or sys.executable
-    values = {"python": py, "repo": repo, "desc": desc, "tid": tid, "root_module": f"{tid}://module/{tid}",
+    values = {"python": Path(py), "repo": repo, "desc": desc, "tid": tid, "root_module": f"{tid}://module/{tid}",
               "graphy": Path(py).parent / "graphy", "sessions": repo / ".claude" / "recovery" / "sessions"}
     hooks_dir = repo / ".graphy" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -89,10 +105,10 @@ def install(repo: str | Path, python: str | None = None, *, log=print, harness: 
         ours = json.loads((HERE / "claude" / "settings.json").read_text(encoding="utf-8"))
         written.append(_write_wiring(repo / ".claude" / "settings.json", ours, _merge_hooks))
     if "codex" in harness:                      # the same event names and hook shape as Claude Code; the repo path filled in
-        ours = json.loads(_fill((HERE / "codex" / "hooks.json").read_text(encoding="utf-8"), values))
+        ours = json.loads(_fill_json((HERE / "codex" / "hooks.json").read_text(encoding="utf-8"), values))
         written.append(_write_wiring(repo / ".codex" / "hooks.json", ours, _merge_hooks))
     if "cursor" in harness:
-        ours = json.loads(_fill((HERE / "cursor" / "hooks.json").read_text(encoding="utf-8"), values))
+        ours = json.loads(_fill_json((HERE / "cursor" / "hooks.json").read_text(encoding="utf-8"), values))
         written.append(_write_wiring(repo / ".cursor" / "hooks.json", ours, _merge_cursor))
     recovery = repo / ".claude" / "recovery"
     recovery.mkdir(parents=True, exist_ok=True)

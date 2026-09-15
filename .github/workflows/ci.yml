@@ -71,6 +71,23 @@ jobs:
         run: cd engine && pytest -q tests/test_store_lifecycle.py "tests/test_cli.py::test_GREEN_eat_no_provision_runs_nothing_of_the_repo_and_mints_an_empty_ring" "tests/test_federated_store.py::test_GREEN_advertised_warn_command_parses" "tests/test_federated_store.py::test_GREEN_advertised_refuse_command_parses"
       - name: "a cp1252 pipe never crashes a verb that draws — on the platform the issue names (graphyos #123)"
         run: cd engine && pytest -q "tests/test_cli.py::test_GREEN_a_cp1252_console_never_crashes_draw_and_eat_in_a_subprocess" "tests/test_provision.py::test_RED_a_failure_line_is_the_last_line_when_both_streams_share_a_pipe"
+      # the fifth mark (graphyos #125): the paths the engine writes into `shell install`'s wiring, every shard's
+      # PROVENANCE.json, the showcase page and the profile receipt are POSIX, as are the refusals and re-run
+      # commands the issue names; every template value filled into JSON is escaped by json.dumps, git's utf-8 is
+      # decoded as utf-8, and a drive-lettered path is a path to `showcase` (the rest of the engine's JSON is
+      # the issue this rung filed). The basetemp is short on
+      # purpose: a local path's clone key is every one of its segments, so under pytest's default ~100-char
+      # tmp the clone of a tmp-rooted repo doubles it and git hits MAX_PATH (260) — `Filename too long`.
+      # The selection is files with a DENY list, never a list of node ids (review rounds 4 and 5 of #125):
+      # an allow-list sees only the tests it is told, and twice a test that pinned the OS spelling of a
+      # symbol this rung re-spelled stayed green here and red on Windows because nobody had listed it.
+      # Six files run whole; six tests are deselected, each with its reason from the whole-floor run 34855052453:
+      # test_shell's bloodhound test needs ripgrep (absent on this runner, #88); test_showcase's comment-fence
+      # test runs the workflow's step under a POSIX bash PATH; test_cli's three `check` tests are #88's reds on
+      # this platform; test_measure's profile-dir test runs the profiled subprocess, which imports `resource`
+      # (cli.py's profiler; Windows has no such module, #88) — the file's other ten tests run here.
+      - name: "the path mark — a path the engine writes is POSIX on this platform, and the wiring it writes parses (graphyos #125)"
+        run: cd engine && pytest -q --basetemp "$env:RUNNER_TEMP\pt" tests/test_shell.py tests/test_history.py tests/test_showcase.py tests/test_burden.py tests/test_cli.py tests/test_measure.py --deselect tests/test_shell.py::test_GREEN_memory_bloodhound_answers_over_an_installed_repo_sessions --deselect tests/test_showcase.py::test_GREEN_the_comment_fence_is_longer_than_any_backtick_run_the_body_carries --deselect tests/test_cli.py::test_check_shard_unreadable_is_could_not_tell --deselect tests/test_cli.py::test_check_names_the_offending_shard_by_graph_name --deselect tests/test_cli.py::test_check_wrong_shape_findings_are_not_interchangeable --deselect tests/test_measure.py::test_GREEN_profile_dir_makes_every_verb_leave_its_stats_and_rss
 
   gate:
     runs-on: ubuntu-latest

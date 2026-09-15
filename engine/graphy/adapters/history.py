@@ -101,7 +101,10 @@ class HistoryError(RuntimeError):
 
 
 def _git(repo: Path, *args: str) -> str:
-    proc = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    # git writes utf-8 bytes (`core.quotePath=false` keeps `café.py` literal); decoding them under the
+    # console's locale mangled `RECON §1` and every non-ASCII path on a cp1252 host (graphyos #125)
+    proc = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise HistoryError(f"git {' '.join(a for a in args if not a.startswith(('-c', 'core.')))[:24]} failed under "
                            f"{repo}: {(proc.stderr or '').strip()[-300:]}")

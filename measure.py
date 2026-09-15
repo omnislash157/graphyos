@@ -102,8 +102,10 @@ def _num(pattern: str, text: str, cast=int, default=None):
 
 def _engine_owned(file: str) -> bool:
     """A frame is the engine's when its file lives under engine/graphy/ (this checkout, editable
-    installs) or under an installed graphy package — never tests/, never a venv beside the repo."""
-    return file.startswith(str(ENGINE / "graphy") + os.sep) or "/site-packages/graphy/" in file
+    installs) or under an installed graphy package — never tests/, never a venv beside the repo. A frame's
+    file is read POSIX whatever the profiler spelled (graphyos #125)."""
+    file = file.replace("\\", "/")
+    return file.startswith((ENGINE / "graphy").as_posix() + "/") or "/site-packages/graphy/" in file
 
 
 _NATIVE_CACHE: dict = {}
@@ -161,9 +163,10 @@ def _tag(file: str, func: str, tt: float, ct: float, boundary) -> str:
 
 
 def _fmt_frame(file: str, line: int, func: str, secs: float) -> str:
+    file = file.replace("\\", "/")
     owned = _engine_owned(file)
     if owned:
-        rel = file.split("/graphy/", 1)[1] if "/site-packages/graphy/" in file else str(Path(file).relative_to(ENGINE))
+        rel = file.split("/graphy/", 1)[1] if "/site-packages/graphy/" in file else Path(file).relative_to(ENGINE).as_posix()
     elif file.startswith("<") or file == "~":
         rel = file
     else:

@@ -19,7 +19,7 @@ import re
 import shutil
 import subprocess
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from graphy import draw as draw_lane
 from graphy import fanout, pillars as pillars_lane
@@ -61,7 +61,7 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     ascii_u = S.render(lo_u, color=False, title=pic_u.title, orient="LR")
     svg, script = S.emit_svg(lo_u, title=f"{package} · the modules", orient="LR", interactive=True, node_meta=pic_u.meta)
     g = " ".join(graphy_cmd)
-    tenant = f"--tenant {desc} --tenant-id {package}"
+    tenant = f"--tenant {desc.as_posix()} --tenant-id {package}"
     from graphy.cli import mcp_config
     mcp = json.dumps(mcp_config(graphy_cmd, desc, package), indent=2)
     crowns = list(proposal.crowns.items())
@@ -124,10 +124,10 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
     h += [f"  <tr><td><b>{_esc(a)}</b></td><td class=\"mono\">{_esc(c)}</td><td>{n}</td><td>{_esc(e)}</td></tr>" for a, c, n, e in arms_rows]
     hub = home / "GRAPH.md"
     if hub.is_file():
-        text += ["", f"THE HUB: {hub} — open one arm, blast its crown, do not dump every arm into context"]
+        text += ["", f"THE HUB: {hub.as_posix()} — open one arm, blast its crown, do not dump every arm into context"]
     h += ["  </table>"]
     if hub.is_file():
-        h += [f'  <h2>The hub</h2><p class="lede">Compiled arms live at <code>{_esc(str(hub))}</code>. Open one arm; blast its crown.</p>']
+        h += [f'  <h2>The hub</h2><p class="lede">Compiled arms live at <code>{_esc(hub.as_posix())}</code>. Open one arm; blast its crown.</p>']
     h += [
           f'  <h2>The ring</h2><p class="lede">{len(minted)} package(s) minted beside {_esc(package)}: <span class="mono">{_esc(", ".join(minted) or "none")}</span>. '
           f'Not carried: <span class="mono">{_esc(", ".join(sorted(unresolved)) or "nothing — the ring closed")}</span>.</p>',
@@ -149,8 +149,17 @@ _REPO = re.compile(r"^(?:[a-z][a-z0-9+.-]*://(?:[^/@]*@)?(?P<host>[^/]+)/|(?:[^@
                    r"(?P<owner>" + _SEG + r"(?:/" + _SEG + r")*)/(?P<name>" + _SEG + r"?)(?:\.git)?/?$")
 
 
+_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
 def _parse(url: str) -> tuple[str, str, str]:
-    m = _REPO.match(url.strip())
+    url = url.strip()
+    if _DRIVE.match(url):
+        # a drive-lettered path (`C:\work\src/`, or git's own `C:/work/src` in a clone's origin) is a path,
+        # never an ssh `host:` — spelled POSIX with the drive folded, so both spellings parse alike (graphyos #125)
+        win = PureWindowsPath(url)
+        url = f"/{win.drive[0].lower()}/" + win.as_posix()[len(win.drive):].lstrip("/")   # the drive is a segment: C:\a\src and D:\a\src are two repos
+    m = _REPO.match(url)
     if not m or not m.group("name") or m.group("name") == ".git":
         raise ShowcaseError(f"not an <owner>/<name> git url: {url!r} (an https, ssh or absolute path ending in "
                             f"<owner>/<name>[.git]; a segment is never `.`, `..` or `.git`)")
@@ -196,14 +205,14 @@ def _clone(url: str, work: Path, log) -> Path:
         proc = subprocess.run(["git", "-C", str(repo), "config", "--get", "remote.origin.url"],
                               capture_output=True, text=True)
         if proc.returncode not in (0, 1):                       # 1 is git's "no such key"; anything else, git refused
-            raise ShowcaseError(f"{repo} stands but git cannot read it: {(proc.stderr or '').strip()[-300:]}")
+            raise ShowcaseError(f"{repo.as_posix()} stands but git cannot read it: {(proc.stderr or '').strip()[-300:]}")
         origin = (proc.stdout or "").strip()
         if not _same_repo(origin, url):
-            raise ShowcaseError(f"{repo} is a clone of {_shown(origin) or '<no origin>'}, not {_shown(url)}")
-        log(f"SHOWCASE: reusing the clone at {repo}")
+            raise ShowcaseError(f"{repo.as_posix()} is a clone of {_shown(origin) or '<no origin>'}, not {_shown(url)}")
+        log(f"SHOWCASE: reusing the clone at {repo.as_posix()}")
     else:
         work.mkdir(parents=True, exist_ok=True)
-        log(f"SHOWCASE: git clone --depth 1 {url} {repo}")
+        log(f"SHOWCASE: git clone --depth 1 {url} {repo.as_posix()}")
         proc = subprocess.run(["git", "clone", "-q", "--depth", "1", url, str(repo)], capture_output=True, text=True)
         if proc.returncode != 0:
             raise ShowcaseError(f"clone failed: {(proc.stderr or '').strip()[-300:]}")
@@ -222,15 +231,15 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
     if target.startswith(("http://", "https://", "git@")):
         if work is None:                                         # graphyos #43: the clone lands where you stand, said so
             work = Path.cwd() / "showcase"
-            log(f"SHOWCASE: no --work — the clone lands under {work.resolve()} (the current directory); "
+            log(f"SHOWCASE: no --work — the clone lands under {work.resolve().as_posix()} (the current directory); "
                 f"--work <dir> puts it elsewhere")
         repo = _clone(target, Path(work).resolve(), log)
         origin = target
     else:
         repo = Path(target).resolve()
-        origin = str(repo)
+        origin = repo.as_posix()                                 # the page and showcase.txt carry it: POSIX (graphyos #125)
     if not repo.is_dir():
-        raise ShowcaseError(f"not a directory: {repo}")
+        raise ShowcaseError(f"not a directory: {repo.as_posix()}")
     home = repo / ".graphy"
     desc = home / "tenant.json"
     stale = None
@@ -249,10 +258,10 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
         argv = ["eat", str(repo)] + (["--no-provision"] if no_provision else [])
         rc = (eat or (lambda r: cli_main(argv)))(repo)
         if rc != 0:
-            raise ShowcaseError(f"eat exited {rc} for {repo}")
+            raise ShowcaseError(f"eat exited {rc} for {repo.as_posix()}")
     served = served_data_home(desc)
     if served is None:
-        raise ShowcaseError(f"the descriptor at {desc} names no data_home — eat did not land")
+        raise ShowcaseError(f"the descriptor at {desc.as_posix()} names no data_home — eat did not land")
     ring = json.loads((served / "ring.json").read_text(encoding="utf-8"))
     package = ring["root"]
     tenant = _load_tenant(str(desc))
@@ -279,6 +288,8 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
         (out_dir / PAGE).write_text(html, encoding="utf-8")
         (out_dir / TEXT).write_text(text, encoding="utf-8")
         red = S.check_artifact(out_dir / PAGE)
-        return {"repo": str(repo), "package": package, "page": str(out_dir / PAGE), "text": str(out_dir / TEXT),
+        # showcase.txt is a receipt too: the same output property the page holds (graphyos #125)
+        red += [f"{TEXT}: path spelled the OS way: {p!r}" for p in S.os_spelled_paths(text)]
+        return {"repo": repo.as_posix(), "package": package, "page": (out_dir / PAGE).as_posix(), "text": (out_dir / TEXT).as_posix(),
                 "arms": list(proposal.arms), "ring": len(ring.get("minted", {})) - 1, "check": red,
                 "seconds": round(time.perf_counter() - t0, 1)}

@@ -31,24 +31,24 @@ def _repo(tmp_path: Path) -> Path:
     (repo / "engine" / "graphy" / "adapters").mkdir(parents=True)
     (repo / "engine" / "tests").mkdir()
     _git(repo, "init", "-q")
-    (repo / "engine" / "graphy" / "showcase.py").write_text("x = 1\n")
-    (repo / "engine" / "graphy" / "adapters" / "__init__.py").write_text("")
-    (repo / "engine" / "graphy" / "café.py").write_text("")             # git quotes this path by default
-    (repo / "RECON.md").write_text("# r\n\n## 1 · THE FIRST (2026-09-05 · graphyos issue 3)\n\ntext\n\n## 2 · THE SECOND (2026-09-06)\n")
+    (repo / "engine" / "graphy" / "showcase.py").write_text("x = 1\n", encoding="utf-8")
+    (repo / "engine" / "graphy" / "adapters" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "engine" / "graphy" / "café.py").write_text("", encoding="utf-8")             # git quotes this path by default
+    (repo / "RECON.md").write_text("# r\n\n## 1 · THE FIRST (2026-09-05 · graphyos issue 3)\n\ntext\n\n## 2 · THE SECOND (2026-09-06)\n", encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "one: the first (graphyos #3)\n\nRECON §1\n\nClaude-Session: https://claude.ai/code/session_A",
          env_date="2026-09-05T10:00:00+00:00")
-    (repo / "engine" / "tests" / "test_showcase.py").write_text("y = 2\n")
-    (repo / "engine" / "graphy" / "showcase.py").write_text("x = 2\n")
+    (repo / "engine" / "tests" / "test_showcase.py").write_text("y = 2\n", encoding="utf-8")
+    (repo / "engine" / "graphy" / "showcase.py").write_text("x = 2\n", encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "two: the second, graphyos issue 4 — RECON §2 and RECON §9 (a section the file lost)",
          env_date="2026-09-05T12:00:00+00:00")
-    (repo / "README.md").write_text("r\n")
+    (repo / "README.md").write_text("r\n", encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "three: prose only", env_date="2026-09-05T14:00:00+00:00")
     (repo / "recon.before3.json").write_text(json.dumps({"floor": {"seconds": 9.8, "passed": 5, "hot": ["a 1s"]},
-                                                        "measured_at": "2026-09-05T09:00:00+00:00", "seconds": 1.5}))
-    (repo / "recon.json").write_text(json.dumps({"floor": {"seconds": 8.1}, "measured_at": "2026-09-05T15:00:00+00:00"}))
+                                                        "measured_at": "2026-09-05T09:00:00+00:00", "seconds": 1.5}), encoding="utf-8")
+    (repo / "recon.json").write_text(json.dumps({"floor": {"seconds": 8.1}, "measured_at": "2026-09-05T15:00:00+00:00"}), encoding="utf-8")
     sessions = tmp_path / "sessions"
     sessions.mkdir()
     for seq, sid, cap, ex in (("00001", "aaaa1111-0000-0000-0000-000000000001", "2026-09-05T11:00:00+00:00", 4),
@@ -62,8 +62,8 @@ def _repo(tmp_path: Path) -> Path:
                 "--- [1] ASSISTANT\n\nthe fuller capture: graphy.showcase._clone and test_showcase.py\n\n--- [2] USER\n\nadapters/__init__.py\n")
         (sessions / f"{seq}__x__{sid[:8]}.md").write_text(
             f"# CONVERSATION FULL SESSION — {ex} exchanges, verbatim and in order\n\nsource: /x.jsonl\nsession: {sid}\n"
-            f"captured_at: {cap}\nresolved_by: SessionEnd\n\n{body}")
-    (sessions / "notes.md").write_text("# not a session\n")
+            f"captured_at: {cap}\nresolved_by: SessionEnd\n\n{body}", encoding="utf-8")
+    (sessions / "notes.md").write_text("# not a session\n", encoding="utf-8")
     return repo
 
 
@@ -77,8 +77,8 @@ def _code_shard(tmp_path: Path) -> Path:
     for i in ("graphy://func/graphy.showcase._clone", "graphy://func/graphy.helper", "graphy://func/graphy.widgets.helper",
               "tests://func/tests.widgets.helper"):
         nodes[i] = {"kind": "node", "node_type": "func", "id": i, "dotted": i.rsplit("/", 1)[-1], "file": "x.py", "line": 1}
-    (shard / "nodes.json").write_text(json.dumps(nodes))
-    (shard / "edges.json").write_text("[]")
+    (shard / "nodes.json").write_text(json.dumps(nodes), encoding="utf-8")
+    (shard / "edges.json").write_text("[]", encoding="utf-8")
     return shard
 
 
@@ -87,8 +87,8 @@ def test_GREEN_the_record_becomes_a_shard_and_the_joins_are_edges(tmp_path, monk
     out = tmp_path / "history_graph"
     monkeypatch.chdir(tmp_path)
     prov = history.mint(repo, out, sessions=tmp_path / "sessions", code=[_code_shard(tmp_path)])
-    nodes = json.loads((out / "nodes.json").read_text())
-    edges = json.loads((out / "edges.json").read_text())
+    nodes = json.loads((out / "nodes.json").read_text(encoding="utf-8"))
+    edges = json.loads((out / "edges.json").read_text(encoding="utf-8"))
     assert validate_graph(nodes, edges, history.HISTORY_VOCABULARY) == len(nodes) + len(edges)
     kinds = {n["node_type"] for n in nodes.values()}
     assert kinds == {"commit", "session", "section", "issue", "receipt", "exchange"}
@@ -154,8 +154,8 @@ def test_GREEN_every_exchange_is_a_node_under_its_session_welded_to_the_code_on_
     out = tmp_path / "history_graph"
     monkeypatch.chdir(tmp_path)
     prov = history.mint(repo, out, sessions=tmp_path / "sessions", code=[_code_shard(tmp_path)])
-    nodes = json.loads((out / "nodes.json").read_text())
-    edges = json.loads((out / "edges.json").read_text())
+    nodes = json.loads((out / "nodes.json").read_text(encoding="utf-8"))
+    edges = json.loads((out / "edges.json").read_text(encoding="utf-8"))
     ex = {i: n for i, n in nodes.items() if n["node_type"] == "exchange"}
     # session 1: three markers; session 2 captured twice: the fuller capture's three markers, one node each
     assert sorted(ex) == [f"{X1}/1/assistant", f"{X1}/1/user", f"{X1}/2/user", f"{X2}/1/assistant", f"{X2}/1/user", f"{X2}/2/user"]
@@ -200,9 +200,9 @@ def test_GREEN_the_alias_registry_is_an_admitted_weld_and_refuses_by_name(tmp_pa
     monkeypatch.chdir(tmp_path)
     shard = _code_shard(tmp_path)
     reg = tmp_path / "aliases.json"
-    reg.write_text(json.dumps({"_meta": "notes", "the clone dir": "graphy://func/graphy.showcase._clone"}))
+    reg.write_text(json.dumps({"_meta": "notes", "the clone dir": "graphy://func/graphy.showcase._clone"}), encoding="utf-8")
     prov = history.mint(repo, out, sessions=tmp_path / "sessions", code=[shard], aliases=reg)
-    edges = json.loads((out / "edges.json").read_text())
+    edges = json.loads((out / "edges.json").read_text(encoding="utf-8"))
     m = _mentions(edges)
     e = m[(f"{X1}/1/user", "graphy://func/graphy.showcase._clone")]
     assert e["via"] == "dotted" and e["count"] == 2 and e["literal"] == "showcase._clone", \
@@ -211,9 +211,9 @@ def test_GREEN_the_alias_registry_is_an_admitted_weld_and_refuses_by_name(tmp_pa
     assert prov["history"]["aliases"] == 1 and prov["history"]["aliased"] == 0 and "1 alias(es) welded 0 edge(s)" in prov["history"]["note"]
     assert prov["corpus"]["aliases"] == "aliases.json" and prov["mint_command"].endswith(" --aliases aliases.json")
     # the weld alone: a literal only the registry binds
-    reg.write_text(json.dumps({"clone dir": "graphy://func/graphy.helper"}))
+    reg.write_text(json.dumps({"clone dir": "graphy://func/graphy.helper"}), encoding="utf-8")
     prov = history.mint(repo, out, sessions=tmp_path / "sessions", code=[shard], aliases=reg)
-    m = _mentions(json.loads((out / "edges.json").read_text()))
+    m = _mentions(json.loads((out / "edges.json").read_text(encoding="utf-8")))
     assert m[(f"{X1}/1/user", "graphy://func/graphy.helper")] == {
         "kind": "edge", "edge_type": "mentions", "src": f"{X1}/1/user", "dst": "graphy://func/graphy.helper",
         "via": "alias", "count": 1, "literal": "clone dir"}
@@ -221,17 +221,17 @@ def test_GREEN_the_alias_registry_is_an_admitted_weld_and_refuses_by_name(tmp_pa
     # the registry moved: the shard is stale by the digest
     fresh, why = history.verify(out, repo=repo)
     assert fresh, why
-    reg.write_text(json.dumps({"clone dir": "graphy://func/graphy.showcase._clone"}))
+    reg.write_text(json.dumps({"clone dir": "graphy://func/graphy.showcase._clone"}), encoding="utf-8")
     fresh, why = history.verify(out, repo=repo)
     assert not fresh and "the registry moved" in why
     # a target that is not a node refuses; a literal the roster's names already bind refuses as redundant
-    reg.write_text(json.dumps({"clone dir": "graphy://func/graphy.nope"}))
+    reg.write_text(json.dumps({"clone dir": "graphy://func/graphy.nope"}), encoding="utf-8")
     with pytest.raises(history.HistoryError, match="'clone dir' → graphy://func/graphy.nope names no node"):
         history.mint(repo, out, sessions=tmp_path / "sessions", code=[shard], aliases=reg)
-    reg.write_text(json.dumps({"showcase._clone": "graphy://func/graphy.helper"}))
+    reg.write_text(json.dumps({"showcase._clone": "graphy://func/graphy.helper"}), encoding="utf-8")
     with pytest.raises(history.HistoryError, match="'showcase._clone' already binds graphy://func/graphy.showcase._clone by the roster's own names"):
         history.mint(repo, out, sessions=tmp_path / "sessions", code=[shard], aliases=reg)
-    reg.write_text(json.dumps({"x": 3}))
+    reg.write_text(json.dumps({"x": 3}), encoding="utf-8")
     with pytest.raises(history.HistoryError, match="not a literal → node id"):
         history.mint(repo, out, sessions=tmp_path / "sessions", code=[shard], aliases=reg)
     with pytest.raises(history.HistoryError, match="not a readable JSON object"):
@@ -258,16 +258,16 @@ def test_GREEN_literals_are_dotted_names_and_paths_never_bare_words():
 def test_GREEN_an_alias_is_matched_on_token_boundaries_and_the_registry_keeps_every_key_but_meta(tmp_path):
     d = tmp_path / "s"
     d.mkdir()
-    (d / "a.md").write_text("--- [1] USER\n\nlook at graphy.sugiyama and sugiyama.py, then sugiyama alone; the showcase.txt, the showcase page\n")
+    (d / "a.md").write_text("--- [1] USER\n\nlook at graphy.sugiyama and sugiyama.py, then sugiyama alone; the showcase.txt, the showcase page\n", encoding="utf-8")
     aliases = {"sugiyama": "g://module/g.sugiyama", "the showcase": "g://func/g.showcase.showcase"}
     (ex,), sha = history.read_exchanges(d, "a.md", aliases)
     assert ex["aliases"] == {"sugiyama": 1, "the showcase": 1}, \
         "`sugiyama` inside `graphy.sugiyama` and `sugiyama.py` is the name the roster binds, never a second hit"
     assert len(sha) == 64
     reg = tmp_path / "aliases.json"
-    reg.write_text(json.dumps({"_meta": "a note", "_clone": "g://func/g.showcase._clone"}))
+    reg.write_text(json.dumps({"_meta": "a note", "_clone": "g://func/g.showcase._clone"}), encoding="utf-8")
     assert history.read_aliases(reg) == {"_clone": "g://func/g.showcase._clone"}, "`_clone` is exactly the bare word only the registry binds"
-    reg.write_text(json.dumps({"_note": "prose"}))
+    reg.write_text(json.dumps({"_note": "prose"}), encoding="utf-8")
     with pytest.raises(history.HistoryError, match="'_note' → 'prose' is not a literal → node id"):
         history.read_aliases(reg)
 
@@ -279,7 +279,7 @@ def test_RED_an_edited_exchange_body_is_drift(tmp_path, monkeypatch):
     history.mint(repo, out, sessions=tmp_path / "sessions", code=[_code_shard(tmp_path)])
     assert history.verify(out, repo=repo)[0]
     f = tmp_path / "sessions" / "00001__x__aaaa1111.md"
-    f.write_text(f.read_text() + "\n--- [3] USER\n\ngraphy.showcase._clone again\n")      # below the header: the same capture line
+    f.write_text(f.read_text(encoding="utf-8") + "\n--- [3] USER\n\ngraphy.showcase._clone again\n", encoding="utf-8")      # below the header: the same capture line
     fresh, why = history.verify(out, repo=repo)
     assert not fresh and "session capture or body" in why
 
@@ -302,7 +302,7 @@ def test_GREEN_verify_names_drift_in_inputs_git_does_not_track(tmp_path, monkeyp
     assert fresh and why.startswith("fresh:"), why
     (tmp_path / "sessions" / "00004__x__cccc3333.md").write_text(
         "# CONVERSATION FULL SESSION — 2 exchanges, verbatim and in order\n\nsession: cccc3333-0000-0000-0000-000000000003\n"
-        "captured_at: 2026-09-05T16:00:00+00:00\n")
+        "captured_at: 2026-09-05T16:00:00+00:00\n", encoding="utf-8")
     fresh, why = history.verify(out, repo=repo)
     assert not fresh and "stale" in why and "re-mint" in why
     proc = subprocess.run([sys.executable, "-m", "graphy", "history", "--repo", str(repo), "--out", str(out), "--verify"],
@@ -318,7 +318,7 @@ def test_RED_two_code_shards_naming_one_file_refuse(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     for d, mid in ((a, "x://module/x"), (b, "y://module/y")):
         d.mkdir()
-        (d / "nodes.json").write_text(json.dumps({mid: {"kind": "node", "node_type": "module", "id": mid, "file": "p/m.py"}}))
+        (d / "nodes.json").write_text(json.dumps({mid: {"kind": "node", "node_type": "module", "id": mid, "file": "p/m.py"}}), encoding="utf-8")
     with pytest.raises(history.HistoryError, match="disagree on 'p/m.py'"):
         history.code_index([a, b])
 
@@ -334,18 +334,18 @@ def test_GREEN_a_names_shard_binds_a_mention_and_never_a_touch_even_where_its_fi
         "dep://module/dep.index": {"kind": "node", "node_type": "module", "id": "dep://module/dep.index", "dotted": "dep.index",
                                    "file": "graphy/showcase.py"},     # the root's own file, the way src/index.ts collides
         "dep://func/dep.zod.parse": {"kind": "node", "node_type": "func", "id": "dep://func/dep.zod.parse", "dotted": "dep.zod.parse",
-                                     "file": "graphy/showcase.py", "line": 1}}))
-    (dep / "edges.json").write_text("[]")
+                                     "file": "graphy/showcase.py", "line": 1}}), encoding="utf-8")
+    (dep / "edges.json").write_text("[]", encoding="utf-8")
     (tmp_path / "sessions" / "00004__x__cccc3333.md").write_text(
         "# CONVERSATION FULL SESSION — 1 exchanges, verbatim and in order\n\nsession: cccc3333-0000-0000-0000-000000000003\n"
-        "captured_at: 2026-09-05T16:00:00+00:00\n\n--- [1] USER\n\nwhy does zod.parse throw\n")
+        "captured_at: 2026-09-05T16:00:00+00:00\n\n--- [1] USER\n\nwhy does zod.parse throw\n", encoding="utf-8")
     code = _code_shard(tmp_path)
     monkeypatch.chdir(tmp_path)
     with pytest.raises(history.HistoryError, match="disagree on 'graphy/showcase.py'"):
         history.mint(repo, tmp_path / "refused", sessions=tmp_path / "sessions", code=[code, dep])
     out = tmp_path / "history_graph"
     prov = history.mint(repo, out, sessions=tmp_path / "sessions", code=[code], names=[dep])
-    edges = json.loads((out / "edges.json").read_text())
+    edges = json.loads((out / "edges.json").read_text(encoding="utf-8"))
     assert ("history://exchange/cccc3333-0000-0000-0000-000000000003/1/user", "dep://func/dep.zod.parse") in _mentions(edges)
     touched = {e["dst"] for e in edges if e["edge_type"] == "touches"}
     assert touched and all(d.startswith(("graphy://", "tests://")) for d in touched), touched
@@ -397,12 +397,27 @@ def test_GREEN_the_verb_mints_this_repo_onto_the_tenants_own_code_shards(tmp_pat
     assert proc.stdout.splitlines()[-1].startswith("HISTORY OK: ")
     own = set()
     for s in shards:
-        own |= set(json.loads((s / "nodes.json").read_text()))
-    edges = json.loads((tmp_path / "h" / "edges.json").read_text())
+        own |= set(json.loads((s / "nodes.json").read_text(encoding="utf-8")))
+    edges = json.loads((tmp_path / "h" / "edges.json").read_text(encoding="utf-8"))
     dsts = {e["dst"] for e in edges if e["edge_type"] == "touches"}
     assert dsts and dsts <= own, sorted(dsts - own)[:5]
     mentioned = {e["dst"] for e in edges if e["edge_type"] == "mentions"}
     assert mentioned <= own, sorted(mentioned - own)[:5]
+
+
+def test_RED_git_output_is_decoded_utf8_whatever_the_console_locale(tmp_path):
+    """graphyos #125: git writes utf-8 and the adapter read it under the console's locale, so on a cp1252
+    host `RECON §1` in a commit body and `café.py` in its file list were mojibake — the section the commit
+    records and the module it touches were lost, silently. The adapter decodes utf-8 on every host: proven
+    in a subprocess whose locale is plain C, coercion and UTF-8 mode off, the harshest console there is."""
+    repo = _repo(tmp_path)
+    code = ("from pathlib import Path\nfrom graphy.adapters import history\n"
+            f"c = history.read_commits(Path({str(repo)!r}))\n"
+            "print('RECON \\u00a71' in c[0]['body'], 'engine/graphy/caf\\u00e9.py' in c[0]['files'])\n")
+    env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONCOERCECLOCALE": "0", "PYTHONUTF8": "0"}
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, encoding="utf-8", env=env)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "True True", (proc.stdout, proc.stderr)
 
 
 def test_RED_an_archive_whose_headers_all_miss_names_what_it_skipped(tmp_path):
@@ -414,7 +429,7 @@ def test_RED_an_archive_whose_headers_all_miss_names_what_it_skipped(tmp_path):
     miss.mkdir()
     for i in range(3):
         (miss / f"0000{i}.md").write_text(f"# CONVERSATION FULL SESSION — 1 exchanges\n\nsession: aaaa111{i}-0000 · pane %99\n"
-                                         f"captured_by: SessionEnd\n\n--- [1] USER\n\nhi\n")
+                                         f"captured_by: SessionEnd\n\n--- [1] USER\n\nhi\n", encoding="utf-8")
     prov = history.mint(repo, tmp_path / "h", sessions=miss)
     h = prov["history"]
     assert (h["sessions"], h["session_files"], h["session_headers"], h["session_captured"]) == (0, 3, 3, 0)
@@ -422,7 +437,7 @@ def test_RED_an_archive_whose_headers_all_miss_names_what_it_skipped(tmp_path):
     assert lines[0].startswith("HISTORY: 3 file(s) · 3 with a session header · 0 with captured_at — 3 skipped"), lines
     assert lines[-1].startswith("HISTORY OK: ") and " 0 session(s) " in lines[-1]
     census: dict = {}
-    (miss / "00000.md").write_text("session: aaaa1110-0000 · pane %99 (ledger-attributed)\ncaptured_at: 2026-09-05T11:00:00+00:00\n")
+    (miss / "00000.md").write_text("session: aaaa1110-0000 · pane %99 (ledger-attributed)\ncaptured_at: 2026-09-05T11:00:00+00:00\n", encoding="utf-8")
     assert [s["id"] for s in history.read_sessions(miss, census)] == ["aaaa1110-0000"]
     assert census == {"files": 3, "header": 3, "captured": 1, "read": 1}
     full = history.mint(repo, tmp_path / "h2", sessions=tmp_path / "sessions")

@@ -1360,6 +1360,50 @@ def check_import_time_glyph(repo: Path) -> list[Finding]:
     return found
 
 
+def _splice_of(node: ast.AST) -> str | None:
+    """How a piece of text was built by splicing a value in, when it was: an f-string, a `%` format,
+    `.format()` or `.replace()`, or the shell installer's text filler `_fill()`."""
+    if isinstance(node, ast.JoinedStr):
+        return "an f-string"
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        return "a % format"
+    if isinstance(node, ast.Call):
+        f = node.func
+        if isinstance(f, ast.Attribute) and f.attr in ("format", "replace"):
+            return f"`.{f.attr}()`"
+        if isinstance(f, ast.Name) and f.id == "_fill":
+            return "`_fill()`"
+    return None
+
+
+def check_json_template_spliced(repo: Path) -> list[Finding]:
+    """json-template-spliced: a `json.loads(...)` over text a value was just spliced into — an f-string, `%`,
+    `.format()`, `.replace()`, or `_fill()` (the shell installer's text filler) — is JSON nothing escaped the
+    value into: a Windows interpreter path (`C:\\venv`) or a quote in it writes a file the harness cannot parse
+    (`Invalid \\escape: line 8 column 29`, the wiring `shell install` wrote on windows-latest, graphyos #125).
+    A template filled into JSON goes through a filler that `json.dumps` each value (`shell.install._fill_json`)."""
+    root = repo / "engine" / "graphy"
+    files = sorted(root.rglob("*.py")) if root.is_dir() else []
+    if not files:
+        raise CheckError("json-template-spliced found ZERO modules under engine/graphy — the scan is broken")
+    found: list[Finding] = []
+    loads = 0
+    for p in files:
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        for n in ast.walk(tree):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "loads"
+                    and isinstance(n.func.value, ast.Name) and n.func.value.id == "json" and n.args):
+                continue
+            loads += 1
+            how = _splice_of(n.args[0])
+            if how:
+                found.append(Finding("json-template-spliced", f"{_rel(repo, p)}:{n.lineno}",
+                                     f"json.loads over text built by {how} — a value spliced raw into JSON; escape each "
+                                     f"one with json.dumps (a filler like shell.install._fill_json), never splice it"))
+    NOTES["json-template-spliced"] = f"{len(files)} module(s), {loads} json.loads call(s)"
+    return found
+
+
 def check_specimen_corpus(repo: Path) -> list[Finding]:
     """specimen-corpus: every line of `review_specimens/<door>.tsv` replayed against its door, the exit code it must
     give. A review round's blocker lands as a line here — the battery compounds without a new check per round: #91's
@@ -1444,6 +1488,7 @@ CHECKS = {
     "generation-identity": check_generation_identity,
     "host-interpreter": check_host_interpreter,
     "import-time-glyph": check_import_time_glyph,
+    "json-template-spliced": check_json_template_spliced,
     "specimen-corpus": check_specimen_corpus,
 }
 
@@ -1595,6 +1640,18 @@ def fixtures() -> dict[str, tuple[dict[str, str], dict[str, str]]]:
                                     "print('ascii only at import')\nlogger.info('%s', 'plain')\n"
                                     "class K:\n    def m(self):\n        print('→ built')\n"
                                     "X = lambda: print('· lazy')\n"}),
+        "json-template-spliced": (
+            # red: the specimen (`json.loads(_fill(template, values))`) · a `.replace()` splice · a `%` format · an f-string — four
+            {"engine/graphy/w.py": "import json\ndef _fill(t, values):\n    for k, v in values.items():\n        t = t.replace('{{' + k + '}}', str(v))\n"
+                                   "    return t\ndef a(t, values):\n    return json.loads(_fill(t, values))\n"
+                                   "def b(t, v):\n    return json.loads(t.replace('{{x}}', v))\n"
+                                   "def c(v):\n    return json.loads('{\"a\": \"%s\"}' % v)\n"
+                                   "def d(v):\n    return json.loads(f'{{\"a\": \"{v}\"}}')\n"},
+            {"engine/graphy/w.py": "import json\ndef _fill_json(t, values):\n    for k, v in values.items():\n"
+                                   "        t = t.replace('{{' + k + '}}', json.dumps(str(v))[1:-1])\n    return t\n"
+                                   "def a(t, values):\n    return json.loads(_fill_json(t, values))\n"
+                                   "def e(p):\n    return json.loads(p.read_text(encoding='utf-8'))\n"
+                                   "def f(v):\n    return json.dumps({'a': v})\n"}),
         "specimen-corpus": (
             # red: a clean post the corpus wrongly says refuses · a malformed line · a line saying 0 that bash shows posting the marker
             {"scrub.py": (HERE / "scrub.py").read_text(encoding="utf-8"),

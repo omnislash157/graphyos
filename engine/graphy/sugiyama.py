@@ -1296,15 +1296,28 @@ def emit_html(lo: Layout, *, title: str = "", orient: str = "TB", interactive: b
     return "\n".join(out) + "\n"
 
 
+_OS_SPELLED = re.compile(r"(?<![\w/])[A-Za-z]:\\[^\s\"'<>&,;]*|(?<![\\\w])(?:\.{1,2}|[\w.-]+)(?:\\[\w.-]+){1,}\\?[\w.-]*\.(?:py|pyi|ts|tsx|js|mjs|cjs|json|md|html|svg|txt|sh|toml)\b")
+
+
+def os_spelled_paths(text: str) -> list[str]:
+    """Every path spelled the OS way in an emitted text: a drive-lettered `C:\\…` or a backslash
+    file path (`graphy\\cli.py`). An emitted page or receipt spells its paths POSIX on every host
+    (graphyos #125); this is the output property, so a new f-string over a Path is caught on the
+    page it reaches, never by inference over the code that wrote it."""
+    return sorted({m.group(0) for m in _OS_SPELLED.finditer(text)})
+
+
 def check_artifact(path) -> list[str]:
     """The done-token over a written page: one svg with a viewBox, both themes present, no
     external resource at all, script only when interactive, no two node cards overlapping, no two
-    labels colliding. Returns the reasons it is red; empty means green."""
+    labels colliding, no path spelled the OS way. Returns the reasons it is red; empty means green."""
     try:
         html = open(path, encoding="utf-8", errors="replace").read()
     except OSError as exc:
         return [f"cannot read artifact: {exc}"]
     red: list[str] = []
+    for p in os_spelled_paths(html):
+        red.append(f"path spelled the OS way: {p!r} — an emitted page spells POSIX (as_posix) on every host")
     svgs = re.findall(r"<svg\b", html)
     if len(svgs) != 1:
         red.append(f"expected exactly one <svg, found {len(svgs)}")

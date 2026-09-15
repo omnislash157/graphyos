@@ -809,8 +809,8 @@ def mcp_args(desc: Path, package: str) -> list[str]:
     explicit --tenant/--tenant-id pair."""
     desc = Path(desc)
     if desc.name == "tenant.json" and desc.parent.name == EAT_HOME:
-        return ["mcp", "--repo", str(desc.parent.parent)]
-    return ["mcp", "--tenant", str(desc), "--tenant-id", package]
+        return ["mcp", "--repo", desc.parent.parent.as_posix()]
+    return ["mcp", "--tenant", desc.as_posix(), "--tenant-id", package]   # the page's MCP block carries it: POSIX (graphyos #125)
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
@@ -1815,12 +1815,13 @@ def _cmd_eat(args: argparse.Namespace) -> int:
 
 def _eat_again(args: argparse.Namespace, repo: Path, package: str) -> str:
     """This eat as a command to re-run: the package and the ring the user named, so the advice a
-    refusal prints does not fall back into the several-packages refusal (graphyos #84)."""
-    argv = ["graphy", "eat", shlex.quote(str(repo))]
+    refusal prints does not fall back into the several-packages refusal (graphyos #84). Paths are spelled
+    POSIX, which every shell here accepts, so a Windows path is never single-quoted for its separators (graphyos #125)."""
+    argv = ["graphy", "eat", shlex.quote(Path(repo).as_posix())]
     if args.package:
         argv += ["--package", shlex.quote(package)]
     if getattr(args, "_site_packages_given", None):
-        argv += ["--site-packages", shlex.quote(str(Path(args._site_packages_given).expanduser().resolve()))]
+        argv += ["--site-packages", shlex.quote(Path(args._site_packages_given).expanduser().resolve().as_posix())]
     elif getattr(args, "no_provision", False):
         argv.append("--no-provision")
     return " ".join(argv)
@@ -2148,12 +2149,14 @@ def _walk_target(sub: Path, package: str, deps: list[str]) -> str:
 def _graphy_command() -> list[str]:
     """How this box runs the graphy that is running now: the console script beside this
     interpreter, else this interpreter with -m. Never PATH — `which graphy` can name another venv
-    whose engine did not build the store it would be pointed at (graphyos #82)."""
+    whose engine did not build the store it would be pointed at (graphyos #82). Spelled POSIX: the
+    page's commands and the MCP block carry it beside `--tenant` paths spelled the same way, and
+    CreateProcess accepts `C:/venv/Scripts/graphy.exe` (graphyos #125)."""
     here = Path(sys.executable).parent
     for name in ("graphy", "graphy.exe"):
         if (here / name).is_file():
-            return [str(here / name)]
-    return [sys.executable, "-m", "graphy"]
+            return [(here / name).as_posix()]
+    return [Path(sys.executable).as_posix(), "-m", "graphy"]
 
 
 def mcp_config(cmd: list[str], desc: Path, package: str) -> dict:
@@ -2182,8 +2185,8 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
     cmd = _graphy_command()
     mcp = json.dumps(mcp_config(cmd, desc, package), indent=2)
     g = " ".join(cmd)
-    tenant = f"--tenant {desc} --tenant-id {package}"
-    repo_flag = str(repo) if repo is not None else str(home.parent)
+    tenant = f"--tenant {desc.as_posix()} --tenant-id {package}"
+    repo_flag = (repo if repo is not None else home.parent).as_posix()
     return "\n".join([
         "",
         "  ADD YOUR MODEL — paste this into the repo's .mcp.json (Claude Code) or your client's MCP settings; the model is yours, the walk is graphy's.",
@@ -2193,9 +2196,9 @@ def _next_steps(desc: Path, package: str, seed: str, target: str, home: Path,
         "",
         "  SEE IT",
         f"    {g} harness --repo {repo_flag} {tenant} --corpus {package}   # the hub: GRAPH.md, arms, drawings, walk receipts",
-        f"    {g} pillars {tenant} --write {home / 'partition.json'}        # the arms the walk proposes",
-        f"    {g} draw {tenant} --pillars --partition {home / 'partition.json'} --lr",
-        f"    {g} draw {tenant} --corpus {package} --lr --min-weight 2 --emit html --interactive -o {home / 'map.html'}",
+        f"    {g} pillars {tenant} --write {(home / 'partition.json').as_posix()}        # the arms the walk proposes",
+        f"    {g} draw {tenant} --pillars --partition {(home / 'partition.json').as_posix()} --lr",
+        f"    {g} draw {tenant} --corpus {package} --lr --min-weight 2 --emit html --interactive -o {(home / 'map.html').as_posix()}",
         "  ASK IT",
         f"    {g} recon {tenant}                   # ← START HERE: the whole codebase's shape, one file",
         f"    {g} blast <symbol> {tenant}          # if this changes, what breaks",
@@ -2383,8 +2386,9 @@ def _cmd_shell(args: argparse.Namespace) -> int:
         print(f"SHELL REFUSED: {exc}", file=sys.stderr)
         return 2
     for w in info["written"]:
-        print(f"  wrote {w}")
-    print(f"SHELL OK: hooks for tenant {info['tenant_id']} under {info['repo']} run on {info['python']}"
+        print(f"  wrote {Path(w).as_posix()}")
+    print(f"SHELL OK: hooks for tenant {info['tenant_id']} under {Path(info['repo']).as_posix()} run on "
+          f"{Path(info['python']).as_posix()}"
           f" · {info['memory_taps']} memory tap(s) in GRAPHY.md · history shard {info['history']}")
     for h, note in info["harness"].items():
         print(f"  harness {h}: {note}")

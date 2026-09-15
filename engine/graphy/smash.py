@@ -506,7 +506,8 @@ def _import_schemes(edges: list) -> set[str]:
 def portable(path: Path) -> str:
     """A path as a shard records it: relative to the directory the mint ran from when it lies
     under that directory or its parent (the repo and its siblings), absolute otherwise. A shard
-    is tracked and travels; the box it was minted on does not."""
+    is tracked and travels; the box it was minted on does not. Spelled POSIX on every host: a receipt
+    minted on Windows reads `engine/graphy`, never `engine\\graphy` (graphyos #125)."""
     path = Path(path).resolve()
     cwd = Path.cwd().resolve()
     for base in (cwd, cwd.parent):
@@ -514,8 +515,8 @@ def portable(path: Path) -> str:
             path.relative_to(base)
         except ValueError:
             continue
-        return os.path.relpath(path, cwd)
-    return str(path)
+        return Path(os.path.relpath(path, cwd)).as_posix()
+    return path.as_posix()
 
 
 def mint_command_for(package: str, site_packages: Path, out: Path, *, corpus: Path | None,

@@ -79,7 +79,7 @@ def scan_hosts(root: Path, rules: dict) -> tuple[list[str], int]:
             for host in _HOST.findall(line):
                 n += 1
                 if host not in allowed:
-                    red.append(f"{f.relative_to(root.parent)}:{i}: host {host} is not in burden.json")
+                    red.append(f"{f.relative_to(root.parent).as_posix()}:{i}: host {host} is not in burden.json")
     return red, n
 
 
@@ -166,13 +166,13 @@ def scan_subprocess(root: Path, rules: dict) -> tuple[list[str], int]:
         try:
             modules[f] = ast.parse(f.read_text(encoding="utf-8", errors="replace"))
         except SyntaxError as exc:
-            red.append(f"{f}: unparseable ({exc})")
+            red.append(f"{f.relative_to(root.parent).as_posix()}: unparseable ({exc})")
 
     def check_head(f: Path, lineno: int, head: str) -> None:
         token = _ALIASES.get(head, head)
         if token in allowed or head.lower().startswith("rg") and "rg" in allowed:
             return
-        red.append(f"{f.relative_to(root.parent)}:{lineno}: subprocess target {head!r} is not in burden.json")
+        red.append(f"{f.relative_to(root.parent).as_posix()}:{lineno}: subprocess target {head!r} is not in burden.json")
 
     # pass 1: direct calls, local lists, and the runners
     for f, tree in modules.items():
@@ -191,7 +191,7 @@ def scan_subprocess(root: Path, rules: dict) -> tuple[list[str], int]:
                     continue
                 n += 1
                 if _is_shell(node):
-                    red.append(f"{f.relative_to(root.parent)}:{node.lineno}: a shell over a string "
+                    red.append(f"{f.relative_to(root.parent).as_posix()}:{node.lineno}: a shell over a string "
                                f"({_shell_spelling(node)}) — the engine runs argv only, never shell=True")
                     continue
                 if not node.args:
