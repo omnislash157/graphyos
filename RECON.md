@@ -6695,3 +6695,14 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | check | result |
 |---|---|
 | the cut | `bash release.sh \| tail -3` → `RELEASE OK: graphyos 0.2.7 built and checked in dist/; CHANGELOG.md regenerated` |
+
+## 161 · THE CODEBASE AS A GALAXY — the drawings were correct and did not travel: every box one grey, no color, wires in parallel rails; `graphy draw --emit 3d --partition … -o page.html` and every `showcase` (`galaxy.html` beside `index.html`, linked from its eyebrow) now emit the store's hierarchy as a 3D scene — each arm a glowing cluster on a ring at its sugiyama layer's height, a node sized by its fan-in over the DEPENDS family, each arm's crown (fan-in × fan-out, so an error class every lane raises never wins) labeled, particles on every edge that crosses arms, bloom, a fly-in and a slow orbit, click to focus a node, the legend to isolate an arm (2026-09-15 · operator ruling)
+
+- the page loads 3d-force-graph 1.80.0 and three 0.183.0's UnrealBloomPass from jsdelivr, pinned by version: the one page the engine emits that fetches, since the wheel cannot carry a WebGL engine. `burden.json` names `cdn.jsdelivr.net` and moves the wheel cap from 400,000 to 420,000 bytes for `scene.py`. Every other page still fetches nothing.
+- no model places a node: the positions are a force layout seeded by the partition and the layers; the colors, sizes, crowns and particles are functions of the store.
+
+| check | result |
+|---|---|
+| production | `graphy showcase https://github.com/pallets/flask` from a fresh clone: `SHOWCASE OK … the 3D: …/galaxy.html` — 410 symbols, 4 arms, 94 edges across them, crowned `flask.app` · `sansio.app` · `globals`; rendered in headless Chrome over SwiftShader |
+| two tenants | graphy (1,212 symbols, 7 arms: `cli` · `sugiyama.layout` · `doors._door` · `smash.smash` · `federated_store.open_for` crowned) and fastapi (507 symbols, 5 arms) |
+| the battery | `REVIEW OK` · `GRAPHY_STANDALONE_OK` |

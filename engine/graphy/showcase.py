@@ -27,7 +27,7 @@ from graphy import sugiyama as S
 
 __all__ = ["ShowcaseError", "clone_dir", "compose", "fence_safe", "repo_of", "showcase", "PAGE", "TEXT"]
 
-PAGE, TEXT = "index.html", "showcase.txt"
+PAGE, TEXT, GALAXY = "index.html", "showcase.txt", "galaxy.html"
 
 
 class ShowcaseError(RuntimeError):
@@ -113,7 +113,7 @@ def compose(store, *, package: str, desc: Path, home: Path, proposal, cut, ring:
          '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
          f"  <title>{_esc(package)} · graphy showcase</title>", "<style>", S._TOKEN_CSS, S._HTML_CSS, css_extra, "</style>",
          "</head>", "<body>", '<div class="frame">',
-         '  <p class="eyebrow">DRAWN BY GRAPHY · ONE COMMAND · NO MODEL</p>',
+         '  <p class="eyebrow">DRAWN BY GRAPHY · ONE COMMAND · NO MODEL · <a href="galaxy.html">SEE IT IN 3D →</a></p>',
          f"  <h1>{_esc(package)}</h1>",
          f'  <p class="lede">{_esc(origin)} — every edge below is structural, a wormhole between packages, or a label resolved '
          'through the code\'s own scope. Click a module to light what reaches it and what it reaches; Esc clears.</p>',
@@ -289,9 +289,12 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / PAGE).write_text(html, encoding="utf-8")
         (out_dir / TEXT).write_text(text, encoding="utf-8")
+        from graphy import scene as scene_lane           # the 3D galaxy beside the page: the one drawing that fetches (three.js)
+        (out_dir / GALAXY).write_text(scene_lane.emit_page(scene_lane.scene(store, package, cut), generation=store.generation()),
+                                      encoding="utf-8", newline="\n")
         red = S.check_artifact(out_dir / PAGE)
         # showcase.txt is a receipt too: the same output property the page holds (graphyos #125)
         red += [f"{TEXT}: path spelled the OS way: {p!r}" for p in S.os_spelled_paths(text)]
-        return {"repo": repo.as_posix(), "package": package, "page": (out_dir / PAGE).as_posix(), "text": (out_dir / TEXT).as_posix(),
+        return {"repo": repo.as_posix(), "package": package, "page": (out_dir / PAGE).as_posix(), "text": (out_dir / TEXT).as_posix(), "galaxy": (out_dir / GALAXY).as_posix(),
                 "arms": list(proposal.arms), "ring": len(ring.get("minted", {})) - 1, "check": red,
                 "seconds": round(time.perf_counter() - t0, 1)}

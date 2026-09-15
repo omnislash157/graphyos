@@ -505,6 +505,17 @@ def _cmd_draw(args: argparse.Namespace) -> int:
                 r = draw_lane.atlas(counted, corpus, cut, args.atlas, lr=args.lr, min_weight=args.min_weight)
                 print(f"ATLAS OK: {len(r['pictures'])} picture(s) × ascii+html -> {args.atlas} (generation {r['generation']})")
                 return 0
+            if args.emit == "3d":
+                if not args.partition or not args.out:
+                    print("DRAW REFUSED: --emit 3d needs --partition (the arms are its clusters) and -o <page.html>",
+                          file=sys.stderr)
+                    return 2
+                from graphy import scene as scene_lane
+                sc = scene_lane.scene(counted, corpus, fanout.load_partition(args.partition))
+                Path(args.out).write_text(scene_lane.emit_page(sc, generation=store.generation()), encoding="utf-8", newline="\n")
+                print(f"DRAW OK: {sc['counts']['shown']} symbol(s) · {len(sc['arms'])} arm(s) · {sc['counts']['links']} edge(s), "
+                      f"{sc['counts']['cross']} across the arms -> {args.out} (three.js from jsdelivr)")
+                return 0
             if args.symbol:
                 seed = doors.resolve(counted, args.symbol)
                 pic = draw_lane.neighbourhood(counted, seed, radius=args.radius, max_nodes=args.max_nodes)
@@ -557,7 +568,7 @@ def _cmd_showcase(args: argparse.Namespace) -> int:
         print(f"SHOWCASE RED: the page failed its check — {'; '.join(r['check'])} ({r['page']})", file=sys.stderr)
         return 1
     print(f"SHOWCASE OK: {r['package']} · {len(r['arms'])} arm(s) ({', '.join(r['arms'])}) · {r['ring']} ring shard(s) · "
-          f"CHECK GREEN · {r['seconds']}s\n  the page:  {r['page']}\n  the text:  {r['text']}")
+          f"CHECK GREEN · {r['seconds']}s\n  the page:  {r['page']}\n  the text:  {r['text']}\n  the 3D:    {r['galaxy']}")
     return 0
 
 
@@ -2902,7 +2913,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_draw.add_argument("--max-nodes", type=int, default=60, help="the neighbourhood's node budget (default 60)")
     p_draw.add_argument("--atlas", default=None, metavar="DIR", help="one drawing per arm plus the unit map, ascii and html, with a receipt")
     p_draw.add_argument("--lr", action="store_true", help="left-to-right flow (trees and wide fans read better)")
-    p_draw.add_argument("--emit", choices=("ascii", "html", "svg", "json"), default="ascii",
+    p_draw.add_argument("--emit", choices=("ascii", "html", "svg", "json", "3d"), default="ascii",
                         help="svg: one standalone .svg file, both themes inlined, no script — for a README")
     p_draw.add_argument("--interactive", action="store_true", help="html: click-focus reachability, zoom and pan")
     p_draw.add_argument("--color", action="store_true", help="ascii to a terminal: ANSI color")
