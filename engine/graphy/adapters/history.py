@@ -610,10 +610,12 @@ def mint(repo: str | Path, out: str | Path, *, sessions: str | Path | None = Non
     return prov
 
 
-def verify(shard: str | Path, *, repo: str | Path, sessions: str | Path | None = None) -> tuple[bool, str]:
-    """Is the shard at ``shard`` minted from these inputs as they stand now? The PROVENANCE's digest against
-    the live one — the door for inputs git never tracks (the archive, the receipts), which the tenant's
-    cursor cannot see (graphyos #59). (fresh, reason)."""
+def inputs_of(shard: str | Path, *, repo: str | Path, sessions: str | Path | None = None) -> dict:
+    """The inputs a history shard's PROVENANCE names, found again on this box: ``sessions`` · ``code`` ·
+    ``names`` · ``aliases`` as live paths (a portable path is looked for under the repo, the shard's home,
+    then the cwd) and ``recon`` as the receipt spelled it. One resolution for `verify` and for the re-mint
+    (graphyos #132): the shard is minted again from exactly what it was minted from, as it stands now —
+    never from a guess about the tenant."""
     from graphy import smash as smash_lane
     shard = Path(shard).resolve()
     try:
@@ -635,10 +637,37 @@ def verify(shard: str | Path, *, repo: str | Path, sessions: str | Path | None =
     sess_dir = Path(sessions).resolve() if sessions else None
     if sess_dir is None and corpus.get("sessions"):
         sess_dir = _place(corpus["sessions"], "sessions")
-    code = [_place(c, "code shard") for c in corpus.get("code") or []]
-    names = [_place(c, "names shard") for c in corpus.get("names") or []]
-    alias_path = _place(corpus["aliases"], "aliases registry") if corpus.get("aliases") else None
-    *_, digest = _inputs(repo, sess_dir, corpus.get("recon") or "RECON.md", code, alias_path, names=names)
+    return {"sessions": sess_dir,
+            "code": [_place(c, "code shard") for c in corpus.get("code") or []],
+            "names": [_place(c, "names shard") for c in corpus.get("names") or []],
+            "aliases": _place(corpus["aliases"], "aliases registry") if corpus.get("aliases") else None,
+            "recon": corpus.get("recon") or "RECON.md",
+            "sha256": corpus.get("sha256")}
+
+
+def remint(shard: str | Path, *, repo: str | Path, out: str | Path, sessions: str | Path | None = None,
+           relocate=None) -> dict:
+    """The shard at ``shard`` minted again into ``out`` from the inputs its own PROVENANCE names, as they
+    stand now (graphyos #132). ``out`` is another directory by design — a staged generation — so the served
+    shard is never written in place. ``relocate`` maps each shard input (a code or names shard, the aliases
+    registry) to where the caller carried it: a receipt that names the served generation's shards is re-pointed
+    into the next one, so the new receipt never names the generation the landing keeps for readers — that one
+    is discarded by the landing after, and a receipt naming it would be unplaceable on the third re-mint
+    (review round 1). Returns the new PROVENANCE."""
+    inputs = inputs_of(shard, repo=repo, sessions=sessions)
+    move = relocate or (lambda p: p)
+    return mint(repo, out, sessions=inputs["sessions"], recon=inputs["recon"], code=[move(c) for c in inputs["code"]],
+                aliases=move(inputs["aliases"]) if inputs["aliases"] else None, names=[move(n) for n in inputs["names"]])
+
+
+def verify(shard: str | Path, *, repo: str | Path, sessions: str | Path | None = None) -> tuple[bool, str]:
+    """Is the shard at ``shard`` minted from these inputs as they stand now? The PROVENANCE's digest against
+    the live one — the door for inputs git never tracks (the archive, the receipts), which the tenant's
+    cursor cannot see (graphyos #59). (fresh, reason)."""
+    inputs = inputs_of(shard, repo=repo, sessions=sessions)
+    *_, digest = _inputs(Path(repo).resolve(), inputs["sessions"], inputs["recon"], inputs["code"],
+                         inputs["aliases"], names=inputs["names"])
+    corpus = {"sha256": inputs["sha256"]}
     if digest == corpus.get("sha256"):
         return True, f"fresh: the inputs digest {digest[:16]} is the shard's"
     return False, (f"stale: the inputs digest {digest[:16]} is not the shard's {str(corpus.get('sha256'))[:16]} — "

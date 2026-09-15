@@ -1005,7 +1005,7 @@ def test_RED_check_names_a_grown_archive_the_cursor_cannot_see_and_install_re_mi
     err = capsys.readouterr().err
     assert "CHECK RED: history lane: STALE — the inputs digest" in err and "cursor lane" not in err
     info = shell_install.install(repo, python=sys.executable, log=lambda *_: None)
-    assert info["history"] == "re-minted, store recompiled"
+    assert info["history"].startswith("re-minted, store recompiled"), info["history"]
     capsys.readouterr()
     assert cli.main(["history", "--symbol", "solo.b.f", "--tenant", desc, "--tenant-id", "solo"]) == 0
     assert "TIMELINE: 2 session(s)" in capsys.readouterr().out
@@ -1105,16 +1105,136 @@ def test_GREEN_a_re_eat_of_the_same_package_prunes_nothing_and_never_refuses(tmp
     assert _lanes(repo) == ["history_graph", "pkg_a_graph"]
 
 
-def test_GREEN_check_recommends_the_lane_safe_verb_before_the_one_that_prunes(tmp_path):
-    """`check`'s stale-history remediation led with `graphy eat .`, which on a multi-lane tenant is
-    the command that deletes the other lanes — the audit recommending the data loss (graphyos #70).
-    The safe verb goes first and the caveat on the other is explicit."""
-    src = Path(cli.__file__).read_text(encoding="utf-8")
-    start = src.index("re-mint it: `graphy shell install")
-    remediation = src[start:src.index('"))', start)]
-    assert remediation.index("shell install") < remediation.index("graphy eat ."), remediation
-    assert "touches no other lane" in remediation
-    assert "lanes ARE its ring" in remediation        # the caveat, not a bare alternative
+def test_GREEN_check_names_the_history_remint_and_never_eat_or_shell_install(tmp_path, capsys):
+    """`check`'s stale-history remedy led with `graphy eat .`, which on a multi-lane tenant deletes the
+    other lanes (graphyos #70), then with `graphy shell install`, which rewrites the hook wiring a house
+    owns — the audit recommending the two commands that damage the first client's tenant (graphyos #132).
+    It names `graphy history --remint` with the real descriptor and neither of those, on any tenant; the
+    verb turns the lane green and the timeline reaches the captured session."""
+    import re
+    repo = _solo_git_repo(tmp_path)
+    sessions = repo / ".claude" / "recovery" / "sessions"
+    _session_file(sessions, 1, "--- [1] USER\n\nfix solo.b.f please\n\n--- [1] ASSISTANT\n\nok\n")
+    desc = repo / ".graphy" / "tenant.json"
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    capsys.readouterr()
+    _session_file(sessions, 2, "--- [1] USER\n\nagain solo.b.f\n\n--- [1] ASSISTANT\n\nok\n")
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "solo"]) == 1
+    err = capsys.readouterr().err
+    assert "CHECK RED: history lane: STALE" in err
+    assert re.search(r"\beat\b", err) is None and "shell install" not in err, err
+    assert f"re-mint it: `graphy history --remint --tenant {desc.as_posix()} --tenant-id solo`" in err
+    assert cli.main(["history", "--remint", "--tenant", str(desc), "--tenant-id", "solo"]) == 0
+    assert "HISTORY REMINT OK: history_graph re-minted" in capsys.readouterr().out
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "solo"]) == 0
+    capsys.readouterr()
+    assert cli.main(["history", "--symbol", "solo.b.f", "--tenant", str(desc), "--tenant-id", "solo"]) == 0
+    assert "TIMELINE: 2 session(s)" in capsys.readouterr().out
+
+
+def test_GREEN_remint_history_lands_a_generation(tmp_path, capsys, monkeypatch):
+    """graphyos #119: `shell install`'s re-mint wrote the history shard into the served data home and
+    rebuilt the store in place — a door opened mid-run read a torn `history_graph`. It runs `graphy history
+    --remint` now: the served data home is byte-identical through converge, build and the check that
+    precedes the landing, and the next generation lands in one descriptor rename with the old one kept."""
+    from graphy.shell import install as shell_install
+    repo = _solo_git_repo(tmp_path)
+    sessions = repo / ".claude" / "recovery" / "sessions"
+    _session_file(sessions, 1, "--- [1] USER\n\nfix solo.b.f please\n\n--- [1] ASSISTANT\n\nok\n")
+    desc = repo / ".graphy" / "tenant.json"
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    capsys.readouterr()
+    old = _served(repo)
+
+    def snapshot(home):
+        return {p.relative_to(home).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in sorted(home.rglob("*")) if p.is_file()}
+    _session_file(sessions, 2, "--- [1] USER\n\nagain solo.b.f\n\n--- [1] ASSISTANT\n\nok\n")
+    before = snapshot(old)
+    seen = []
+    real_main = cli.main
+
+    def main(argv):
+        if argv[0] in ("converge", "build"):
+            seen.append(argv[0])
+            assert _served(repo) == old and snapshot(old) == before, f"the served generation moved before {argv[0]}"
+            assert Path(argv[argv.index("--tenant") + 1]) != desc, "the step ran against the served descriptor"
+        return real_main(argv)
+    monkeypatch.setattr(cli, "main", main)
+    info = shell_install.install(repo, python=sys.executable, log=lambda *_: None)
+    monkeypatch.setattr(cli, "main", real_main)
+    assert info["history"].startswith("re-minted, store recompiled"), info["history"]
+    assert seen == ["converge", "build"], seen
+    new = _served(repo)
+    assert new != old and old.is_dir() and (new / "history_graph" / "PROVENANCE.json").is_file()
+    assert not (repo / ".graphy" / ".tenant.json.next").exists()
+    capsys.readouterr()
+    # the history lane is green; the install's own untracked wiring (GRAPHY.md · .claude/) moved the tree past the
+    # store, which is the cursor lane's finding and not the re-mint's — named, never absorbed
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "solo"]) == 1
+    err = capsys.readouterr().err
+    assert "history lane" not in err and "cursor lane: STALE" in err, err
+
+
+def test_GREEN_three_remints_in_a_row_each_name_the_served_generation_as_their_input(tmp_path, capsys):
+    """Review round 1 of graphyos #132: the re-mint placed the receipt's code shards at their old absolute
+    paths — the generation the landing keeps one back — and recorded them again, so the next landing
+    discarded the shard the receipt named, `check` read COULD-NOT-TELL and its remedy said re-eat, and the
+    third re-mint refused. Every re-mint re-points a receipt input that sits in the served generation into
+    the one it lands: three in a row, `check` green after each, the receipt's `code` under the served home,
+    exactly two generations on disk, and `check`'s COULD-NOT-TELL remedy never names `eat` either."""
+    import re
+    repo = _solo_git_repo(tmp_path)
+    sessions = repo / ".claude" / "recovery" / "sessions"
+    _session_file(sessions, 1, "--- [1] USER\n\nfix solo.b.f please\n\n--- [1] ASSISTANT\n\nok\n")
+    desc = repo / ".graphy" / "tenant.json"
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0
+    capsys.readouterr()
+    for n in (2, 3, 4):
+        _session_file(sessions, n, f"--- [1] USER\n\nround {n} solo.b.f\n\n--- [1] ASSISTANT\n\nok\n")
+        assert cli.main(["history", "--remint", "--tenant", str(desc), "--tenant-id", "solo"]) == 0, n
+        out = capsys.readouterr().out
+        assert "HISTORY REMINT OK" in out, out
+        served = _served(repo)
+        prov = json.loads((served / "history_graph" / "PROVENANCE.json").read_text(encoding="utf-8"))
+        code = [Path(c) if Path(c).is_absolute() else (Path.cwd() / c).resolve() for c in prov["corpus"]["code"]]
+        assert code == [served / "solo_graph"], (n, prov["corpus"]["code"])
+        assert sorted(p.name for p in (repo / ".graphy").iterdir() if ".gen-" in p.name).__len__() == 2
+        assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "solo"]) == 0
+        capsys.readouterr()
+    assert cli.main(["history", "--symbol", "solo.b.f", "--tenant", str(desc), "--tenant-id", "solo"]) == 0
+    assert "TIMELINE: 4 session(s)" in capsys.readouterr().out
+    # the receipt's input gone for real: COULD-NOT-TELL names it, and the remedy still never says eat
+    import shutil
+    shutil.rmtree(_served(repo) / "solo_graph")
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "solo"]) == 1
+    err = capsys.readouterr().err
+    assert "CHECK COULD-NOT-TELL: history lane:" in err and re.search(r"\beat\b", err) is None, err
+
+
+def test_RED_history_remint_refuses_without_a_history_lane_and_with_the_mint_flags(tmp_path, capsys):
+    """A tenant that declares no history lane has nothing to re-mint: refused by name, exit 2, nothing
+    staged; `--remint` with a mint flag or a timeline term refuses — the shard's own PROVENANCE names its
+    inputs, so a caller that adds one is asking for a different mint."""
+    repo = tmp_path / "repo"
+    (repo / "solo").mkdir(parents=True)
+    (repo / "solo" / "__init__.py").write_text("x = 1\n")
+    (repo / "pyproject.toml").write_text('[project]\nname = "solo"\nversion = "0"\n')
+    desc = repo / ".graphy" / "tenant.json"
+    assert cli.main(["eat", str(repo), "--no-provision"]) == 0          # not a checkout: no history lane
+    capsys.readouterr()
+    assert cli.main(["history", "--remint", "--tenant", str(desc), "--tenant-id", "solo"]) == 2
+    err = capsys.readouterr().err
+    assert "HISTORY REFUSED" in err and "declares no history_graph lane" in err
+    assert not [p for p in (repo / ".graphy").iterdir() if ".gen-" in p.name and p != _served(repo)]
+    assert cli.main(["history", "--remint", "--tenant", str(desc), "--tenant-id", "solo", "--repo", str(repo)]) == 2
+    assert "--remint takes --tenant and --tenant-id alone" in capsys.readouterr().err
+    assert cli.main(["history", "--remint", "--tenant", str(desc), "--tenant-id", "solo", "--sessions", str(repo)]) == 2
+    assert "added sessions" in capsys.readouterr().err                   # never silently minted from another archive
+    assert cli.main(["history", "--remint", "--tenant", "relative.json", "--tenant-id", "solo"]) == 2
+    assert "must be absolute" in capsys.readouterr().err
+    assert cli.main(["history", "--remint", "--tenant-id", "solo"]) == 2
+    assert "--remint needs --tenant" in capsys.readouterr().err
 
 
 def _bridge_tenant(tmp_path, *, resolved: bool, break_it: bool = False):

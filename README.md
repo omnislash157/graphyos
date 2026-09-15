@@ -32,8 +32,10 @@ Two commands. After that:
   code: its commits, and every exchange in the archive bound to the symbols it names. So `blast`
   lists the conversations that discussed a function beside its callers, and
   `graphy history --symbol <name>` walks from the symbol into every session that mentioned it,
-  oldest first, with the commits. `graphy check` names the shard stale when the archive grows;
-  `graphy shell install` re-mints it.
+  oldest first, with the commits. `graphy check` names the shard stale when the archive grows and
+  names the verb that re-mints it alone: `graphy history --remint --tenant <descriptor> --tenant-id <id>`
+  stages the next generation beside the served one, carries every other lane byte-for-byte, and lands
+  it in one descriptor rename — so a tenant with lanes `eat` never minted is never told to run `eat`.
 
 No summarizer. No embeddings. No model ever decides an edge or picks what mattered. The core is
 the Python standard library, ripgrep and three shell hooks, with zero runtime dependencies.

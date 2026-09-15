@@ -126,19 +126,21 @@ def remint_history(repo: Path, tid: str, *, log=print) -> str:
     """The history shard `eat` minted, minted again over the archive as it stands and the store
     recompiled behind it (graphyos #66) — the install is the moment the hooks start growing the
     archive, so the weld is current from the first session. A tenant with no history shard is named,
-    never minted here: `eat` decides whether the repo is a git checkout. Returns the one-word state."""
+    never minted here: `eat` decides whether the repo is a git checkout. The re-mint is `graphy history
+    --remint`: a staged generation landed in one descriptor rename, never the served one written in
+    place (graphyos #119, folded into #132). Returns the one-word state."""
     from graphy import cli
     from graphy import smash as smash_lane
     home = repo / ".graphy"
     sub = cli.served_data_home(home / "tenant.json")
     if sub is None or not (sub / f"{cli.HISTORY_SLUG}_graph" / smash_lane.PROVENANCE_NAME).is_file():
         return "none (`graphy eat .` mints it beside the code shard when the repo is a git checkout)"
-    if not cli.eat_history(repo, sub, home, tid, log=log):
-        return "skipped"
-    for step in (["converge", "--tenant", str(home / "tenant.json"), "--tenant-id", tid, "--resolve"],
-                 ["build", "--tenant", str(home / "tenant.json"), "--tenant-id", tid, "--container", "none"]):
-        if cli.main(step) != 0:
-            return f"re-minted, but the store did not recompile at {step[0]}"
+    rc = cli.main(["history", "--remint", "--tenant", str(home / "tenant.json"), "--tenant-id", tid])
+    if rc == 1:      # landed; the check that follows the landing named a lane (the cursor's, when the wiring just written is untracked)
+        return "re-minted, store recompiled; `graphy check` reads red — its lines above name the lane"
+    if rc != 0:
+        return f"re-mint refused (exit {rc}) — the served store stands; run `graphy history --remint --tenant " \
+               f"{(home / 'tenant.json').as_posix()} --tenant-id {tid}` to read why"
     return "re-minted, store recompiled"
 
 

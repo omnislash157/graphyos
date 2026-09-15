@@ -60,6 +60,92 @@ def _sp(tmp_path: Path, repo: Path) -> Path:
     return repo
 
 
+def _session(repo: Path, n: int, body: str) -> Path:
+    """One captured session in the archive the hooks grow — the input the cursor cannot see (graphyos #66)."""
+    sessions = repo / ".claude" / "recovery" / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    (sessions.parent / ".gitignore").write_text("*\n", encoding="utf-8")
+    sid = f"abcdef{n:02d}-0000-0000-0000-{n:012d}"
+    head = (f"# CONVERSATION FULL SESSION — 1 exchanges, verbatim and in order\n\nsession: {sid}\n"
+            f"exchanges 1–1 of 1 · ~40 tokens\nsemantic_sha256: {'0' * 64}\n"
+            f"captured_at: 2026-09-09T10:{n:02d}:00+00:00\nresolved_by: SessionEnd:clear\n\n")
+    p = sessions / f"{n:05d}__20260909T10{n:02d}00Z__{sid[:8]}.md"
+    p.write_text(head + body, encoding="utf-8")
+    return p
+
+
+def _lane_files(home: Path, lane: str) -> dict[str, str]:
+    """Every file a producer put in a lane, hashed — nodes · edges · PROVENANCE · its own receipt — plus the
+    resolver's sidecar by its edges: `resolved_over` there stamps the roster the resolution was made over, and the
+    roster holds the new history shard by design; the container trio build defers is not a producer's file."""
+    import hashlib
+    skip = {"adjacency.parquet", "nodes.parquet", "container.json", "wormhole_edges.json"}
+    out = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+           for p in sorted((home / lane).iterdir()) if p.is_file() and p.name not in skip}
+    side = json.loads((home / lane / "wormhole_edges.json").read_text(encoding="utf-8"))
+    out["wormhole_edges.json#edges"] = hashlib.sha256(json.dumps([side["edges"], side["qualified"]], sort_keys=True)
+                                                     .encode("utf-8")).hexdigest()
+    return out
+
+
+def test_GREEN_stale_history_remedy_names_no_eat_and_history_remint_changes_no_other_shard(tmp_path, capsys):
+    """graphyos #132, the first client's Windows tenant: after a session capture the history lane read
+    STALE and `check` told the tenant to run `graphy eat .` or `graphy shell install` — on a tenant with
+    house lanes the first prunes every lane the ring did not mint and the second rewrites the hook wiring
+    the house owns. The remedy names `graphy history --remint` and neither of those; the verb re-mints the
+    history shard alone into a staged generation and lands it, and every other lane — the code lane and
+    the placed lane with its producer's own receipt — is carried byte-for-byte, its shard digest unchanged."""
+    import re
+    from graphy import cli
+    repo = _git_repo(tmp_path)
+    _session(repo, 1, "--- [1] USER\n\nlook at core.mod.run\n\n--- [1] ASSISTANT\n\nok\n")
+    sub = repo / ".graphy" / "substrate"
+    desc = repo / ".graphy" / "tenant.json"
+    sub.mkdir(parents=True)
+    _place_foreign_lane(sub)
+    lanes = [rebuild_lane.Lane.mint("core", package="core", site_packages=repo, corpus=repo / "core"),
+             rebuild_lane.Lane.placed("pg_schema")]
+    rebuild_lane.rebuild(root=repo, substrate=sub, descriptor=desc, tenant_id="core", container="none",
+                         history=True, lanes=lanes, log=lambda *a: None)
+    home = cli.served_data_home(desc)
+    assert (home / "history_graph" / "PROVENANCE.json").is_file()
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "core"]) == 0
+    capsys.readouterr()
+    others = ("core_graph", "pg_schema_graph")
+    files = {lane: _lane_files(home, lane) for lane in others}
+    assert "emitter_receipt.json" in files["pg_schema_graph"]
+
+    _session(repo, 2, "--- [1] USER\n\nagain core.mod.run\n\n--- [1] ASSISTANT\n\nok\n")
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "core"]) == 1
+    err = capsys.readouterr().err
+    assert "CHECK RED: history lane: STALE" in err and "cursor lane" not in err
+    assert re.search(r"\beat\b", err) is None and "shell install" not in err, err
+    assert f"re-mint it: `graphy history --remint --tenant {desc.as_posix()} --tenant-id core`" in err
+    assert "the rebuild this tenant declares" not in err                    # init declares no command for the lane
+    # a house that declares its rebuild for the lane in the descriptor is told it beside the verb
+    raw = json.loads(desc.read_text(encoding="utf-8"))
+    raw["build_lanes"]["history_graph"][0] = "bash tools/remint_history.sh"
+    desc.write_text(json.dumps(raw, indent=2, sort_keys=True), encoding="utf-8")
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "core"]) == 1
+    err = capsys.readouterr().err
+    assert "or the rebuild this tenant declares for the lane: `bash tools/remint_history.sh`" in err, err
+    assert re.search(r"\beat\b", err) is None and "shell install" not in err, err
+
+    assert cli.main(["history", "--remint", "--tenant", str(desc), "--tenant-id", "core"]) == 0
+    out = capsys.readouterr().out
+    assert "HISTORY REMINT: history_graph" in out and "2 other lane(s) carried" in out and "core_graph · pg_schema_graph" in out
+    assert "HISTORY REMINT OK: history_graph re-minted, 2 other lane(s) carried" in out
+    new_home = cli.served_data_home(desc)
+    assert new_home != home and home.is_dir()                                   # landed; the replaced generation kept
+    assert not (repo / ".graphy" / ".tenant.json.next").exists()
+    assert cli.main(["check", "--tenant", str(desc), "--tenant-id", "core"]) == 0
+    capsys.readouterr()
+    assert {lane: _lane_files(new_home, lane) for lane in others} == files      # every producer file and every resolved edge
+    assert (sub / "pg_schema_graph" / "emitter_receipt.json").is_file()         # the placement stays for the producer
+    assert cli.main(["history", "--symbol", "core.mod.run", "--tenant", str(desc), "--tenant-id", "core"]) == 0
+    assert "TIMELINE: 2 session(s)" in capsys.readouterr().out
+
+
 def test_GREEN_a_code_lane_and_a_foreign_lane_rebuild_through_the_public_entry_point(tmp_path, capsys):
     """The done check of graphyos #71: one minted lane, one lane a foreign producer wrote, through
     the public API — no underscore imports — landing a descriptor that declares both and a store

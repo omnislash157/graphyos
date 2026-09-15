@@ -1176,18 +1176,26 @@ def _cmd_check(args: argparse.Namespace) -> int:
             findings.append((
                 "COULD-NOT-TELL",
                 f"history lane: {exc}",
-                "restore the shard's inputs and re-run graphy check, or re-eat"))
+                # Never `eat` here either: a house tenant reaches this branch when a receipt input moved, and
+                # `eat` would prune its lanes to restore one (graphyos #132, review round 1).
+                "restore the shard's inputs and re-run graphy check, or mint the lane again from named inputs "
+                "(`graphy history --repo <abs> --out <data_home>/history_graph --code <shard>…`) into a staged "
+                "generation"))
         else:
             if not fresh:
+                # The remedy names the verb that touches this lane alone. It used to lead with `graphy eat .`,
+                # which on a multi-lane tenant prunes every lane the ring did not mint (graphyos #70), then with
+                # `graphy shell install`, which rewrites the hook wiring a house owns — on the first client's
+                # tenant both were forbidden, so the audit recommended the two commands that damage it
+                # (graphyos #132). Neither is named here, on any tenant.
+                declared = tenant.build_lanes[f"{HISTORY_SLUG}_graph"][0]
                 findings.append((
                     "RED",
                     f"history lane: STALE — {why.removeprefix('stale: ').removesuffix('; re-mint')}",
-                    # The safe verb goes first. This line used to lead with `graphy eat .`, which on a
-                    # multi-lane tenant prunes every lane the package's ring does not name — so the
-                    # audit recommended the command that caused the data loss (graphyos #70).
-                    "re-mint it: `graphy shell install --repo <abs>`, which re-mints the history shard "
-                    "alone and touches no other lane (`graphy eat .` also does it, but re-mints the "
-                    "whole ring and is only equivalent for a tenant whose lanes ARE its ring)"))
+                    f"re-mint it: `graphy history --remint --tenant {Path(args.tenant).expanduser().absolute().as_posix()} "
+                    f"--tenant-id {args.tenant_id}` — the history shard alone, into a staged generation landed in one "
+                    f"descriptor rename; every other lane is carried byte-for-byte"
+                    + (f"; or the rebuild this tenant declares for the lane: `{declared}`" if declared else "")))
 
     # The lane shapes and their endpoints (graphyos #73). A NOTE is a declared shape, not a fault:
     # it keeps `check` honest about what it saw without turning a healthy roster red.
@@ -1355,6 +1363,13 @@ def _cmd_history(args: argparse.Namespace) -> int:
     from graphy.ir import IRError
     mint_flags = [f for f in ("repo", "out", "code", "names", "aliases", "verify") if getattr(args, f)]
     story_flags = [f for f in ("terms", "partner", "symbol", "tenant", "tenant_id") if getattr(args, f)]
+    if args.remint:
+        mixed = mint_flags + [f for f in ("sessions", "terms", "partner", "symbol") if getattr(args, f)]
+        if mixed:
+            print(f"HISTORY REFUSED: --remint takes --tenant and --tenant-id alone — the shard's own PROVENANCE names "
+                  f"its inputs; this call added {', '.join(mixed)}", file=sys.stderr)
+            return 2
+        return _history_remint(args)
     if mint_flags and story_flags:
         print(f"HISTORY REFUSED: one mode per call — the mint takes --repo/--out/--code/--names/--aliases/--verify, the timeline a "
               f"term with --with/--tenant/--tenant-id or --symbol; this call mixed {', '.join(mint_flags)} with "
@@ -1453,6 +1468,163 @@ def eat_history(repo: Path, sub: Path, home: Path, package: str, *, log=print) -
     for line in _history_report(prov, out):
         log(line)
     return True
+
+
+# What a history-only re-mint never carries from the served generation into the next: the store files build
+# writes, the stored traversals the landing moves, and the container trio build defers (graphyos #132).
+_STORE_PREFIX = ".mesh_store_"
+
+
+def _moved_into(path: Path, prev: Path, stage: Path) -> Path | None:
+    """``path`` one generation over: its place under ``stage`` when it sits under ``prev`` by either spelling,
+    else None — a path outside the served generation is the tenant's own and stays."""
+    for base in (prev, _spelled(prev), prev.resolve()):
+        for p in (path, _spelled(path)):
+            try:
+                return stage / p.relative_to(base)
+            except ValueError:
+                continue
+    return None
+
+
+def _history_remint(args: argparse.Namespace) -> int:
+    """`graphy history --remint --tenant <descriptor> --tenant-id <id>`: the history shard alone, minted again from
+    the inputs its own PROVENANCE names, into a staged generation seeded from the served one — every other lane
+    carried byte-for-byte — converged, built and landed in one descriptor rename (graphyos #132, folding #119).
+    A tenant with house lanes cannot run `eat` (it prunes every lane its ring did not mint) or `shell install`
+    (it rewrites the hook wiring the house owns); this verb touches no lane but the record's."""
+    from graphy.cartograph import repo_toplevel
+    for flag in ("tenant", "tenant_id"):
+        if not getattr(args, flag):
+            print(f"HISTORY REFUSED: --remint needs --{flag.replace('_', '-')} — the shard is found through the declared "
+                  f"tenant, never guessed", file=sys.stderr)
+            return 2
+    desc = Path(args.tenant).expanduser()
+    if not desc.is_absolute():
+        print(f"HISTORY REFUSED: --tenant must be absolute, got {desc} — the served descriptor is what a landing "
+              f"replaces", file=sys.stderr)
+        return 2
+    try:
+        tenant = _load_tenant(str(desc))
+    except TenantError as exc:
+        print(f"HISTORY REFUSED: {exc}", file=sys.stderr)
+        return 2
+    lane = f"{HISTORY_SLUG}_graph"
+    if lane not in tenant.build_lanes:
+        print(f"HISTORY REFUSED: {desc} declares no {lane} lane — nothing to re-mint; `graphy eat` mints one beside "
+              f"the code when the repo is a git checkout, a house rebuild mints it with `graphy history --repo … --out …`",
+              file=sys.stderr)
+        return 2
+    home = Path(tenant.data_home)
+    if not (home / lane / "PROVENANCE.json").is_file():
+        print(f"HISTORY REFUSED: no history shard at {home / lane} (no PROVENANCE.json) — the lane is declared but "
+              f"never minted", file=sys.stderr)
+        return 2
+    base = generation_of(home.name)
+    sub = home.with_name(base) if base is not None else home
+    repo = repo_toplevel(Path(tenant.root)) or Path(tenant.root)
+    try:
+        stage, staged, prev = stage_generation(sub, desc)
+    except OSError as exc:
+        print(f"HISTORY REFUSED: the stage could not be seeded ({type(exc).__name__}: {exc})", file=sys.stderr)
+        return 2
+    try:
+        return _history_remint_stage(args, tenant, desc, home, sub, repo, stage, staged, prev)
+    finally:
+        if served_data_home(desc) != stage:          # not landed: the served generation stands untouched
+            shutil.rmtree(stage, ignore_errors=True)
+            staged.unlink(missing_ok=True)
+
+
+def _history_remint_stage(args: argparse.Namespace, tenant: Tenant, desc: Path, home: Path, sub: Path, repo: Path,
+                          stage: Path, staged: Path, prev: Path | None) -> int:
+    from graphy import smash as smash_lane
+    from graphy import traversal
+    from graphy.adapters import history as history_lane
+    from graphy.ir import IRError
+    lane = f"{HISTORY_SLUG}_graph"
+    if prev is None or _spelled(prev) != _spelled(home):
+        print(f"HISTORY REFUSED: the descriptor's data home {home} is not the generation the substrate {sub} serves "
+              f"({prev}) — a re-mint stages beside what is served, never beside a copied descriptor's home",
+              file=sys.stderr)
+        return 2
+    # Every lane but the record's, carried whole from the served generation: the splice files, the resolver's
+    # sidecar, a placed producer's own receipts — everything but the container trio build defers below. Their
+    # shard digests are the served ones by construction, and `check` proves it at the end.
+    others = sorted(d.name for d in prev.glob("*_graph") if d.is_dir() and d.name != lane
+                    and (d / smash_lane.PROVENANCE_NAME).is_file())
+    skip = {"adjacency.parquet", "nodes.parquet", "container.json"}
+    try:
+        for name in others:
+            shutil.rmtree(stage / name, ignore_errors=True)
+            shutil.copytree(prev / name, stage / name, ignore=lambda _d, names: [n for n in names if n in skip])
+        # The generation's other inputs travel too — ring.json, the registry, the scheme index, the journal — so the
+        # staged descriptor names what the served one did, one generation over; the store and the traversals do not.
+        for entry in prev.iterdir():
+            if entry.name.endswith("_graph") or entry.name.startswith(_STORE_PREFIX) or entry.name == traversal.DIRNAME:
+                continue
+            if entry.is_dir():
+                shutil.copytree(entry, stage / entry.name, dirs_exist_ok=True)
+            else:
+                shutil.copy2(entry, stage / entry.name)
+    except OSError as exc:
+        print(f"HISTORY REFUSED: the served generation could not be carried into the stage ({type(exc).__name__}: {exc})",
+              file=sys.stderr)
+        return 2
+    print(f"HISTORY REMINT: {lane} from {home} -> {stage}; {len(others)} other lane(s) carried — producer files and "
+          f"resolved edges unchanged, the resolver's stamp re-issued" + (f": {' · '.join(others)}" if others else ""))
+
+    def relocate(p: Path) -> Path:
+        """A receipt input that sits in the served generation (or the placement directory) is the carried copy
+        now: the new receipt names the generation being landed, never the one the landing keeps one back."""
+        for base in (prev, sub):
+            moved = _moved_into(p, base, stage)
+            if moved is not None and moved.exists():
+                return moved
+        return p
+    try:
+        prov = history_lane.remint(home / lane, repo=repo, out=stage / lane, relocate=relocate)
+    except (history_lane.HistoryError, IRError, OSError, ValueError) as exc:
+        print(f"HISTORY REFUSED: {exc} — the served generation stands", file=sys.stderr)
+        return 2
+    for line in _history_report(prov, stage / lane):
+        print(line)
+    # The scheme index row the record owns, re-read from the new shard; no other row moves.
+    index_path = stage / ".federation_scheme_index.json"
+    if index_path.is_file():
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            own, out = smash_lane.shard_schemes(stage / lane)
+            index[HISTORY_SLUG] = {"own": sorted(own), "out": sorted(out)}
+            index_path.write_text(json.dumps(index, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"HISTORY REFUSED: the scheme index at {index_path} could not be re-read ({exc})", file=sys.stderr)
+            return 2
+    # The staged descriptor: the served one with every path that sat in the served generation moved one over.
+    raw = json.loads(desc.read_text(encoding="utf-8"))
+    for field in ("data_home", "join_keys", "journal"):
+        moved = _moved_into(Path(str(raw.get(field, ""))), prev, stage)
+        if moved is not None:
+            raw[field] = str(moved)                         # a path outside the generation is the tenant's own
+    staged.write_text(json.dumps(raw, indent=2, sort_keys=True), encoding="utf-8")
+    for step in (["converge", "--tenant", str(staged), "--tenant-id", args.tenant_id, "--resolve"],
+                 ["build", "--tenant", str(staged), "--tenant-id", args.tenant_id, "--container", "none"]):
+        rc = main(step)
+        if rc != 0:
+            print(f"HISTORY REMINT FAILED at {step[0]} — the served generation stands", file=sys.stderr)
+            return rc
+    try:
+        land_generation(stage, staged, desc, prev, sub, keep=others)
+    except OSError as exc:
+        print(f"HISTORY REMINT FAILED at landing: {type(exc).__name__}: {exc} — the served generation stands",
+              file=sys.stderr)
+        return 2
+    rc = main(["check", "--tenant", str(desc), "--tenant-id", args.tenant_id])
+    print(f"HISTORY REMINT {'OK' if rc == 0 else 'LANDED'}: {lane} re-minted, {len(others)} other lane(s) carried with their "
+          f"producer files and resolved edges unchanged -> {desc} serves {stage} (containers pending, as after eat: "
+          f"`graphy container --emit` writes them)"
+          + ("" if rc == 0 else f"; check exit {rc} — its lines above name the lane"))
+    return 0 if rc == 0 else 1
 
 
 def _cmd_smash(args: argparse.Namespace) -> int:
@@ -2491,6 +2663,11 @@ def _build_parser() -> argparse.ArgumentParser:
                              "a target that is not a node refuses, a literal the wormhole already binds refuses as redundant")
     p_hist.add_argument("--verify", action="store_true",
                         help="mint nothing: is the shard at --out minted from these inputs as they stand — exit 1 when stale")
+    p_hist.add_argument("--remint", action="store_true",
+                        help="with --tenant and --tenant-id alone: the tenant's history shard minted again from the inputs "
+                             "its own PROVENANCE names, into a staged generation that lands in one descriptor rename — every "
+                             "other lane carried byte-for-byte; the remedy `check` names for a stale history lane "
+                             "(graphyos #132)")
     p_hist.set_defaults(handler=_cmd_history)
 
     p_converge = sub.add_parser(
