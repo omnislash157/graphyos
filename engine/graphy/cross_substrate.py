@@ -305,6 +305,10 @@ class MeshSet:
     stats: MeshSetStats
     node_records: dict = field(default_factory=dict)
     directed: set = field(default_factory=set)
+    # what each lane contributed, kept only when asked (``load_set(lanes=True)``): (lane, seq, id, stub) per node
+    # row and (lane, src, dst, rel, admitted) per edge — the store keeps them so one landed shard updates in place
+    lane_nodes: list = field(default_factory=list)
+    lane_edges: list = field(default_factory=list)
 
     def orientation(self, a: str, b: str, relation: str) -> str:
         fwd = (a, b, relation) in self.directed
@@ -318,8 +322,53 @@ class MeshSet:
         return UNKNOWN
 
 
+def admission(data_home: Path, substrates: list[str], join_keys: Path, tenant_id: str) -> dict:
+    """What an edge endpoint is resolved against, beyond the lanes' own node ids: the roster, the ecosystem's
+    standard schemes, which lanes own which scheme, and the literal join schemes. One reading, shared by
+    `load_set` and the store's in-place update, so both admit exactly the same edges."""
+    loaded = set(substrates)
+    scheme_index_path = Path(data_home) / ".federation_scheme_index.json"
+    scheme_owners = {sch: (slugs & loaded)
+                     for sch, slugs in _load_scheme_owners(scheme_index_path).items()
+                     if slugs & loaded}
+    own_schemes = defaultdict(set)
+    for sch, slugs in scheme_owners.items():
+        for slug in slugs:
+            own_schemes[slug].add(sch)
+    return {"loaded": loaded, "standard": load_standard(scheme_index_path), "scheme_owners": scheme_owners,
+            "own_schemes": own_schemes,
+            "literal": _load_literal_join_schemes(join_keys, tenant_id=tenant_id)}
+
+
+def endpoint_verdict(ep: object, cur: str, ctx: dict, node_index) -> str:
+    """`ok` · `unresolved` · `malformed` for one endpoint of an edge lane ``cur`` carries; ``node_index`` maps a
+    lane to the ids it holds (anything supporting ``[lane]`` and ``in``)."""
+    if not isinstance(ep, str):
+        return "malformed"
+    sch = _scheme(ep)
+    if sch is None or sch in RESERVED_SCHEMES or sch in ctx["standard"]:
+        return "ok"
+    if sch == cur or sch in ctx["own_schemes"].get(cur, ()):
+        return "ok"
+    if sch in ctx["loaded"] and ep in node_index[sch]:
+        return "ok"
+    for owner_slug in ctx["scheme_owners"].get(sch, ()):
+        if ep in node_index[owner_slug]:
+            return "ok"
+    if sch in ctx["literal"] and ep in node_index[cur]:
+        return "ok"
+    return "unresolved"
+
+
+def edge_only_owner(nid: str, ctx: dict) -> str:
+    """The owner of an id no lane carries as a node, only as an admitted edge's endpoint."""
+    sch = _scheme(nid)
+    return (WIRE_BUCKET if sch in RESERVED_SCHEMES or sch in ctx["standard"]
+            else sch if sch in ctx["loaded"] else (sch or WIRE_BUCKET))
+
+
 def load_set(substrates: list[str], *, tenant: Tenant | None = None,
-             tenant_id: str | None = None) -> MeshSet:
+             tenant_id: str | None = None, lanes: bool = False) -> MeshSet:
     if tenant is None:
         raise ValueError(
             f"load_set: tenant is required — graphy resolves identity only through "
@@ -337,17 +386,9 @@ def load_set(substrates: list[str], *, tenant: Tenant | None = None,
     node_index: dict[str, set] = {s: set() for s in substrates}
     loaded = set(substrates)
     data_home = Path(tenant.data_home)
-    scheme_index_path = data_home / ".federation_scheme_index.json"
-    join_keys_path = Path(tenant.join_keys)
-    literal_join_schemes = _load_literal_join_schemes(join_keys_path, tenant_id=tenant_id)
-    standard = load_standard(scheme_index_path)
-    scheme_owners = {sch: (slugs & loaded)
-                     for sch, slugs in _load_scheme_owners(scheme_index_path).items()
-                     if slugs & loaded}
-    own_schemes = defaultdict(set)
-    for sch, slugs in scheme_owners.items():
-        for slug in slugs:
-            own_schemes[slug].add(sch)
+    ctx = admission(data_home, list(substrates), Path(tenant.join_keys), tenant_id)
+    lane_nodes: list = []
+    lane_edges: list = []
     graph_edges: dict[str, list] = {}
     directed: set = set()
 
@@ -358,10 +399,12 @@ def load_set(substrates: list[str], *, tenant: Tenant | None = None,
         nodes = gir.nodes
         edges = gir.edges
         graph_edges[s] = edges
-        for n in nodes:
+        for seq, n in enumerate(nodes):
             nid = n.get("id")
             if not nid:
                 continue
+            if lanes:
+                lane_nodes.append((s, seq, nid, 1 if n.get("stub") else 0))
             all_nodes.add(nid)
             node_index[s].add(nid)
             incumbent = node_records.get(nid)
@@ -373,33 +416,20 @@ def load_set(substrates: list[str], *, tenant: Tenant | None = None,
                 node_records[nid] = n
     stats.nodes = len(all_nodes)
 
-    def _endpoint(ep: object, cur: str) -> str:
-        if not isinstance(ep, str):
-            return "malformed"
-        sch = _scheme(ep)
-        if sch is None or sch in RESERVED_SCHEMES or sch in standard:
-            return "ok"
-        if sch == cur or sch in own_schemes.get(cur, ()):
-            return "ok"
-        if sch in loaded and ep in node_index[sch]:
-            return "ok"
-        for owner_slug in scheme_owners.get(sch, ()):
-            if ep in node_index[owner_slug]:
-                return "ok"
-        if sch in literal_join_schemes and ep in node_index[cur]:
-            return "ok"
-        return "unresolved"
-
     for s in substrates:
         for e in graph_edges[s]:
             frm, to, rel = e.get("src"), e.get("dst"), e.get("edge_type")
-            vf, vt = _endpoint(frm, s), _endpoint(to, s)
+            vf, vt = endpoint_verdict(frm, s, ctx, node_index), endpoint_verdict(to, s, ctx, node_index)
             if vf == "malformed" or vt == "malformed":
                 stats.malformed_endpoint += 1
                 continue
             if vf == "unresolved" or vt == "unresolved":
                 stats.unresolved_cross += 1
+                if lanes:
+                    lane_edges.append((s, frm, to, rel, 0))
                 continue
+            if lanes:
+                lane_edges.append((s, frm, to, rel, 1))
             sal = _ast_edge_salience(rel)
             adj[frm].append((to, sal, [], rel))
             adj[to].append((frm, sal, [], rel))
@@ -417,13 +447,12 @@ def load_set(substrates: list[str], *, tenant: Tenant | None = None,
 
     for nid in all_nodes:
         if nid not in node_owner:
-            sch = _scheme(nid)
-            node_owner[nid] = (WIRE_BUCKET if sch in RESERVED_SCHEMES or sch in standard
-                               else sch if sch in loaded else (sch or WIRE_BUCKET))
+            node_owner[nid] = edge_only_owner(nid, ctx)
 
     return MeshSet(nodes=all_nodes, adjacency=dict(adj),
                    node_owner=node_owner, node_index=node_index, stats=stats,
-                   node_records=node_records, directed=directed)
+                   node_records=node_records, directed=directed,
+                   lane_nodes=lane_nodes, lane_edges=lane_edges)
 
 
 def query_set(mesh: MeshSet, seed: str, depth: int, top: int,

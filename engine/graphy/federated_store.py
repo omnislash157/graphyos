@@ -22,14 +22,18 @@ from graphy.cross_substrate import (
     DocDeclarationError,
     Step,
     _within,
+    admission,
     derive_doc_declaration,
+    edge_only_owner,
+    endpoint_verdict,
     load_doc_declaration,
     load_set,
+    _scheme,
 )
 from graphy.query import activate, rank
 from graphy._shared import _ast_edge_salience
 from graphy.native_json_graph_ir import (
-    SHARD_INPUTS, WORMHOLE_SIDECAR, _detect_duplicate_json_keys, shard_input_digest,
+    SHARD_INPUTS, WORMHOLE_SIDECAR, _detect_duplicate_json_keys, load_graph_ir, shard_input_digest,
 )
 from graphy.tenant import Tenant
 
@@ -51,10 +55,31 @@ CREATE TABLE edges (
     dst TEXT NOT NULL,
     rel TEXT NOT NULL
 );
-CREATE INDEX idx_edges_src ON edges(src);
+CREATE INDEX idx_edges_key ON edges(src, dst, rel);
 CREATE INDEX idx_edges_dst ON edges(dst);
 CREATE INDEX idx_nodes_owner ON nodes(owner);
 CREATE INDEX idx_nodes_owner_module ON nodes(owner, module);
+CREATE TABLE lane_nodes (
+    lane TEXT NOT NULL,
+    seq  INTEGER NOT NULL,
+    id   TEXT NOT NULL,
+    stub INTEGER NOT NULL
+);
+CREATE INDEX idx_lane_nodes_id ON lane_nodes(id);
+CREATE INDEX idx_lane_nodes_lane ON lane_nodes(lane);
+CREATE TABLE lane_edges (
+    lane       TEXT NOT NULL,
+    src        TEXT NOT NULL,
+    dst        TEXT NOT NULL,
+    rel        TEXT NOT NULL,
+    src_scheme TEXT,
+    dst_scheme TEXT,
+    admitted   INTEGER NOT NULL
+);
+CREATE INDEX idx_lane_edges_lane ON lane_edges(lane);
+CREATE INDEX idx_lane_edges_key ON lane_edges(src, dst, rel);
+CREATE INDEX idx_lane_edges_src_scheme ON lane_edges(src_scheme);
+CREATE INDEX idx_lane_edges_dst_scheme ON lane_edges(dst_scheme);
 CREATE INDEX idx_nodes_owner_type ON nodes(owner, node_type);
 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
@@ -102,7 +127,8 @@ class Neighbour:
     direction: str
 
 
-GENERATION_FORMAT = 4
+GENERATION_FORMAT = 5
+READABLE_GENERATION_FORMATS = ("4", "5")
 
 # The fields every aggregate reads (pillars · arms · draw): columns of the nodes table, so a
 # whole-corpus read never decodes a record. The full record is decoded only by record().
@@ -116,7 +142,30 @@ def _columns(record: dict | None) -> dict | None:
     return {k: record.get(k) for k in COLUMNS}
 
 
-def _generation_digest(mesh, substrates: list[str], doc_declaration: dict | None = None) -> str:
+# Format 5: the generation is a SUM of per-row hashes, so a store updated in place for one landed shard adds the
+# rows it wrote and subtracts the rows it removed, and spells exactly the generation a full compile of the same
+# shards spells — without re-reading the 770k rows it did not touch (graphyos #147). Format 4 hashed the rows in
+# sorted order, which only a full pass could extend.
+_SUM_MOD = 1 << 256
+
+
+def _node_hash(nid: str, owner: str, record_sorted: str | None) -> int:
+    body = (b"n\x00" + nid.encode() + b"\x00" + owner.encode() + b"\x00"
+            + (b"r\x00" + record_sorted.encode() if record_sorted is not None else b"-") + b"\x00")
+    return int.from_bytes(hashlib.sha256(body).digest(), "big")
+
+
+def _edge_hash(src: str, dst: str, rel: str) -> int:
+    return int.from_bytes(hashlib.sha256(b"e\x00" + src.encode() + b"\x00" + dst.encode() + b"\x00"
+                                         + rel.encode() + b"\x00").digest(), "big")
+
+
+def _sorted_record(rec) -> str | None:
+    return None if rec is None else json.dumps(rec, sort_keys=True, default=str)
+
+
+def _generation_of(total: int, node_rows: int, edge_rows: int, substrates: list[str],
+                   doc_declaration: dict | None) -> str:
     h = hashlib.sha256()
     h.update(b"gf\x00" + str(GENERATION_FORMAT).encode() + b"\x00")
     if doc_declaration:
@@ -125,17 +174,22 @@ def _generation_digest(mesh, substrates: list[str], doc_declaration: dict | None
         h.update(b"d\x00" + json.dumps(doc_declaration, sort_keys=True).encode() + b"\x00")
     for s in sorted(substrates):
         h.update(b"s\x00" + s.encode() + b"\x00")
-    for nid in sorted(mesh.node_owner):
-        rec = mesh.node_records.get(nid)
-        h.update(b"n\x00" + nid.encode() + b"\x00"
-                 + (mesh.node_owner.get(nid) or "").encode() + b"\x00"
-                 + (b"r\x00" + json.dumps(rec, sort_keys=True, default=str).encode()
-                    if rec is not None else b"-")
-                 + b"\x00")
-    for (src, dst, rel) in sorted(mesh.directed):
-        h.update(b"e\x00" + src.encode() + b"\x00" + dst.encode() + b"\x00"
-                 + rel.encode() + b"\x00")
+    h.update(b"sum\x00" + total.to_bytes(32, "big") + f"\x00{node_rows}\x00{edge_rows}\x00".encode())
     return h.hexdigest()[:16]
+
+
+def _generation_sum(mesh) -> int:
+    total = 0
+    for nid, owner in mesh.node_owner.items():
+        total += _node_hash(nid, owner or "", _sorted_record(mesh.node_records.get(nid)))
+    for (src, dst, rel) in mesh.directed:
+        total += _edge_hash(src, dst, rel)
+    return total % _SUM_MOD
+
+
+def _generation_digest(mesh, substrates: list[str], doc_declaration: dict | None = None) -> str:
+    return _generation_of(_generation_sum(mesh), len(mesh.node_owner), len(mesh.directed), substrates,
+                          doc_declaration)
 
 
 
@@ -254,7 +308,7 @@ def _compute_input_digest(substrates: list[str], *, tenant: Tenant | None = None
 class ShardStore:
 
     def __init__(self, substrates: list[str], *,
-                 tenant: Tenant | None = None, tenant_id: str | None = None):
+                 tenant: Tenant | None = None, tenant_id: str | None = None, lanes: bool = False):
         if tenant is None:
             raise ValueError(
                 f"ShardStore: tenant is required — graphy resolves identity only "
@@ -265,11 +319,13 @@ class ShardStore:
                 f"ShardStore: tenant_id is required — graphy resolves identity only "
                 f"through a declared Tenant; absent or empty tenant_id = refuse"
             )
-        self._mesh = load_set(substrates, tenant=tenant, tenant_id=tenant_id)
+        self._mesh = load_set(substrates, tenant=tenant, tenant_id=tenant_id, lanes=lanes)
         self._substrates = list(substrates)
         self.relations = fold_relations(substrates, tenant)      # graphyos #68
         self.doc_declaration = _doc_declaration(tenant, substrates)                         # graphyos #86
-        self._gen = _generation_digest(self._mesh, self._substrates, self.doc_declaration)
+        self.generation_sum = _generation_sum(self._mesh)
+        self._gen = _generation_of(self.generation_sum, len(self._mesh.node_owner), len(self._mesh.directed),
+                                   self._substrates, self.doc_declaration)
 
     @classmethod
     def from_mesh(cls, mesh, substrates: list[str]) -> "ShardStore":
@@ -338,7 +394,10 @@ class SQLiteStore:
                 raise StoreError(f"store at {p} carries no generation row — refusing to serve "
                                  f"a snapshot that cannot be invalidated")
             got = meta.get("generation_format")
-            if got != str(GENERATION_FORMAT):
+            # Format 4 hashed the same rows in order; a door reads it unchanged, because freshness compares
+            # generations only once the inputs moved, and a moved input is a rebuild either way. So an upgrade
+            # never shuts a door: the next `build` compiles format 5 whole and updates in place after (#147).
+            if got not in READABLE_GENERATION_FORMATS:
                 raise StoreError(
                     f"store at {p} was compiled under generation format "
                     f"{got or '<pre-versioning>'}; this build speaks {GENERATION_FORMAT}. Its "
@@ -557,7 +616,11 @@ def relations_in(store, relation_class: str, default: frozenset) -> frozenset:
 
 def compile_store(substrates: list[str], db_path: str | Path,
                   *, tenant: Tenant | None = None,
-                  tenant_id: str | None = None) -> dict:
+                  tenant_id: str | None = None, full: bool = False) -> dict:
+    """Compile the roster's store, or bring the one standing up to date: nothing when every input digests as it
+    did (``recompiled: []``), the changed lanes' rows in place when a few shards landed (``recompiled: [lane,
+    …]``), and the whole store from the shards otherwise (``recompiled: "all"``). An in-place update lands the
+    rows a full compile of the same shards would, under the same generation (graphyos #147)."""
     if tenant is None:
         raise ValueError(
             f"compile_store: tenant is required — graphy resolves identity only "
@@ -578,9 +641,15 @@ def compile_store(substrates: list[str], db_path: str | Path,
             raise StoreError(
                 f"lane {s!r} is declared but has no shard (nodes.json + edges.json) at {gd} — "
                 f"missing {', '.join(missing)}; mint or place the shard, then build")
-    shard = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id)
-    mesh = shard.mesh
     p = Path(db_path)
+    live_digest = _compute_input_digest(substrates, tenant=tenant)
+    relations = fold_relations(substrates, tenant)
+    changed = None if full else _changed_lanes(p, substrates, live_digest)
+    if changed is not None and len(changed) * 2 <= len(substrates):
+        return _update_store(p, substrates, changed, tenant=tenant, tenant_id=tenant_id,
+                             live_digest=live_digest, relations=relations)
+    shard = ShardStore(substrates, tenant=tenant, tenant_id=tenant_id, lanes=True)
+    mesh = shard.mesh
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(p.suffix + f".tmp.{os.getpid()}")
     if tmp.exists():
@@ -608,14 +677,21 @@ def compile_store(substrates: list[str], db_path: str | Path,
         # breaks by row order broke differently (RECON.md §62). Sorted, the rows are one order on
         # any seed, on any box.
         db.executemany("INSERT INTO edges(src, dst, rel) VALUES (?,?,?)", sorted(mesh.directed))
+        db.executemany("INSERT INTO lane_nodes(lane, seq, id, stub) VALUES (?,?,?,?)", mesh.lane_nodes)
+        db.executemany("INSERT INTO lane_edges(lane, src, dst, rel, src_scheme, dst_scheme, admitted) "
+                       "VALUES (?,?,?,?,?,?,?)",
+                       ((ln, a, b, r, _scheme(a), _scheme(b), ok) for (ln, a, b, r, ok) in mesh.lane_edges))
         db.executemany("INSERT INTO meta(k, v) VALUES (?,?)", [
             ("generation", shard.generation()),
             ("generation_format", str(GENERATION_FORMAT)),
+            ("generation_sum", str(shard.generation_sum)),
+            ("compiler", _compiler_digest()),
+            ("roster", json.dumps(list(substrates))),
             ("substrates", ",".join(sorted(substrates))),
             ("nodes", str(mesh.stats.nodes)),
             ("edges", str(len(mesh.directed))),
-            ("input_digest", _compute_input_digest(substrates, tenant=tenant)),
-            (RELATIONS_META, json.dumps(fold_relations(substrates, tenant), sort_keys=True)),
+            ("input_digest", live_digest),
+            (RELATIONS_META, json.dumps(relations, sort_keys=True)),
             (DOC_META, json.dumps(shard.doc_declaration, sort_keys=True)),
         ])
         db.commit()
@@ -624,7 +700,192 @@ def compile_store(substrates: list[str], db_path: str | Path,
     _sync_then_replace(tmp, p)
     return {"db": str(p), "generation": shard.generation(),
             "substrates": sorted(substrates),
-            "nodes": mesh.stats.nodes, "edges": len(mesh.directed)}
+            "nodes": mesh.stats.nodes, "edges": len(mesh.directed), "recompiled": "all"}
+
+
+# The modules whose code decides what a compile writes. A store compiled by other bytes of them is compiled again
+# whole, never patched: an in-place update is exact only against the admission rules that wrote the rows around it.
+_COMPILER_MODULES = ("federated_store.py", "cross_substrate.py", "native_json_graph_ir.py")
+
+
+def _compiler_digest() -> str:
+    h = hashlib.sha256()
+    for name in _COMPILER_MODULES:
+        h.update(name.encode() + b"\x00" + (Path(__file__).parent / name).read_bytes() + b"\x00")
+    return h.hexdigest()[:16]
+
+
+def _changed_lanes(p: Path, substrates: list[str], live_digest: str) -> list[str] | None:
+    """The lanes whose shard digests moved since the store at ``p`` was written, or None when the store cannot be
+    updated in place: absent, another format or compiler, another roster, or a moved scheme index or registry
+    (those decide admission for every lane at once)."""
+    if not p.is_file():
+        return None
+    try:
+        db = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+        try:
+            meta = dict(db.execute("SELECT k, v FROM meta"))
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return None
+    if (meta.get("generation_format") != str(GENERATION_FORMAT) or meta.get("compiler") != _compiler_digest()
+            or meta.get("roster") != json.dumps(list(substrates)) or "generation_sum" not in meta
+            or not {"lane_nodes", "lane_edges"} <= tables):
+        return None
+    try:
+        served, live = json.loads(meta.get("input_digest") or ""), json.loads(live_digest)
+    except ValueError:
+        return None
+    lanes = set(substrates)
+    if {k: v for k, v in served.items() if k not in lanes} != {k: v for k, v in live.items() if k not in lanes}:
+        return None
+    return [s for s in substrates if served.get(s) != live.get(s)]
+
+
+class _LaneIds(dict):
+    """lane -> the set of ids it holds, read from the store's lane_nodes on first ask."""
+
+    def __init__(self, db):
+        super().__init__()
+        self._db = db
+
+    def __missing__(self, lane):
+        ids = self[lane] = {r[0] for r in self._db.execute("SELECT id FROM lane_nodes WHERE lane=?", (lane,))}
+        return ids
+
+
+def _update_store(p: Path, substrates: list[str], changed: list[str], *, tenant: Tenant, tenant_id: str,
+                  live_digest: str, relations: dict) -> dict:
+    """The changed lanes' rows rewritten in place, in one transaction: a reader sees the store before or after,
+    never between. Exact against a full compile: node ownership is re-decided for every id the lanes held
+    before or hold now, and admission for every edge that can resolve through them — theirs, and every other
+    lane's edge whose endpoint scheme is one of theirs or owned by one of them."""
+    roster = list(substrates)
+    if not changed:
+        db = sqlite3.connect(p, timeout=60)
+        try:
+            meta = dict(db.execute("SELECT k, v FROM meta"))
+            folded = json.dumps(relations, sort_keys=True)
+            if meta.get(RELATIONS_META) != folded:      # a re-declared relation is the one thing that moved
+                with db:
+                    db.execute("UPDATE meta SET v=? WHERE k=?", (folded, RELATIONS_META))
+        finally:
+            db.close()
+        return {"db": str(p), "generation": meta["generation"], "substrates": sorted(substrates),
+                "nodes": int(meta["nodes"]), "edges": int(meta["edges"]), "recompiled": []}
+    rank_of = {s: i for i, s in enumerate(roster)}
+    ctx = admission(Path(tenant.data_home), roster, Path(tenant.join_keys), tenant_id)
+    shards = {s: load_graph_ir(Path(tenant.data_home) / f"{s}_graph") for s in changed}
+    db = sqlite3.connect(p, timeout=60, isolation_level=None)
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        meta = dict(db.execute("SELECT k, v FROM meta"))
+        total = int(meta["generation_sum"])
+        C = tuple(changed)
+        marks = ",".join("?" * len(C))
+        old_ids = {r[0] for r in db.execute(f"SELECT id FROM lane_nodes WHERE lane IN ({marks})", C)}
+        keys = {tuple(r) for r in db.execute(
+            f"SELECT src, dst, rel FROM lane_edges WHERE lane IN ({marks}) AND admitted=1", C)}
+        db.execute(f"DELETE FROM lane_nodes WHERE lane IN ({marks})", C)
+        db.execute(f"DELETE FROM lane_edges WHERE lane IN ({marks})", C)
+        new_ids: set = set()
+        for s in changed:
+            rows = [(s, seq, n.get("id"), 1 if n.get("stub") else 0)
+                    for seq, n in enumerate(shards[s].nodes) if n.get("id")]
+            new_ids.update(r[2] for r in rows)
+            db.executemany("INSERT INTO lane_nodes(lane, seq, id, stub) VALUES (?,?,?,?)", rows)
+        node_index = _LaneIds(db)
+        for s in changed:
+            out = []
+            for e in shards[s].edges:
+                frm, to, rel = e.get("src"), e.get("dst"), e.get("edge_type")
+                vf, vt = endpoint_verdict(frm, s, ctx, node_index), endpoint_verdict(to, s, ctx, node_index)
+                if vf == "malformed" or vt == "malformed":
+                    continue
+                ok = 1 if vf == "ok" and vt == "ok" else 0
+                out.append((s, frm, to, rel, _scheme(frm), _scheme(to), ok))
+                if ok:
+                    keys.add((frm, to, rel))
+            db.executemany("INSERT INTO lane_edges(lane, src, dst, rel, src_scheme, dst_scheme, admitted) "
+                           "VALUES (?,?,?,?,?,?,?)", out)
+        through = set(C) | {sch for sch, owners in ctx["scheme_owners"].items() if owners & set(C)}
+        smarks = ",".join("?" * len(through))
+        flips = []
+        for rowid, lane, frm, to, rel, was in db.execute(
+                f"SELECT rowid, lane, src, dst, rel, admitted FROM lane_edges WHERE lane NOT IN ({marks}) "
+                f"AND (src_scheme IN ({smarks}) OR dst_scheme IN ({smarks}))",
+                (*C, *through, *through)).fetchall():
+            ok = 1 if (endpoint_verdict(frm, lane, ctx, node_index) == "ok"
+                       and endpoint_verdict(to, lane, ctx, node_index) == "ok") else 0
+            if ok != was:
+                flips.append((ok, rowid))
+                keys.add((frm, to, rel))
+        db.executemany("UPDATE lane_edges SET admitted=? WHERE rowid=?", flips)
+        touched: set = set(old_ids) | new_ids
+        for key in sorted(keys):
+            had = db.execute("SELECT 1 FROM edges WHERE src=? AND dst=? AND rel=? LIMIT 1", key).fetchone()
+            has = db.execute("SELECT 1 FROM lane_edges WHERE src=? AND dst=? AND rel=? AND admitted=1 LIMIT 1",
+                             key).fetchone()
+            if had and not has:
+                db.execute("DELETE FROM edges WHERE src=? AND dst=? AND rel=?", key)
+                total -= _edge_hash(*key)
+            elif has and not had:
+                db.execute("INSERT INTO edges(src, dst, rel) VALUES (?,?,?)", key)
+                total += _edge_hash(*key)
+            if had or has:
+                touched.update((key[0], key[1]))
+        loaded_shards: dict = dict(shards)
+        for nid in sorted(touched):
+            old = db.execute("SELECT owner, record FROM nodes WHERE id=?", (nid,)).fetchone()
+            rows = sorted(db.execute("SELECT lane, seq, stub FROM lane_nodes WHERE id=?", (nid,)).fetchall(),
+                          key=lambda r: (rank_of[r[0]], r[1]))
+            if rows:
+                lane, seq, _stub = next((r for r in rows if not r[2]), rows[0])
+                if old is not None and old[0] == lane and lane not in shards:
+                    continue                          # the same untouched lane still owns it: its row is unchanged
+                if lane not in loaded_shards:
+                    loaded_shards[lane] = load_graph_ir(Path(tenant.data_home) / f"{lane}_graph")
+                rec = loaded_shards[lane].nodes[seq]
+                owner = lane
+            elif (db.execute("SELECT 1 FROM edges WHERE src=? LIMIT 1", (nid,)).fetchone()
+                  or db.execute("SELECT 1 FROM edges WHERE dst=? LIMIT 1", (nid,)).fetchone()):   # an OR scans the table
+                rec, owner = None, edge_only_owner(nid, ctx)
+            else:
+                rec = owner = None                    # no lane holds it and no edge names it: the row goes
+            new_sorted = _sorted_record(rec)
+            if old is not None:
+                old_sorted = _sorted_record(json.loads(old[1])) if old[1] is not None else None
+                if owner == old[0] and new_sorted == old_sorted:
+                    continue
+                total -= _node_hash(nid, old[0], old_sorted)
+                db.execute("DELETE FROM nodes WHERE id=?", (nid,))
+            if owner is not None:
+                cols = tuple(rec.get(k) for k in COLUMNS) if rec is not None else (None,) * len(COLUMNS)
+                db.execute("INSERT INTO nodes(id, owner, node_type, dotted, module, role, file, line, record) "
+                           "VALUES (?,?,?,?,?,?,?,?,?)",
+                           (nid, owner, *cols, json.dumps(rec, default=str) if rec is not None else None))
+                total += _node_hash(nid, owner, new_sorted)
+        total %= _SUM_MOD
+        node_rows = db.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        edge_rows = db.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        nodes = db.execute("SELECT COUNT(DISTINCT id) FROM lane_nodes").fetchone()[0]
+        doc = json.loads(meta.get(DOC_META) or "{}")
+        generation = _generation_of(total, node_rows, edge_rows, roster, doc)
+        db.executemany("UPDATE meta SET v=? WHERE k=?", [
+            (generation, "generation"), (str(total), "generation_sum"), (str(nodes), "nodes"),
+            (str(edge_rows), "edges"), (live_digest, "input_digest"),
+            (json.dumps(relations, sort_keys=True), RELATIONS_META)])
+        db.execute("COMMIT")
+    except BaseException:
+        if db.in_transaction:
+            db.execute("ROLLBACK")
+        raise
+    finally:
+        db.close()
+    return {"db": str(p), "generation": generation, "substrates": sorted(substrates),
+            "nodes": nodes, "edges": edge_rows, "recompiled": list(changed)}
 
 
 CURSOR_FORMAT = 1

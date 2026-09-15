@@ -6660,3 +6660,18 @@ Runs on the private repo's branches (`gh run view <id> --repo omnislash157/graph
 | no tests | this rung adds none: the proof is the real verbs below, run on a fresh clone. The old tree printed the same ENAMETOOLONG as `SMASH REFUSED: [Errno 36] …` with no frame |
 | the lint | `review.py oserror-folded` (AST, so a multi-line tuple counts): selftest `red=2 green=0`; the live tree → 0 |
 | production, linux | a fresh pallets/itsdangerous clone eaten. `smash --out <300-char name>` → `SMASH FAILED: unexpected OSError (errno=36, filename='/tmp/p95/aaa…')`, the traceback, rc 2, three runs alike; old code printed it as `SMASH REFUSED`. `chmod 000` on the shard's nodes.json → `CHECK COULD-NOT-TELL: store lane: … PermissionError (errno=13, filename='…/nodes.json'): Permission denied`, no traceback, rc 1 |
+
+## 158 · ONE LANDED SHARD UPDATES THE STORE IN PLACE — every `build` compiled the whole roster from the shards, so on the first production tenant (35 lanes, 220,398 nodes, 546,347 edges) each landing cost the full compile and a second `build` with nothing changed paid it again; the store now keeps what each lane contributed (`lane_nodes` · `lane_edges`), a build with no moved input writes nothing, a few moved lanes are rewritten in one transaction (node ownership re-decided for every id they held or hold, admission re-run for every edge that resolves through them), and the generation is a sum of per-row hashes, so the update spells exactly the generation a full compile of the same shards spells (2026-09-15 · graphyos issue 147)
+
+- spec: `specs/147.md` · `python3 spec_lint.py specs/147.md` → `SPEC OK`
+- format: generation format 5. A door still reads a format-4 store, and the first build after an upgrade compiles format 5 whole. graphyos 0.2.6 refuses a format-5 store, so every seat on one tenant upgrades together.
+- cost: the full compile and its store grow (about 14 s → 18 s, 314 MB → 525 MB on the core tenant) for the lane tables and their indexes. `edges(src)` became `edges(src, dst, rel)`, which still serves every `src` lookup.
+- `--container all` re-emits only a container whose shard bytes moved: its receipt records the byte digest, so freshness no longer parses 35 shards (2.1 s).
+
+| check | result |
+|---|---|
+| equality, core tenant copy (`/tmp/p147/prove.py`) | nothing moved · customer_book lands (5% of nodes gone, 500 edited, 300 added) · pg_schema drops the 273 nodes 21,027 edges of other lanes resolve into, then restores them · session_memory drops an id spec also carries · history and session_memory at once. Each is IDENTICAL to a full compile in every table, the meta and the generation, and the restore returns to the earlier generation exactly |
+| timings, same copy, three runs | one landed lane with `--container all`: 3.07 · 2.84 · 2.87 s; nothing moved: 0.44 s each |
+| a held reader | an `open_for` store held across an in-place update keeps answering; a fresh open reads the new generation and the landed record |
+| the upgrade | a fresh itsdangerous clone eaten by the published graphyos 0.2.6 answers `hunt` on this engine; `build` compiles it whole, the next `build` reads `store fresh`, `CHECK OK` |
+| the battery | `REVIEW OK` · `GRAPHY_STANDALONE_OK` |

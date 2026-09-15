@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-from graphy.native_json_graph_ir import load_graph_ir
+from graphy.native_json_graph_ir import load_graph_ir, shard_input_digest
 
 
 __all__ = ["ContainerError", "have_duckdb", "emit", "emit_all", "defer", "verify", "estate", "node_forms",
@@ -158,6 +158,9 @@ def emit(graph_dir: str | Path, *, con=None) -> dict:
             con.close()
     receipt = {
         "shard": gd.name, "input_digest": shard_digest(gd),
+        # the bytes alone: the residuals are a function of them, so an unmoved byte digest is a fresh container
+        # without parsing the shard — 35 lanes were 2.1 s of parse per `build` that changed nothing (graphyos #147)
+        "shard_bytes": shard_input_digest(gd),
         "duckdb": duckdb.__version__,
         "emitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "seconds": round(time.perf_counter() - started, 3),
@@ -209,6 +212,8 @@ def verify(graph_dir: str | Path) -> str:
         return "pending"
     if not all((gd / name).is_file() for name in (ADJACENCY, NODES)):
         return "absent"
+    if receipt.get("shard_bytes") is not None:
+        return "fresh" if receipt["shard_bytes"] == shard_input_digest(gd) else "stale"
     return "fresh" if receipt.get("input_digest") == shard_digest(gd) else "stale"
 
 

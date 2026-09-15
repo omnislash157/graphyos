@@ -218,7 +218,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
     try:
         store_path = fstore.store_path_for(substrates, tenant=tenant)
         info = fstore.compile_store(substrates, store_path, tenant=tenant,
-                                    tenant_id=args.tenant_id)
+                                    tenant_id=args.tenant_id, full=args.full)
     except (fstore.StoreError, ValueError) as exc:
         print(f"BUILD REFUSED: {exc}", file=sys.stderr)
         return 2
@@ -226,8 +226,15 @@ def _cmd_build(args: argparse.Namespace) -> int:
         # Not a refusal: the platform failed under the compile. Printed as one, an EBADF was the
         # whole symptom of a Windows store bug — no path, no operation, no frame (graphyos #78).
         return _failed("BUILD", exc, f"compiling {store_path or 'the store path'}")
-    print(f"BUILD OK: compiled {info['nodes']} nodes / {info['edges']} edges "
-          f"-> {info['db']}")
+    done = info["recompiled"]
+    if done == "all":
+        print(f"BUILD OK: compiled {info['nodes']} nodes / {info['edges']} edges -> {info['db']}")
+    elif done:
+        print(f"BUILD OK: updated {len(done)} lane(s) in place ({', '.join(done)}) — {info['nodes']} nodes / "
+              f"{info['edges']} edges, generation {info['generation']} -> {info['db']}")
+    else:
+        print(f"BUILD OK: store fresh, 0 lanes recompiled — {info['nodes']} nodes / {info['edges']} edges, "
+              f"generation {info['generation']} -> {info['db']}")
     dirs = [Path(tenant.data_home) / f"{s}_graph" for s in substrates]
     now = getattr(args, "container", "all") or "all"
     if now == "none":
@@ -244,8 +251,8 @@ def _cmd_build(args: argparse.Namespace) -> int:
     if container.have_duckdb():
         try:
             if now == "all":
-                receipts = container.emit_all(dirs)
-                print(f"CONTAINER OK: {container.summarize(receipts)} beside the shards")
+                receipts, kept = container.emit_missing(dirs)      # a fresh container would come back byte-for-byte
+                print(f"CONTAINER OK: {container.summarize(receipts)} beside the shards; {kept} already fresh")
             else:
                 receipts = container.emit_all([d for d in dirs if d.name == now])
                 deferred = [container.defer(d) for d in dirs if d.name != now]
@@ -2790,6 +2797,8 @@ def _build_parser() -> argparse.ArgumentParser:
                          help="the parquet beside every shard now (all, the default), beside one shard now "
                               "with the rest pending until graphy estate asks, or none — every shard pending "
                               "and no duckdb imported (what eat does)")
+    p_build.add_argument("--full", action="store_true",
+                         help="compile the whole store from the shards, even when only some lanes moved")
     p_build.set_defaults(handler=_cmd_build)
 
     p_container = sub.add_parser(
