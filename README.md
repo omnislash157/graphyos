@@ -1,6 +1,6 @@
 # graphy
 
-**Give your coding agent a memory it can grep. Give it a codebase it can walk.**
+Eat a codebase. Walk it. Draw it. Remember what you said about it.
 
 [![ci](https://github.com/omnislash157/graphyos/actions/workflows/ci.yml/badge.svg)](https://github.com/omnislash157/graphyos/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/graphyos)](https://pypi.org/project/graphyos/)
@@ -8,303 +8,172 @@
 [![MCP registry](https://img.shields.io/badge/MCP-io.github.omnislash157%2Fgraphyos-black)](https://registry.modelcontextprotocol.io/v0/servers?search=graphyos)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-Every `/clear` wipes your agent's mind. Every compaction throws away the three hours it just spent
-learning your code with you. graphy fixes that with a text file and a grep, then goes one step
-further: it compiles the whole codebase, dependencies included, into a graph the agent walks
-instead of reads.
+Models will build you a slop cathedral overnight. `/clear` then burns the three hours you spent learning the floor plan. graphy compiles the repo into a graph the agent walks instead of rereads, hangs a 2D map and a 3D galaxy on it, and keeps the session tails as text you can grep.
+
+No embeddings. No summarizer. No model picks an edge. If two things are connected, the code connected them.
+
+The pictures for ten repos people know: [graphy-os.com](https://graphy-os.com)
+
+![graphy's own pillars, drawn from its own store](docs/pillars.svg)
+
+Matt Hartigan, 2026. Apache 2.0.
+
+## Run it
+
+Package is `graphyos`. Command is `graphy`. Python 3.10+. Linux, macOS, Windows.
 
 ```bash
-pip install graphyos
-cd /path/to/your/repo && graphy eat . && graphy shell install --repo "$PWD"
+pip install 'graphyos[typescript]'
+cd /path/to/your/repo
+graphy eat .
+graphy showcase .
 ```
 
-Two commands. After that:
+Open `.graphy/showcase/index.html`. That is the 2D atlas. The 3D galaxy is on the same page's explorer, and on the public gallery for httpx, FastAPI, Hono, zod, and the rest.
 
-- **Sessions carry over.** The next session opens by reading the end of the last one, verbatim.
-  Not a summary. The actual exchanges, tool noise stripped, a sha on every tail.
-- **Every conversation is searchable at grep speed.** The archive is plain markdown under
-  `.claude/recovery/sessions/`. Two words give you every session where they were discussed
-  together, as a heat map with the passages, in a tenth of a second.
-- **The code is a graph, not a pile of files.** Does A reach B. What breaks if this changes. Who
-  calls this class across every package in the ring. Answered from structure in milliseconds,
-  served over MCP to Claude Code, Cursor or anything else that speaks it.
-- **The memory is welded to the code.** `eat` mints the repo's own record as a shard beside the
-  code: its commits, and every exchange in the archive bound to the symbols it names. So `blast`
-  lists the conversations that discussed a function beside its callers, and
-  `graphy history --symbol <name>` walks from the symbol into every session that mentioned it,
-  oldest first, with the commits. `graphy check` names the shard stale when the archive grows and
-  names the verb that re-mints it alone: `graphy history --remint --tenant <descriptor> --tenant-id <id>`
-  stages the next generation beside the served one, carries every other lane byte-for-byte, and lands
-  it in one descriptor rename — so a tenant with lanes `eat` never minted is never told to run `eat`.
-
-No summarizer. No embeddings. No model ever decides an edge or picks what mattered. The core is
-the Python standard library, ripgrep and three shell hooks, with zero runtime dependencies.
-
-Created by Matt Hartigan, 2026. Apache 2.0.
-
-## How the memory works
-
-Three Claude Code hooks. `PreCompact` and `SessionEnd` write the session as 1:1 user/assistant
-exchanges to `.claude/recovery/reseed_tail.md` and archive every distinct tail in sequence.
-`SessionStart` on startup, clear or compact prints the newest tail as context and names the file
-holding the whole record. A tail the parser cannot trust is refused loud, never injected hollow; a
-hook that cannot help never wedges the session.
+Hook the session so the next one starts where this one died, and so a rebuild can ride SessionStart:
 
 ```bash
-python3 -m graphy.lightning.bloodhound "gallery" --with "showcase"
-#   co-occurrence: 5 file(s) hold BOTH terms within ±10 tokens
-#   HEAT — which files this term DOMINATES … the daisy-chained spans, hottest file first
+graphy shell install --repo "$PWD"
 ```
 
-`lightning` is the search half: ripgrep discovers the files, lightning walks each hit out to the
-function, class or exchange that holds it. `bloodhound` maps two terms across the archive over
-time. Every exchange is also a node in the code graph, bound to the symbols it names, so the walk
-verbs answer "what did we say about this" with no archive read. Claude Code is the first harness; `graphy shell install --harness codex` and `--harness cursor` write the wiring those two read, and the capture reads each one's transcript by its shape. The lane in full:
-[`engine/graphy/shell/README.md`](engine/graphy/shell/README.md).
+Claude Code on Windows needs Git Bash for those hooks. Codex and Cursor get `.cmd` twins and do not. After `pip install -U graphyos`, kill any live `graphy mcp` and start it again — an old server will call a new store stale and tell you to rebuild something that is fine.
 
-## How the graph works
+Or skip the venv:
 
-One command mints your package and every package it imports into a walkable substrate, resolves who
-calls what through the code's own scope, compiles it into a store, and audits the result. Every edge
-is structural, a wormhole between shards on a shared literal, or a label bound through real scope.
-A name match is never an edge. Every answer is a walk over structure, and every walk is a query,
-never a load.
+```bash
+uvx --from 'graphyos[typescript]' graphy showcase .
+```
 
-## The thirty-second demo
+Stranger's repo? Do not let eat run their build.
 
-One blast-radius question on FastAPI, three ways, every answer scored against the store's own
-list of dependents. Run on this box; the full output is in `RECON.md` §20.
+```bash
+graphy eat . --no-provision
+graphy showcase https://github.com/you/your-repo.git --no-provision
+```
+
+Several packages in one checkout:
+
+```bash
+graphy eat . --package app --site-packages .
+```
+
+`showcase` still does not take those flags. Eat first.
+
+## What you get
+
+A store under `<repo>/.graphy/` that answers questions without a model in the loop.
 
 ```text
-`iterate_in_threadpool` in Starlette is about to change its signature. What in FastAPI breaks, and through which call chain?
+iterate_in_threadpool in Starlette is about to change.
+What in FastAPI breaks, and through which call chain?
 
-┌────────────────────────────────┬──────────┬───────────┬──────────┬────────────┐
-│ way                            │ seconds  │ tokens in │ tok out  │ dependents │
-├────────────────────────────────┼──────────┼───────────┼──────────┼────────────┤
-│ graphy alone, no model         │     0.00 │         0 │        0 │   5/5      │
-│ claude-haiku-4-5 + graphy MCP  │     14.8 │     48266 │     1286 │   5/5      │
-│ claude-opus-5 + 270 KB source  │     26.5 │    103171 │     2108 │   5/5      │
-└────────────────────────────────┴──────────┴───────────┴──────────┴────────────┘
+graphy alone, no model          0.00s    0 tokens     5/5 dependents
+haiku + graphy MCP             14.8s    48k in        5/5
+opus + 270 KB of source        26.5s    103k in       5/5
 ```
 
-A cold small model with graphy's five walk tools (`draw` came after this run) and nothing else names the same five functions, with
-the chain, as a frontier model handed the three right source files by hand. The store alone does
-it in a millisecond.
+Same five functions. The store does it in a millisecond. Full run is `RECON.md` §20.
+
+The verbs are the same on the terminal and over MCP:
+
+`hunt` · `descend` · `blast` · `walk` · `draw` · `explain` · `history`
+
+`blast` is blast radius. `walk` is does A reach B. `draw` is the neighborhood. `history` is every session that named the symbol, oldest first, with the commits.
+
+Session tails land in `.claude/recovery/` as markdown. Not a summary. The actual back and forth, tool noise stripped, a sha on every tail. Two words through lightning/bloodhound and you get every place they co-occurred.
+
+Rebuild is a generation, not a wipe. SessionStart and an hourly cron can remint a stale shard and leave the last good store up while the next one lands. That is the point if models are still writing the repo while you sleep.
+
+## What an edge is
+
+Three things, and only three.
+
+1. **Structural.** The tree said so: import, contains, inherits, decorates, calls, or a name used as a value (dispatch table, callback, decorator argument).
+2. **Wormhole.** The same node id exists in two shards by construction. `starlette://module/starlette.routing` is an edge target in FastAPI and a node in Starlette. That is a join, not a guess.
+3. **Resolved label.** A call the producer left as text, bound through the scope that actually binds it. Same module, import, re-export, `self`, `super`. If no rule reaches it, it stays text, with the reason.
+
+A name match is never an edge. The first version of this welded literals. That lied the first time two modules shared a name. This one does not.
+
+Shards stay shards. The estate is SQL over all of them. You can mint a database next to a bot and walk invoice ids without flattening the world into one soup.
+
+## Languages
+
+Python via the stdlib parser. TypeScript / TSX / JavaScript via tree-sitter (`[typescript]`). SvelteKit `$lib` and `compilerOptions.paths` resolve. Nothing else yet.
+
+`[estate]` is DuckDB for the parquet estate. Without it the JSON doors still work and the build says `CONTAINER SKIPPED` instead of pretending.
+
+## Windows
+
+Supported. CI `store-windows` runs the floor on `windows-latest`. A 32-lane tenant, 177k nodes / 460k edges, compiled green off the published wheel. Shards minted there are byte-identical to shards minted on Linux. Locks are real (`msvcrt.locking`). Verbs close their store so Windows does not `WinError 5` the landing. Consoles that only speak cp1252 do not crash a draw.
+
+Claude Code memory hooks still go through Git Bash. No bash, that lane refuses by name.
+
+## Wire an agent
 
 ```bash
-bash engine/tenants/fastapi/rebuild.sh                                   # the FastAPI tenant, from the vendored shard
-.venv/bin/python engine/tenants/fastapi/demo.py --runner claude-code     # on your Claude Code login
-ANTHROPIC_API_KEY=… .venv/bin/python engine/tenants/fastapi/demo.py      # or the SDK (pip install anthropic)
+claude plugin marketplace add omnislash157/graphyos
+claude plugin install graphy@graphyos
 ```
 
-Point any MCP client at the same server: Claude Code reads it from this repo's `.mcp.json`;
-anywhere else, `bash engine/tenants/fastapi/mcp.sh` on stdio, or `graphy mcp --tenant … --tenant-id …`
-over any eaten repo. The tools are `hunt` · `descend` · `blast` · `walk` · `draw` · `explain` · `history`, and each is a `graphy` verb of the same name at a terminal.
+Or point anything that speaks MCP at it after eat:
 
-Over your own repo, no pointer to write: `graphy eat .` once, then the Claude Code plugin at
-[`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) runs `graphy mcp --repo "${CLAUDE_PROJECT_DIR}"` —
-the server reads `.graphy/tenant.json` under the project root and the package name from the ring
-receipt eat left, and refuses by name when the repo has not been eaten. The same argv is the MCP
-registry's entry, [`server.json`](server.json) (`uvx graphyos mcp --repo <repo>`).
+```json
+{
+  "mcpServers": {
+    "graphy": {
+      "command": "graphy",
+      "args": ["mcp", "--repo", "."]
+    }
+  }
+}
+```
+
+`graphy mcp --repo <dir>` walks up to the nearest eaten ancestor the way git finds `.git`.
+
+## A few more doors
 
 ```bash
-claude plugin marketplace add omnislash157/graphyos    # the repo is the marketplace (.claude-plugin/marketplace.json) …
-claude plugin install graphy@graphyos                  # … and the plugin; inside Claude Code the same two as /plugin …
-claude --plugin-dir /path/to/graphyos                   # or a checkout, no marketplace: the checkout is the plugin
-```
-
-## The page, one line
-
-```bash
-uvx --from 'graphyos[typescript]' graphy showcase .     # no venv, no install — the page at .graphy/showcase/index.html
-```
-
-`uvx` is [uv](https://github.com/astral-sh/uv)'s runner: it makes the venv, installs `graphyos`
-into it and runs `graphy showcase` over the repo you are in — the modules drawn, the pillars the
-walk proposes, the ring, the MCP block, three questions. Run on this box from a scratch venv
-holding nothing but `uv` (`RECON.md` §86). This is the drawing it makes of graphy itself, from
-graphy's own store — [`docs/pillars.svg`](docs/pillars.svg), written by the graphy tenant's rebuild,
-re-rendered and compared byte for byte in the gate, never drawn by hand:
-
-![graphy's pillars, drawn by graphy from its own store](docs/pillars.svg)
-
-## Install, then eat — two lines
-
-```bash
-pip install 'graphyos[estate,typescript]'     # PyPI: graphyos 0.2.6 — the extras are optional
-cd /path/to/your/repo && graphy eat .        # a repo with several packages: graphy eat . --package <name>
-graphy showcase .                            # the page: .graphy/showcase/index.html — open it in a browser
-```
-
-The distribution is `graphyos`; everything you type after install is `graphy`. Python 3.10+ on
-Linux and macOS, and **Windows is supported**: a 32-lane tenant of 177,188 nodes and 460,209
-edges compiles green there off this wheel, with eighteen producers this engine never wrote, and CI's
-`store-windows` job runs the whole floor on windows-latest with no test deselected (graphyos #88). A
-minted shard's `file` fields are POSIX on every host, so a shard minted there is byte-identical to one
-minted here (graphyos #88). A door that draws
-encodes its glyphs on a `cp1252` console or pipe without `PYTHONUTF8=1`: every verb reconfigures its
-own streams to utf-8 before the first line prints (graphyos #123). `shell install` writes its hooks LF on every host. It wires Claude Code's bash hooks through Git Bash, and refuses that wiring by name on a box with none. Codex and Cursor get `.cmd` hooks that need no bash (graphyos #93). The MCP pointer in this checkout is still bash; the plugin's and the registry's run `graphy mcp` directly.
-What is proven on the platform on every push is the store lane — CI's `store-windows` job runs the
-`durable` mark, so the defect that wrote no store at all there can never come back silently
-(graphyos #77) — and the lock: every lock the engine takes (journal, index, fan-out, inventory, registry) is `msvcrt.locking` there, and
-the same job proves a concurrent append blocks instead of minting a duplicate seq (graphyos #122) — and
-the handles: every verb closes the store it opened before it returns, so the rename or replace that
-follows it (a re-eat landing, a rebuild pruning, the recompile a stale refusal advertises) is never a
-sharing violation there, and the job renames the home after an eat to prove it (graphyos #124) — and the
-spelling: the paths the engine writes into the wiring `shell install` writes, every shard's
-`PROVENANCE.json`, the showcase's page and `showcase.txt` (its commands and MCP block included) and the
-profile receipt are POSIX (`C:/work/src`, which every Windows shell and interpreter accepts), as are the
-refusals and re-run commands the issue names; every template value filled into JSON is escaped, git's utf-8
-is decoded as utf-8, and a drive-lettered path is a path to `showcase`, so the wiring parses and a shard
-minted there reads as one minted here (graphyos #125) — and the floor itself: the same job runs every
-test on windows-latest but those an open issue owns, each deselected by name with that issue, so a test that asserts POSIX (a mode bit, a fifo, a case-sensitive seat, `chmod` as unreadable, the
-locale as the encoding of utf-8 the engine wrote) either asserts the platform's truth or skips with its
-reason, and a new red there is a red on the platform (graphyos #127). The engine's other receipts (`ring.json`,
-`tenant.json`, the refresh, rebuild, farm and index receipts) still spell the OS way — one shared writer
-for all of them is graphyos #142.
-`[estate]` is DuckDB for the parquet estate; without it every JSON door still works and the build
-says `CONTAINER SKIPPED` instead of pretending. `[typescript]` is tree-sitter for the TypeScript
-and JavaScript producer.
-
-`eat` provisions the repo's own dependencies beside it (a venv with `pip install <repo>`, or
-`npm install` for a `package.json` repo — printed, and a repo that will not install is minted
-alone and the line says so), mints the package and every package it imports, resolves the labels
-through scope, compiles the store, audits it, and ends with the three things you do next: the
-MCP block to paste into Claude Code or Cursor, the drawing, three questions.
-
-**Eating a repo you do not trust runs its build.** `pip install <repo>` runs that repo's build
-backend on your machine, and `npm install` its dependencies' installs (scripts off). For a
-stranger's repo, `graphy eat . --no-provision` (and `graphy showcase <url> --no-provision`)
-runs nothing of theirs: the package is minted from its source with an empty ring, every import
-left unresolved by name, no venv, no pip, no npm. `--site-packages` names an install you
-already have and skips the provisioning.
-
-**A monorepo is its own ring.** A repo with several importable packages refuses until you name
-one with `--package`. Name the directory the packages sit in (the repo root, or `src/`) as
-`--site-packages`, and the ring closes over the siblings from the checkout: nothing is
-installed, and every third-party import is named unresolved. Eat the package that imports the others:
-
-```bash
-graphy eat . --package app --site-packages .     # app imports core: both minted, requests named unresolved
-```
-
-The packages must sit in one directory: with some at the root and some under `src/`, one
-`--site-packages` reaches one of them, and a sibling in the other is named unresolved. One `eat`
-is one ring. A later `graphy eat . --package tools --site-packages .` does not delete `app`'s
-shards: it refuses, names them, and prints that command with `--force`, which replaces them.
-
-**What it reads today.** Python, through the standard library's own parser; TypeScript (with
-TSX) and JavaScript (ESM and CommonJS), through tree-sitter. Nothing else yet: a language is a
-producer, a resolver and a locator, and those are the ones that exist.
-
-`eat` prints every step as it lands and ends with what you do next:
-
-```text
-MINT OK: httpx 538 nodes / 2548 edges -> …/.graphy/substrate.gen-…/httpx_graph
-MINT OK: httpcore 539 nodes / 2251 edges -> …/.graphy/substrate.gen-…/httpcore_graph
-…
-RING: 7 shard(s) · stdlib skipped 62 · unresolved brotli, click, h2, … -> …/.graphy/substrate.gen-…/ring.json
-RESOLVE OK: httpx 1658 label(s) -> … edge(s) (import … · local … · reexport … · self … · super …)
-BUILD OK: compiled 2522 nodes / … edges -> …/.graphy/substrate.gen-…/.mesh_store_….sqlite
-CONTAINER PENDING: 7 shard(s) — graphy estate emits them on the first ask, graphy container --emit writes them now
-CHECK OK: descriptor valid; store fresh; journal readable for all declared graphs; container fresh for 0/7 shard(s), 7 pending until the estate asks
-EAT OK: httpx + 6 ring shard(s) -> /path/to/repo/.graphy
-  the tenant:  --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx
-  a walk:      graphy walk --tenant … --tenant-id httpx --seed httpx://module/httpx --target certifi://module/certifi
-  the estate:  graphy estate --tenant … --tenant-id httpx
-  the walks:   graphy traversals --tenant … --tenant-id httpx [--replay]
-```
-
-```bash
-# 3. does A reach B — across packages, on the literal
-graphy walk --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx \
+# does A reach B, across packages
+graphy walk --tenant .graphy/tenant.json --tenant-id httpx \
     --seed httpx://module/httpx --target certifi://module/certifi
-#   WALK PATH: hops=2 steps=httpx://module/httpx -> httpx://module/httpx._config -> certifi://module/certifi
-#   TRAVERSAL: source=live reads=15 stored=…/.graphy/substrate.gen-…/traversals/<generation>/<seed>.parquet
-# run it again: source=store reads=0 — the walk is kept as rows; a walk from another seed that
-# crosses this one splices through it, and after the repo moves `graphy traversals --replay`
-# names the hops that no longer hold
 
-# 4. the whole ring as one SQL view: adj(corpus, src, dst, edge_type, attrs, dst_repr, src_repr) and nodes(corpus, id, …)
-graphy estate --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx \
-    --sql "SELECT a.corpus, n.corpus, count(*) FROM adj a JOIN nodes n ON a.dst = n.id WHERE a.corpus <> n.corpus GROUP BY 1, 2 ORDER BY 3 DESC"
-#   httpx_graph  httpcore_graph  …        ESTATE OK: 9 row(s) over 7 shard(s) in 5.8 ms
+# the ring as SQL
+graphy estate --tenant .graphy/tenant.json --tenant-id httpx \
+    --sql "SELECT a.corpus, n.corpus, count(*) FROM adj a JOIN nodes n ON a.dst = n.id WHERE a.corpus <> n.corpus GROUP BY 1, 2"
 
-# 5. is it still true — the store against the repo's HEAD, the parquet against the shards
-graphy check --tenant /path/to/repo/.graphy/tenant.json --tenant-id httpx
-```
+# still true?
+graphy check --tenant .graphy/tenant.json --tenant-id httpx
 
-Everything lands in `<repo>/.graphy/`, which ignores itself (your `git status` stays clean) and
-is rebuilt from the previous shards every time. It holds a shard per package in the ring, so a
-big application eats big: a company repo with numpy, networkx and livekit in its ring lands 165
-shards and about a gigabyte beside the repo, in a hundred seconds (15,456 files parsed). A repo with several importable packages
-is refused by name before anything is installed — `graphy eat . --package <name>` picks one.
-Node ids are `<package>://<module|class|func|method>/<dotted>`.
-
-## Or let the script do all five
-
-```bash
+# clone, eat, walk, print the done token
 bash quickstart.sh https://github.com/encode/httpx.git
-#   … GRAPHY_QUICKSTART_OK: httpx eaten in 5.9s -> staging/quickstart/httpx/.graphy
 ```
 
-Clones the repo, installs its dependencies into a venv of their own, eats it, runs the estate
-query and the walk, and prints the done token with the time. That line is the proof this README
-is true on the machine it ran on; `RECON.md` §16 records the last run.
-
-## What an edge is, and is not
-
-Every edge is one of three things: **structural** (from the syntax tree — imports, contains,
-inherits, decorates, calls, and references: a function or class used as a value — a dispatch
-table, a callback, a decorator's argument — so `blast` on a handler names what wired it), a
-**wormhole** (the same literal is a node id in two shards, free by
-construction: `starlette://module/starlette.routing` is an edge target in FastAPI's shard and a
-node in Starlette's), or a **resolved label** — a call target the producer left as text, bound
-through the scope that actually binds it: a definition in the same module, the module's own
-`imports` edges (through re-exports, one hop at a time), `self` against the containing class,
-`super` against a resolved base. A name that no rule reaches stays text, with the qualified
-literal it would need and the reason no node carries it. No name match is ever an edge.
-
-## Beyond the five
-
-| move | the door |
+| want | door |
 |---|---|
-| mint one package and its ring anywhere | `graphy smash --package <name> --site-packages <abs> --out <abs> [--corpus <checkout>] [--parity <golden shard>]` |
-| upstream moved: the newest release minted into a sibling substrate, proven, and the born/died diff per shard | `graphy refresh --tenant … --tenant-id … --package <name> [--check]` — the current substrate is never touched |
-| one question across all of it: who imports what, the most-inherited classes, who shells out — over every release in the index, in milliseconds | `graphy estate --index <abs> --emit` then `graphy estate --index <abs> --sql "SELECT name, count(*) FROM adj WHERE edge_type='imports' AND dst LIKE 'typing_extensions://%' GROUP BY 1"` |
-| the open index: the top N PyPI packages minted into one content-addressed index, in parallel, resumably | `graphy farm --top 500 --index <abs> --work <abs> --jobs 12` — then `graphy pull requests==2.32.5 --index <abs\|https://…> --out <abs>` from any box |
-| push a shard into an index; pull one back, every byte verified | `graphy push <shard>… --index <abs>` · `graphy pull pydantic==2.13.5 --index <abs\|https://…> --out <abs>` · `graphy index --index … --verify` |
-| the seam between shards, and the resolver | `graphy converge --tenant … --tenant-id … [--resolve]` |
-| the parquet: fresh or stale, by digest | `graphy container --tenant … --tenant-id … [--emit]` |
-| the stored walks; the hops a new generation broke | `graphy traversals --tenant … --tenant-id … [--replay]` |
-| the showcase: one page of your codebase, made by one command — the modules drawn (click to light what reaches what), the pillars the walk proposes, the ring, the MCP block, three questions, how to add a model | `graphy showcase .` · `graphy showcase https://github.com/encode/httpx.git` → `.graphy/showcase/index.html` + `showcase.txt` |
-| the gallery: the same page over ten repos people know, one index, one receipt — the site at graphy-os.com, built inside the Dockerfile at the root so every deploy is a fresh gallery on the current engine | `bash gallery.sh gallery $(cat gallery.txt)` → `gallery/index.html` + `gallery.json`; `docker build -t graphy-gallery .` |
-| draw it for the human: the pillars, the module map, one arm, a symbol's neighbourhood — computed from the store, ASCII in the terminal or one self-contained HTML+SVG page, no drawing by hand | `graphy draw --tenant … --tenant-id … --pillars --partition <json> --lr` · `--symbol get_request_handler --radius 2 --emit html --interactive -o page.html` — the MCP server has `draw` too |
-| a bare name: the nodes it could mean, exact id · dotted tail · substring, each with its owner and file:line | `graphy hunt <name> --tenant … --tenant-id …` — the MCP tool's twin; exit 1 when nothing matches |
-| the doors: what a symbol calls down to the primitives, who depends on it, what explains it | `graphy descend\|blast\|explain <symbol> --tenant … --tenant-id …` — `descend get_request_handler` on the FastAPI tenant crosses fastapi → starlette → anyio |
-| the MCP server over an eaten repo, for Claude Code / Cursor / any client | `graphy mcp --tenant … --tenant-id …` on stdio — `hunt` · `descend` · `blast` · `walk` · `draw` · `explain` · `history`, every one a CLI verb too |
-| the hooks and the gate, bolted onto your repo — and the memory lane with them: every session captured as 1:1 exchanges under `.claude/recovery/`, re-seeded on the next start, and the seven doors that read the archive (`lightning` · `bloodhound` · `reseed_graph`) named in the installed `GRAPHY.md` | `graphy shell install --repo <abs>` — [`engine/graphy/shell/README.md`](engine/graphy/shell/README.md) |
-| the pillars proposed from the walk, with the evidence per unit; a partition file the fan-out takes | `graphy pillars --tenant <descriptor> --tenant-id <name> [--corpus <slug>] [--write <partition.json>] [--against <partition.json>]` |
-| the fan-out a cold agent reads; one package cut into named pillars | `graphy fanout --graph-dir <shard> --out <dir> [--depth N \| --partition <json>]` · `--verify` |
-| two tenants in one process, and a walk from one into the other on a declared join — the hops printed, each tagged with its side | `graphy bridge --tenant <A> --tenant-id <a> --tenant <B> --tenant-id <b> --join typing_extensions --seed <id> --target <id>` — FastAPI → SQLAlchemy in [`engine/tenants/sqlalchemy/SQLALCHEMY.md`](engine/tenants/sqlalchemy/SQLALCHEMY.md) |
-| the arm files' walk-derived half as a generated region, verified against the store on every rebuild | `graphy arms --tenant … --tenant-id … --corpus <slug> --partition <json> --dir <arms> [--verify]` — `ARMS DRIFT` names each arm the walk moved or a hand edited |
-| the compiled hub an agent opens: partition, arms, drawings, first walk, GRAPH.md, thin pointers into the checkout | `graphy harness --repo <abs> [--tenant <descriptor> --tenant-id <name>] [--corpus <pkg>]` — curated partition.json wins; a human CLAUDE.md is left alone |
-| a second language: TypeScript over tree-sitter onto the same nine words, the ring followed into node_modules | `pip install 'graphyos[typescript]'` · `graphy smash --package <slug> --site-packages <node_modules> --corpus <src> --out … --producer typescript_ast` · `bash quickstart.sh <ts repo>` — [`engine/tenants/hono/HONO.md`](engine/tenants/hono/HONO.md) |
-| a worked tenant with four walk-derived arms | [`engine/tenants/fastapi/FASTAPI.md`](engine/tenants/fastapi/FASTAPI.md) |
+| mint one package anywhere | `graphy smash` |
+| upstream moved, current store untouched | `graphy refresh` |
+| two tenants, a declared join, hops tagged by side | `graphy bridge` |
+| cut the repo into named pillars | `graphy pillars` / `graphy fanout` |
+| arm files vs the store | `graphy arms --verify` |
+| GRAPH.md + drawings + first walk | `graphy harness --repo .` |
+| remint history only, do not `eat` a house tenant | `graphy history --remint` |
 
-Not here yet, by name: the shard index. The board is GitHub Issues on this repo.
+Not built yet, by name: the shard index. That lives on the Issues board.
+
+Worked tenants: [`engine/tenants/fastapi/FASTAPI.md`](engine/tenants/fastapi/FASTAPI.md), [`engine/tenants/hono/HONO.md`](engine/tenants/hono/HONO.md), [`engine/tenants/sqlalchemy/SQLALCHEMY.md`](engine/tenants/sqlalchemy/SQLALCHEMY.md). Memory lane in full: [`engine/graphy/shell/README.md`](engine/graphy/shell/README.md).
+
+## This checkout
+
+```text
+engine/               the product. pip install this. it is graphy.
+CLAUDE.md             router for an agent working in this repo
+RECON.md              every number in this README, with the command that re-derives it
+standalone_check.sh   fresh venv, engine/ alone → GRAPHY_STANDALONE_OK
+quickstart.sh         clone + eat + walk → GRAPHY_QUICKSTART_OK
+CHANGELOG.md          the issues, in order
+```
+
+`engine/` is the only place engine work lands.
 
 <!-- mcp-name: io.github.omnislash157/graphyos -->
-
-## The working repo
-
-```text
-engine/               THE PRODUCT — pip-installable, imports and runs as graphy, zero host reach
-CLAUDE.md             the router an agent in this repo works from
-RECON.md              the cold-start record: measured, dated, every number with its re-derive command
-standalone_check.sh   the departure gate: a fresh venv installs engine/ alone → GRAPHY_STANDALONE_OK
-quickstart.sh         the production proof → GRAPHY_QUICKSTART_OK
-staging/              development input, never released; corpora/, containers/, quickstart/ are gitignored data
-```
-
-`engine/` is the only place engine work lands. Run `standalone_check.sh` after every change to it.
