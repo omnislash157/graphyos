@@ -2,6 +2,7 @@
 halves; the proof is the ten-repo run in RECON and the image Railway builds."""
 from __future__ import annotations
 
+import html
 import importlib.util
 import json
 import subprocess
@@ -59,12 +60,23 @@ def test_compose_index_links_only_green_pages_and_never_a_hollow_entry():
           "ring": {"count": 2, "names": "certifi, idna"}}
     red = {"repo": "x/red", "slug": "red", "rc": 0, "check": ["no done token"], "arms": [], "ring": None}
     refused = {"repo": "x/refused", "slug": "refused", "rc": 2, "check": None, "arms": [], "ring": None}
-    page = gallery.compose_index([ok, red, refused], built_at="2026-09-08", engine="0.2.1", mcp="{}")
+    page = gallery.compose_index([ok, red, refused], built_at="2026-09-08", engine="0.2.1",
+                                 mcp='{"command": "/build/venv/bin/graphy", "args": ["mcp", "--repo", "/site/.work/httpx"]}')
     assert 'href="httpx/index.html"' in page and "encode/httpx" in page
     assert "x/red" not in page and "x/refused" not in page and 'href="red/' not in page
-    assert "<b>MODELS</b>" in page and "ring: 2 package(s) — certifi, idna" in page
-    assert "1 codebase(s)" in page and "graphyos 0.2.1" in page
-    assert "GRAPH" in page and "walk before you read" in page and "graphy harness" in page
+    assert 'href="httpx/galaxy.html"' in page and "3D view" in page
+    assert "<b>MODELS</b>" in page and "Dependencies: 2 package(s) — certifi, idna" in page
+    assert "1 checked codebase(s)" in page and "graphyos 0.2.1" in page
+    assert "Compile a repo into a graph your agent can query in milliseconds." in page
+    assert "graphy eat . --no-provision" in page and "graphy harness" in page
+    assert "/build/venv" not in page and "/site/.work" not in page
+    mcp = json.loads(html.unescape(page.split('<pre class="mcp">')[1].split('</pre>')[0]))
+    assert mcp["mcpServers"]["graphy"] == {
+        "command": "graphy", "args": ["mcp", "--repo", "/absolute/path/to/your/repo"]}
+    for ring in (None, {"count": 0, "names": ""}):
+        without_dependencies = gallery.compose_index([{**ok, "ring": ring}], built_at="now", engine="0.2.1")
+        assert '<div class="ring">' not in without_dependencies
+        assert '<pre class="mcp">' in without_dependencies
     assert "<script" not in page                            # the index is static html and nothing else
 
 
