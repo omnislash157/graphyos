@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 
@@ -40,6 +41,12 @@ def test_GREEN_compose_writes_a_checked_page_and_text(tmp_path):
     assert "https://" not in html.replace("https://example.invalid/fastapi.git", "")
     assert text.startswith("fastapi — drawn by graphy in one command") and "ADD YOUR MODEL" in text and "ASK IT" in text
     assert "THE PILLARS" in text and "ROUTING" in text
+    data = json.loads(re.search(r"const DATA = (.*);", html).group(1))
+    picture = showcase.draw_lane.units(store, "fastapi", min_weight=2)
+    assert {n["id"] for n in data["nodes"]} == set(picture.nodes)
+    assert all(n["arm"] == cut.group_of(n["id"]) for n in data["nodes"])
+    assert {(e["source"], e["target"]): e["weight"] for e in data["edges"]} == {
+        edge: picture.weights[edge] for edge in picture.edges}
 
 
 def test_RED_showcase_refusals(tmp_path, capsys):

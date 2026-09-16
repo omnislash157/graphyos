@@ -23,10 +23,16 @@
     .mk-link { fill: var(--link); }
     .rel { stroke: var(--muted); fill: none; }
     .rev { stroke: var(--link); stroke-dasharray: 5,4; fill: none; }
-    .up { stroke: var(--accent); stroke-width: 1.6; }
-    .down { stroke: var(--link); stroke-width: 1.6; }
+    .rel.up, .rev.up { stroke: var(--accent); stroke-width: 1.6; }
+    .rel.down, .rev.down { stroke: var(--link); stroke-width: 1.6; }
     .dim { opacity: 0.22; }
     .node rect { fill: var(--card); stroke: var(--ink); }
+    .node.up rect { stroke: var(--accent); stroke-width: 2; }
+    .node.down rect { stroke: var(--link); stroke-width: 2; }
+    .node.selected rect, .node.both rect { stroke: var(--accent); stroke-width: 2.5; }
+    .node:focus-visible { outline: none; }
+    .node:focus-visible rect { stroke: var(--accent); stroke-width: 3; }
+    .node[role="button"] { cursor: pointer; }
     .srcb rect { fill: var(--head-wash); stroke: var(--card-rule); }
     .srcb text { fill: var(--muted); font-family: var(--font-mono); font-size: 8px; text-anchor: middle; }
   </style>
@@ -41,57 +47,35 @@
     </marker>
   </defs>
   <rect class="bg" x="0" y="0" width="1067" height="374"></rect>
-      <path d="M 173,61 L 176.5,61" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 176.5,47 L 176.5,215" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 176.5,75 L 250,75" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="DOORS" data-to="CLI"/>
-      <path d="M 176.5,103 L 250,103" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="EDGE" data-to="CLI"/>
-      <path d="M 176.5,47 L 250,47" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 176.5,131 L 250,131" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 176.5,215 L 250,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 176.5,173 L 187,173" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="CUT" data-to="CLI"/>
-      <path d="M 194,75 L 316.5,75 L 316.5,89 L 341,89" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="DOORS" data-to="CLI"/>
-      <path d="M 194,103 L 316.5,103 L 316.5,131 L 411,131" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="EDGE" data-to="CLI"/>
-      <path d="M 348,131 L 491.5,131 L 491.5,145 L 509,145" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="EDGE" data-to="CLI"/>
-      <path d="M 194,47 L 411,47" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 348,47 L 575.5,47" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 516,47 L 645.5,47 L 645.5,61 L 677,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
-      <path d="M 194,131 L 330.5,131 L 330.5,187 L 411,187" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 348,187 L 491.5,187 L 491.5,215 L 575.5,215" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 516,215 L 645.5,215 L 645.5,173 L 677,173" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="CLI"/>
-      <path d="M 194,215 L 316.5,215 L 316.5,271 L 411,271" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 348,271 L 484.5,271 L 484.5,299 L 575.5,299" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 516,299 L 645.5,299 L 645.5,243 L 754,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 684,243 L 834.5,243 L 834.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
-      <path d="M 313,173 L 323.5,173" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 323.5,89 L 323.5,243" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 323.5,159 L 411,159" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="EDGE" data-to="CUT"/>
-      <path d="M 323.5,215 L 411,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
-      <path d="M 323.5,243 L 411,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
-      <path d="M 323.5,89 L 341,89" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="DOORS" data-to="CUT"/>
-      <path d="M 348,159 L 498.5,159 L 498.5,145 L 509,145" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="EDGE" data-to="CUT"/>
-      <path d="M 348,215 L 484.5,215 L 484.5,243 L 575.5,243" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
-      <path d="M 516,243 L 652.5,243 L 652.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
-      <path d="M 348,243 L 491.5,243 L 491.5,271 L 575.5,271" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
-      <path d="M 516,271 L 659.5,271 L 659.5,215 L 754,215" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
-      <path d="M 684,215 L 841.5,215 L 841.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
-      <path d="M 481,89 L 484.5,89" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 484.5,75 L 484.5,187" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 484.5,75 L 575.5,75" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
-      <path d="M 484.5,187 L 575.5,187" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
-      <path d="M 484.5,103 L 575.5,103" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
-      <path d="M 484.5,145 L 509,145" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="EDGE" data-to="DOORS"/>
-      <path d="M 516,75 L 652.5,75 L 652.5,61 L 677,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
-      <path d="M 516,187 L 666.5,187 L 666.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
-      <path d="M 516,103 L 754,103" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
-      <path d="M 684,103 L 848.5,103 L 848.5,61 L 873,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="DOORS"/>
-      <path d="M 642,145 L 659.5,145" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 659.5,61 L 659.5,173" class="rel" stroke-width="1" marker-end="url(#arrow)"/>
-      <path d="M 659.5,131 L 754,131" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
-      <path d="M 659.5,61 L 677,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="MEMORY"/>
-      <path d="M 659.5,173 L 677,173" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="PRODUCE" data-to="EDGE"/>
-      <path d="M 684,131 L 855.5,131 L 855.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
+      <path d="M 173,61 L 174.75,61 Q 176.5,61 176.5,62.75 L 176.5,168 Q 176.5,173 181.5,173 L 187,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="CUT"/>
+      <path d="M 173,61 L 174.75,61 Q 176.5,61 176.5,62.75 L 176.5,70 Q 176.5,75 181.5,75 L 311.5,75 Q 316.5,75 316.5,80 L 316.5,84 Q 316.5,89 321.5,89 L 341,89" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="DOORS"/>
+      <path d="M 173,61 L 174.75,61 Q 176.5,61 176.5,62.75 L 176.5,98 Q 176.5,103 181.5,103 L 311.5,103 Q 316.5,103 316.5,108 L 316.5,126 Q 316.5,131 321.5,131 L 486.5,131 Q 491.5,131 491.5,136 L 491.5,140 Q 491.5,145 496.5,145 L 509,145" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="EDGE"/>
+      <path d="M 173,61 L 174.75,61 Q 176.5,61 176.5,59.25 L 176.5,52 Q 176.5,47 181.5,47 L 640.5,47 Q 645.5,47 645.5,52 L 645.5,56 Q 645.5,61 650.5,61 L 677,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="MEMORY"/>
+      <path d="M 173,61 L 174.75,61 Q 176.5,61 176.5,62.75 L 176.5,126 Q 176.5,131 181.5,131 L 325.5,131 Q 330.5,131 330.5,136 L 330.5,182 Q 330.5,187 335.5,187 L 486.5,187 Q 491.5,187 491.5,192 L 491.5,210 Q 491.5,215 496.5,215 L 640.5,215 Q 645.5,215 645.5,210 L 645.5,178 Q 645.5,173 650.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="PRODUCE"/>
+      <path d="M 173,61 L 174.75,61 Q 176.5,61 176.5,62.75 L 176.5,210 Q 176.5,215 181.5,215 L 311.5,215 Q 316.5,215 316.5,220 L 316.5,266 Q 316.5,271 321.5,271 L 479.5,271 Q 484.5,271 484.5,276 L 484.5,294 Q 484.5,299 489.5,299 L 640.5,299 Q 645.5,299 645.5,294 L 645.5,248 Q 645.5,243 650.5,243 L 829.5,243 Q 834.5,243 834.5,238 L 834.5,66 Q 834.5,61 839.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CLI" data-to="SEAM"/>
+      <path d="M 187,173 L 181.5,173 Q 176.5,173 176.5,168 L 176.5,62.75 Q 176.5,61 174.75,61 L 173,61" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="CLI"/>
+      <path d="M 313,173 L 318.5,173 Q 323.5,173 323.5,168 L 323.5,94 Q 323.5,89 328.5,89 L 341,89" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="DOORS"/>
+      <path d="M 313,173 L 318.5,173 Q 323.5,173 323.5,168 L 323.5,164 Q 323.5,159 328.5,159 L 493.5,159 Q 498.5,159 498.5,154 L 498.5,150 Q 498.5,145 503.5,145 L 509,145" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="EDGE"/>
+      <path d="M 313,173 L 318.5,173 Q 323.5,173 323.5,178 L 323.5,210 Q 323.5,215 328.5,215 L 479.5,215 Q 484.5,215 484.5,220 L 484.5,238 Q 484.5,243 489.5,243 L 647.5,243 Q 652.5,243 652.5,238 L 652.5,178 Q 652.5,173 657.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="PRODUCE"/>
+      <path d="M 313,173 L 318.5,173 Q 323.5,173 323.5,178 L 323.5,238 Q 323.5,243 328.5,243 L 486.5,243 Q 491.5,243 491.5,248 L 491.5,266 Q 491.5,271 496.5,271 L 654.5,271 Q 659.5,271 659.5,266 L 659.5,220 Q 659.5,215 664.5,215 L 836.5,215 Q 841.5,215 841.5,210 L 841.5,66 Q 841.5,61 846.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="CUT" data-to="SEAM"/>
+      <path d="M 341,89 L 321.5,89 Q 316.5,89 316.5,84 L 316.5,80 Q 316.5,75 311.5,75 L 181.5,75 Q 176.5,75 176.5,70 L 176.5,62.75 Q 176.5,61 174.75,61 L 173,61" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="CLI"/>
+      <path d="M 341,89 L 328.5,89 Q 323.5,89 323.5,94 L 323.5,168 Q 323.5,173 318.5,173 L 313,173" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="CUT"/>
+      <path d="M 481,89 L 482.75,89 Q 484.5,89 484.5,90.75 L 484.5,140 Q 484.5,145 489.5,145 L 509,145" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="EDGE"/>
+      <path d="M 481,89 L 482.75,89 Q 484.5,89 484.5,87.25 L 484.5,80 Q 484.5,75 489.5,75 L 647.5,75 Q 652.5,75 652.5,70 L 652.5,66 Q 652.5,61 657.5,61 L 677,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="MEMORY"/>
+      <path d="M 481,89 L 482.75,89 Q 484.5,89 484.5,90.75 L 484.5,182 Q 484.5,187 489.5,187 L 661.5,187 Q 666.5,187 666.5,182 L 666.5,178 Q 666.5,173 671.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="PRODUCE"/>
+      <path d="M 481,89 L 482.75,89 Q 484.5,89 484.5,90.75 L 484.5,98 Q 484.5,103 489.5,103 L 843.5,103 Q 848.5,103 848.5,98 L 848.5,66 Q 848.5,61 853.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="DOORS" data-to="SEAM"/>
+      <path d="M 509,145 L 496.5,145 Q 491.5,145 491.5,140 L 491.5,136 Q 491.5,131 486.5,131 L 321.5,131 Q 316.5,131 316.5,126 L 316.5,108 Q 316.5,103 311.5,103 L 181.5,103 Q 176.5,103 176.5,98 L 176.5,62.75 Q 176.5,61 174.75,61 L 173,61" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="CLI"/>
+      <path d="M 509,145 L 503.5,145 Q 498.5,145 498.5,150 L 498.5,154 Q 498.5,159 493.5,159 L 328.5,159 Q 323.5,159 323.5,164 L 323.5,168 Q 323.5,173 318.5,173 L 313,173" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="CUT"/>
+      <path d="M 509,145 L 489.5,145 Q 484.5,145 484.5,140 L 484.5,90.75 Q 484.5,89 482.75,89 L 481,89" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="DOORS"/>
+      <path d="M 642,145 L 654.5,145 Q 659.5,145 659.5,140 L 659.5,66 Q 659.5,61 664.5,61 L 677,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="MEMORY"/>
+      <path d="M 642,145 L 654.5,145 Q 659.5,145 659.5,150 L 659.5,168 Q 659.5,173 664.5,173 L 677,173" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="PRODUCE"/>
+      <path d="M 642,145 L 654.5,145 Q 659.5,145 659.5,140 L 659.5,136 Q 659.5,131 664.5,131 L 850.5,131 Q 855.5,131 855.5,126 L 855.5,66 Q 855.5,61 860.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="EDGE" data-to="SEAM"/>
       <path d="M 810,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="MEMORY" data-to="SEAM"/>
-      <path d="M 831,173 L 862.5,173 L 862.5,61 L 873,61" class="rev" stroke-width="1" marker-end="url(#arrow-rev)" data-from="SEAM" data-to="PRODUCE"/>
+      <path d="M 677,173 L 650.5,173 Q 645.5,173 645.5,178 L 645.5,210 Q 645.5,215 640.5,215 L 496.5,215 Q 491.5,215 491.5,210 L 491.5,192 Q 491.5,187 486.5,187 L 335.5,187 Q 330.5,187 330.5,182 L 330.5,136 Q 330.5,131 325.5,131 L 181.5,131 Q 176.5,131 176.5,126 L 176.5,62.75 Q 176.5,61 174.75,61 L 173,61" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="PRODUCE" data-to="CLI"/>
+      <path d="M 677,173 L 664.5,173 Q 659.5,173 659.5,168 L 659.5,150 Q 659.5,145 654.5,145 L 642,145" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="PRODUCE" data-to="EDGE"/>
+      <path d="M 831,173 L 857.5,173 Q 862.5,173 862.5,168 L 862.5,66 Q 862.5,61 867.5,61 L 873,61" class="rel" stroke-width="1" marker-end="url(#arrow)" data-from="PRODUCE" data-to="SEAM"/>
+      <path d="M 873,61 L 853.5,61 Q 848.5,61 848.5,66 L 848.5,98 Q 848.5,103 843.5,103 L 489.5,103 Q 484.5,103 484.5,98 L 484.5,90.75 Q 484.5,89 482.75,89 L 481,89" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="SEAM" data-to="DOORS"/>
+      <path d="M 873,61 L 867.5,61 Q 862.5,61 862.5,66 L 862.5,168 Q 862.5,173 857.5,173 L 831,173" class="rev" stroke-width="1" marker-end="url(#arrow)" data-from="SEAM" data-to="PRODUCE"/>
       <g class="node" data-id="CLI">
         <rect x="40" y="40" width="133" height="42" class="card" rx="3" stroke-width="1"/>
         <text x="106.5" y="65.5" class="t-ink" font-size="12" font-family="var(--font-sans)" text-anchor="middle">CLI (184→ ·→16)</text>

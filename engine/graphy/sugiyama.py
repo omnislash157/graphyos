@@ -1005,74 +1005,151 @@ _HTML_CSS = """
     .mk-link { fill: var(--link); }
     .rel { stroke: var(--muted); fill: none; }
     .rev { stroke: var(--link); stroke-dasharray: 5,4; fill: none; }
-    .up { stroke: var(--accent); stroke-width: 1.6; }
-    .down { stroke: var(--link); stroke-width: 1.6; }
+    .rel.up, .rev.up { stroke: var(--accent); stroke-width: 1.6; }
+    .rel.down, .rev.down { stroke: var(--link); stroke-width: 1.6; }
     .dim { opacity: 0.22; }
     .node rect { fill: var(--card); stroke: var(--ink); }
+    .node.up rect { stroke: var(--accent); stroke-width: 2; }
+    .node.down rect { stroke: var(--link); stroke-width: 2; }
+    .node.selected rect, .node.both rect { stroke: var(--accent); stroke-width: 2.5; }
+    .node:focus-visible { outline: none; }
+    .node:focus-visible rect { stroke: var(--accent); stroke-width: 3; }
+    .node[role="button"] { cursor: pointer; }
+    svg[data-interactive="1"] { touch-action: none; }
     .srcb rect { fill: var(--head-wash); stroke: var(--card-rule); }
     .srcb text { fill: var(--muted); font-family: var(--font-mono); font-size: 8px; text-anchor: middle; }
 """
 
 _SCRIPT_TEMPLATE = """<script>
 (function(){
-  var svg = document.querySelector('svg[data-interactive="1"]');
+  const svg = document.querySelector('svg[data-interactive="1"]');
   if (!svg) return;
-  var ADJ = __ADJ__;
-  var vb = {x: 0, y: 0, w: __VBW__, h: __VBH__};
-  function applyVB(){ svg.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h); }
-  svg.addEventListener('wheel', function(e){
-    e.preventDefault();
-    var r = svg.getBoundingClientRect();
-    var fx = (e.clientX - r.left) / r.width * vb.w + vb.x;
-    var fy = (e.clientY - r.top) / r.height * vb.h + vb.y;
-    var f = e.deltaY < 0 ? 0.85 : 1.18;
-    vb.w *= f; vb.h *= f; vb.x = fx - (fx - vb.x) * f; vb.y = fy - (fy - vb.y) * f;
+  const ADJ = __ADJ__, initial = {x:0, y:0, w:__VBW__, h:__VBH__};
+  const nodes = Array.from(svg.querySelectorAll('g.node'));
+  const paths = Array.from(svg.querySelectorAll('path[data-from]'));
+  const byId = new Map(nodes.map(n => [n.dataset.id, n]));
+  let vb = {...initial}, frame = 0, moved = false;
+  function applyVB(){
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      svg.dispatchEvent(new CustomEvent('graphy-viewport', {detail:{...vb}}));
+    });
+  }
+  function point(x, y){
+    const matrix = svg.getScreenCTM();
+    return matrix ? new DOMPoint(x, y).matrixTransform(matrix.inverse()) : null;
+  }
+  function zoom(factor, center){
+    const next = Math.max(initial.w / 24, Math.min(initial.w * 6, vb.w * factor));
+    const f = next / vb.w, p = center || {x:vb.x + vb.w / 2, y:vb.y + vb.h / 2};
+    vb = {x:p.x - (p.x - vb.x) * f, y:p.y - (p.y - vb.y) * f, w:next, h:vb.h * f};
     applyVB();
-  }, {passive: false});
-  var drag = null;
-  svg.addEventListener('mousedown', function(e){ drag = {x: e.clientX, y: e.clientY, vx: vb.x, vy: vb.y}; });
-  window.addEventListener('mousemove', function(e){
-    if (!drag) return;
-    var r = svg.getBoundingClientRect();
-    vb.x = drag.vx - (e.clientX - drag.x) / r.width * vb.w;
-    vb.y = drag.vy - (e.clientY - drag.y) / r.height * vb.h;
+  }
+  function fit(ids){
+    let bounds = {...initial};
+    const selected = ids && ids.map(id => byId.get(id)).filter(Boolean);
+    if (selected && selected.length) {
+      const rects = selected.map(n => n.querySelector('rect')).map(r => ({x:+r.getAttribute('x'), y:+r.getAttribute('y'), w:+r.getAttribute('width'), h:+r.getAttribute('height')}));
+      const x = Math.min(...rects.map(r => r.x)) - 45, y = Math.min(...rects.map(r => r.y)) - 45;
+      bounds = {x, y, w:Math.max(...rects.map(r => r.x+r.w)) - x + 45, h:Math.max(...rects.map(r => r.y+r.h)) - y + 45};
+    }
+    const r = svg.getBoundingClientRect(), ratio = r.width / Math.max(r.height, 1);
+    const w = Math.max(bounds.w, bounds.h * ratio), h = w / ratio;
+    vb = {x:bounds.x + (bounds.w-w)/2, y:bounds.y + (bounds.h-h)/2, w, h};
     applyVB();
-  });
-  window.addEventListener('mouseup', function(){ drag = null; });
-  function clearFocus(){
+  }
+  function clearFocus(announce = true){
     svg.removeAttribute('data-focus');
-    var all = svg.querySelectorAll('.up, .down, .dim');
-    for (var i = 0; i < all.length; i++) all[i].classList.remove('up', 'down', 'dim');
+    nodes.forEach(n => { n.classList.remove('up', 'down', 'both', 'dim', 'selected'); n.setAttribute('aria-pressed', 'false'); });
+    paths.forEach(p => p.classList.remove('up', 'down', 'dim'));
+    if (announce) svg.dispatchEvent(new CustomEvent('graphy-selection', {detail:null}));
   }
   function reach(id, key){
-    var out = {}; out[id] = 1; var seen = {}; seen[id] = 1; var stack = [id];
+    const seen = new Set([id]), stack = [id];
     while (stack.length) {
-      var cur = stack.pop(); var nb = (ADJ[cur] && ADJ[cur][key]) || [];
-      for (var i = 0; i < nb.length; i++) if (!seen[nb[i]]) { seen[nb[i]] = 1; out[nb[i]] = 1; stack.push(nb[i]); }
+      const cur = stack.pop();
+      for (const next of (ADJ[cur] && ADJ[cur][key]) || []) if (!seen.has(next)) { seen.add(next); stack.push(next); }
     }
-    return out;
+    return seen;
   }
-  svg.addEventListener('click', function(e){
-    var g = e.target.closest ? e.target.closest('g.node') : null;
-    if (!g) return;
-    var id = g.getAttribute('data-id');
-    if (!id) return;
-    clearFocus();
+  function focus(id){
+    if (!byId.has(id)) return;
+    clearFocus(false);
     svg.setAttribute('data-focus', id);
-    var up = reach(id, 'in'), down = reach(id, 'out');
-    var paths = svg.querySelectorAll('path[data-from]');
-    for (var k = 0; k < paths.length; k++) {
-      var p = paths[k]; var a = p.getAttribute('data-from'), b = p.getAttribute('data-to');
-      if (up[a] && up[b]) { p.classList.add('up'); continue; }
-      if (down[a] && down[b]) { p.classList.add('down'); }
-    }
-    var nodes = svg.querySelectorAll('g.node');
-    for (var m = 0; m < nodes.length; m++) {
-      var nid = nodes[m].getAttribute('data-id');
-      if (nid !== id && !up[nid] && !down[nid]) nodes[m].classList.add('dim');
+    const up = reach(id, 'in'), down = reach(id, 'out');
+    paths.forEach(p => {
+      const a = p.dataset.from, b = p.dataset.to;
+      p.classList.add(up.has(a) && up.has(b) ? 'up' : down.has(a) && down.has(b) ? 'down' : 'dim');
+    });
+    nodes.forEach(n => {
+      const key = n.dataset.id;
+      n.classList.add(key === id ? 'selected' : up.has(key) && down.has(key) ? 'both' : up.has(key) ? 'up' : down.has(key) ? 'down' : 'dim');
+      n.setAttribute('aria-pressed', String(key === id));
+    });
+    svg.dispatchEvent(new CustomEvent('graphy-selection', {detail:{id, incoming:[...up].filter(n => n !== id), outgoing:[...down].filter(n => n !== id)}}));
+  }
+  svg.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? svg.clientHeight : 1);
+    zoom(Math.exp(Math.max(-150, Math.min(150, delta)) * .002), point(e.clientX, e.clientY));
+  }, {passive:false});
+  const pointers = new Map();
+  let gesture = null;
+  function startGesture(){
+    const values = [...pointers.values()];
+    if (!values.length) { gesture = null; return; }
+    const a = values[0], b = values[1] || a;
+    gesture = {x:(a.x+b.x)/2, y:(a.y+b.y)/2, distance:Math.hypot(a.x-b.x, a.y-b.y), vb:{...vb}, matrix:svg.getScreenCTM()?.inverse()};
+  }
+  svg.addEventListener('pointerdown', e => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    if (!pointers.size) moved = false;
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    // Capture on the node to preserve its click target after a stationary tap.
+    e.target.setPointerCapture(e.pointerId);
+    startGesture();
+  });
+  svg.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId) || !gesture?.matrix) return;
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    const values = [...pointers.values()], a = values[0], b = values[1] || a;
+    const x = (a.x+b.x)/2, y = (a.y+b.y)/2, distance = Math.hypot(a.x-b.x, a.y-b.y);
+    if (Math.hypot(x-gesture.x,y-gesture.y) > 4 || values.length > 1) moved = true;
+    if (!moved) return;
+    const p = new DOMPoint(gesture.x, gesture.y).matrixTransform(gesture.matrix), q = new DOMPoint(x,y).matrixTransform(gesture.matrix);
+    const f = gesture.distance && distance ? Math.max(initial.w/24, Math.min(initial.w*6, gesture.vb.w*gesture.distance/distance))/gesture.vb.w : 1;
+    vb = {x:p.x-(q.x-gesture.vb.x)*f, y:p.y-(q.y-gesture.vb.y)*f, w:gesture.vb.w*f, h:gesture.vb.h*f};
+    applyVB();
+  });
+  function endPointer(e){ pointers.delete(e.pointerId); startGesture(); }
+  svg.addEventListener('pointerup', endPointer);
+  svg.addEventListener('pointercancel', e => { moved = true; endPointer(e); });
+  svg.addEventListener('lostpointercapture', endPointer);
+  svg.addEventListener('click', e => {
+    if (moved) { moved = false; return; }
+    const node = e.target.closest('g.node');
+    if (node) focus(node.dataset.id); else clearFocus();
+  });
+  nodes.forEach(n => { n.setAttribute('tabindex', '0'); n.setAttribute('role', 'button'); n.setAttribute('aria-label', n.dataset.id); n.setAttribute('aria-pressed', 'false'); });
+  svg.setAttribute('tabindex', '0');
+  svg.addEventListener('keydown', e => {
+    const node = e.target.closest('g.node');
+    if (node && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); focus(node.dataset.id); }
+    else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoom(.8); }
+    else if (e.key === '-') { e.preventDefault(); zoom(1.25); }
+    else if (e.key === '0') { e.preventDefault(); fit(); }
+    else if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+      e.preventDefault(); vb.x += e.key === 'ArrowLeft' ? -vb.w*.08 : e.key === 'ArrowRight' ? vb.w*.08 : 0;
+      vb.y += e.key === 'ArrowUp' ? -vb.h*.08 : e.key === 'ArrowDown' ? vb.h*.08 : 0; applyVB();
     }
   });
-  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') clearFocus(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') clearFocus(); });
+  svg.addEventListener('graphy-focus', e => focus(e.detail));
+  svg.addEventListener('graphy-clear', () => clearFocus());
+  svg.addEventListener('graphy-fit', e => fit(e.detail));
+  svg.addEventListener('graphy-zoom', e => zoom(e.detail));
 })();
 </script>
 """
@@ -1143,9 +1220,28 @@ def _dedupe(pts):
 def _edge_path(pts, rev, eid, from_to) -> str:
     if len(pts) < 2:
         return ""
-    d = "M " + " L ".join(f"{x:g},{y:g}" for (x, y) in pts)
+    if rev:
+        pts = list(reversed(pts))
+    # Round bends without moving the endpoints or leaving the computed channels.
+    clean = []
+    for point in pts:
+        if len(clean) >= 2:
+            a, b = clean[-2:]
+            if (a[0] == b[0] == point[0]) or (a[1] == b[1] == point[1]):
+                clean.pop()
+        clean.append(point)
+    d = f"M {clean[0][0]:g},{clean[0][1]:g}"
+    for a, b, c in zip(clean, clean[1:], clean[2:]):
+        before = ((a[0]-b[0])**2 + (a[1]-b[1])**2)**.5
+        after = ((c[0]-b[0])**2 + (c[1]-b[1])**2)**.5
+        radius = min(5, before/2, after/2)
+        if radius:
+            x, y = b[0]+(a[0]-b[0])*radius/before, b[1]+(a[1]-b[1])*radius/before
+            u, v = b[0]+(c[0]-b[0])*radius/after, b[1]+(c[1]-b[1])*radius/after
+            d += f" L {x:g},{y:g} Q {b[0]:g},{b[1]:g} {u:g},{v:g}"
+    d += f" L {clean[-1][0]:g},{clean[-1][1]:g}"
     cls = "rev" if rev else "rel"
-    mk = "url(#arrow-rev)" if rev else "url(#arrow)"
+    mk = "url(#arrow)"
     attrs = ""
     if eid is not None and eid in from_to:
         f, t = from_to[eid]
@@ -1187,25 +1283,32 @@ def emit_svg(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bo
             return edge_pt(layer_along[g + 1] + layer_thick[g + 1] / 2.0, seg["cb"] + 0.5)
         return edge_pt(layer_along[g + 1], seg["cb"] + 0.5)
 
+    # Keep the layout's buses, but join their pieces into one path per real edge.
+    # A shared bus has no endpoint of its own; its arrows and focus used to stop
+    # halfway across the drawing. Reciprocal edges also need both directions.
     from_to = _edge_from_to(lo)
-    edge_lines = []
+    pieces = {}
     for r in pl.routes:
         g = r["gap"]
         bus_along = layer_along[g] + layer_thick[g] + (r["chan"] or 0)
-        if r["kind"] == "straight":
-            s = r["segs"][0]
-            edge_lines.append(_edge_path([exit_pt(s["src"], s["ca"] + 0.5), entry_pt(s)], s["rev"], s["eid"], from_to))
-        elif r["kind"] == "jog":
-            s = r["segs"][0]
-            edge_lines.append(_edge_path(_dedupe([exit_pt(s["src"], s["ca"] + 0.5), bus_pt(bus_along, s["ca"] + 0.5),
-                                                  bus_pt(bus_along, s["cb"] + 0.5), entry_pt(s)]), s["rev"], s["eid"], from_to))
-        else:
-            segs = r["segs"]
-            cc = [s["cb"] + 0.5 for s in segs] + [segs[0]["ca"] + 0.5]
-            edge_lines.append(_edge_path([exit_pt(segs[0]["src"], segs[0]["ca"] + 0.5), bus_pt(bus_along, segs[0]["ca"] + 0.5)], False, None, from_to))
-            edge_lines.append(_edge_path([bus_pt(bus_along, min(cc)), bus_pt(bus_along, max(cc))], False, None, from_to))
-            for s in segs:
-                edge_lines.append(_edge_path([bus_pt(bus_along, s["cb"] + 0.5), entry_pt(s)], s["rev"], s["eid"], from_to))
+        for s in r["segs"]:
+            pts = [exit_pt(s["src"], s["ca"] + 0.5)]
+            if r["kind"] != "straight":
+                pts += [bus_pt(bus_along, s["ca"] + 0.5), bus_pt(bus_along, s["cb"] + 0.5)]
+            pts.append(entry_pt(s))
+            pieces.setdefault(s["eid"], []).append((g, pts, s["rev"]))
+    routes = {}
+    for eid, parts in pieces.items():
+        a, b = from_to[eid]
+        if parts[0][2]:
+            a, b = b, a
+        routes[a, b] = _dedupe([point for _, pts, _ in sorted(parts) for point in pts])
+    edge_lines = []
+    for eid, (a, b) in enumerate(lo.edges):
+        rev = (a, b) not in routes
+        pts = routes.get((b, a) if rev else (a, b))
+        if pts:
+            edge_lines.append(_edge_path(pts, rev, eid, {eid: (a, b)}))
 
     def card(n, x, y, w, h, label):
         return [f'      <g class="node" data-id="{_esc(n)}">',
@@ -1228,6 +1331,7 @@ def emit_svg(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bo
 
     iso_lines = []
     iso_last_row = -1
+    iso_right = 0
     if lo.isolated:
         cur_col = cur_row = 0
         for n in lo.isolated:
@@ -1239,16 +1343,18 @@ def emit_svg(lo: Layout, *, title: str = "", orient: str = "TB", interactive: bo
             x = round(_HTML_PAD + cur_col * _HTML_CW)
             y = round(_HTML_PAD + (pl.H + 1 + cur_row * (BOX_H + 1)) * _HTML_CH)
             iso_lines += card(n, x, y, round(wc * _HTML_CW), round(BOX_H * _HTML_CH), lbl) + ['      </g>']
+            iso_right = max(iso_right, x + round(wc * _HTML_CW))
             cur_col += wc + 1
         iso_last_row = cur_row
 
     content_h = pl.H * _HTML_CH
     if iso_last_row >= 0:
         content_h = max(content_h, (pl.H + 1 + iso_last_row * (BOX_H + 1) + BOX_H) * _HTML_CH)
-    vb_w = pl.W * _HTML_CW + 2 * _HTML_PAD
+    vb_w = max(pl.W * _HTML_CW + 2 * _HTML_PAD, iso_right + _HTML_PAD)
     vb_h = content_h + 2 * _HTML_PAD
     inter_attr = ' data-interactive="1"' if interactive else ""
-    svg = [f'<svg viewBox="0 0 {vb_w:g} {vb_h:g}" role="img" aria-labelledby="svg-title svg-desc"{inter_attr}>',
+    role = "group" if interactive else "img"
+    svg = [f'<svg viewBox="0 0 {vb_w:g} {vb_h:g}" role="{role}" aria-labelledby="svg-title svg-desc"{inter_attr}>',
            f'  <title id="svg-title">{_esc(title)}</title>',
            f'  <desc id="svg-desc">Computed layered layout of {_esc(title)}.</desc>',
            "  <defs>",

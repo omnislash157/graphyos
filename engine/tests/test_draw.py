@@ -3,6 +3,8 @@ as ASCII and as a checked HTML+SVG page. A floor; the proof is the FastAPI atlas
 from __future__ import annotations
 
 import json
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,40 @@ import graphy.fanout as fanout
 import graphy.federated_store as fs
 import graphy.sugiyama as sugi
 from test_doors import SEED, _fixture
+
+
+@pytest.mark.parametrize("orient", ["LR", "TB"])
+def test_svg_routes_each_dependency_continuously_to_its_actual_target(orient):
+    # A fan, a long edge through dummy layers, a cycle, and reciprocal edges.
+    edges = [("a", "b"), ("a", "c"), ("b", "c"), ("c", "d"), ("a", "d"), ("d", "a"), ("c", "a")]
+    lo = sugi.layout(["a", "b", "c", "d"], edges)
+    svg, _ = sugi.emit_svg(lo, orient=orient, interactive=True)
+    root = ET.fromstring(svg)
+    cards = {g.attrib["data-id"]: g.find("rect").attrib for g in root.findall("g")}
+    paths = root.findall("path")
+    assert {(p.attrib["data-from"], p.attrib["data-to"]) for p in paths} == set(edges)
+    assert len(paths) == len(edges), "shared buses must not produce extra arrows or severed focus paths"
+
+    def on_boundary(point, card):
+        x, y, w, h = (float(card[k]) for k in ("x", "y", "width", "height"))
+        px, py = point
+        return (x - 1 <= px <= x + w + 1 and y - 1 <= py <= y + h + 1
+                and min(abs(px-x), abs(px-x-w), abs(py-y), abs(py-y-h)) <= 1)
+
+    for path in paths:
+        coords = list(map(float, re.findall(r"-?\d+(?:\.\d+)?", path.attrib["d"])))
+        assert on_boundary(coords[:2], cards[path.attrib["data-from"]])
+        assert on_boundary(coords[-2:], cards[path.attrib["data-to"]])
+        assert path.attrib["marker-end"] == "url(#arrow)"
+
+
+def test_isolated_module_cards_fit_inside_the_svg_viewbox():
+    svg, _ = sugi.emit_svg(sugi.layout(["short", "a_very_long_isolated_module_name"], []))
+    root = ET.fromstring(svg)
+    _, _, width, height = map(float, root.attrib["viewBox"].split())
+    for card in root.findall("g/rect"):
+        assert float(card.attrib["x"]) + float(card.attrib["width"]) <= width
+        assert float(card.attrib["y"]) + float(card.attrib["height"]) <= height
 
 
 def _cut(tmp_path: Path) -> Path:
