@@ -558,7 +558,8 @@ def _cmd_showcase(args: argparse.Namespace) -> int:
         print("SHOWCASE REFUSED: name a git url or a repo path (`.` for the one you stand in)", file=sys.stderr)
         return 2
     try:
-        r = showcase_lane.showcase(args.target, out=args.out, work=args.work, log=print, no_provision=args.no_provision)
+        r = showcase_lane.showcase(args.target, out=args.out, work=args.work, log=print, no_provision=args.no_provision,
+                                   package=args.package, site_packages=args.site_packages)
     except (showcase_lane.ShowcaseError, TenantError, fstore.StoreError, fanout.FanoutError,
             pillars_lane.PillarsError) as exc:
         # one line, never a stack: the partition and the proposal refuse by name (graphyos #46)
@@ -1238,7 +1239,8 @@ def _cmd_check(args: argparse.Namespace) -> int:
             findings.append((
                 "RED",
                 f"store lane: {exc}",
-                "rebuild the store with `graphy build`"))
+                "restart or reconnect the process running the old engine" if isinstance(exc, fstore.StoreNewerError)
+                else "rebuild the store with `graphy build`"))
         except OSError as exc:
             findings.append((
                 "COULD-NOT-TELL",
@@ -1769,8 +1771,10 @@ def _cmd_smash(args: argparse.Namespace) -> int:
         print(f"SMASH REFUSED: {exc}", file=sys.stderr)
         return 2
     unresolved = receipt["unresolved"]
+    collisions = receipt.get("stdlib_collisions", {})
     print(f"RING: {len(receipt['minted'])} shard(s) · stdlib skipped {len(receipt['stdlib'])}"
           + (f" · unresolved {', '.join(unresolved)}" if unresolved else " · ring closed")
+          + (" · stdlib collision " + ", ".join(f"{k} at {v}" for k, v in collisions.items()) if collisions else "")
           + f" -> {Path(receipt['out']) / smash_lane.RING_NAME}")
     if args.parity:
         root_shard = receipt["minted"][args.package]["shard"]
@@ -2930,6 +2934,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("--work", default=None, help="where a url is cloned (default ./showcase/<owner>/<name> under the current directory — the run says so)")
     p_show.add_argument("--no-provision", action="store_true",
                        help="eat with --no-provision: nothing of the repo's runs, the ring is empty")
+    p_show.add_argument("--package", default=None,
+                       help="the importable package to draw when the repo carries more than one (handed to eat)")
+    p_show.add_argument("--site-packages", default=None,
+                       help="the directory that holds the package's siblings, as the ring (handed to eat)")
     p_show.set_defaults(handler=_cmd_showcase)
 
     p_harness = sub.add_parser(

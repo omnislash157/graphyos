@@ -111,6 +111,11 @@ class StoreError(RuntimeError):
     pass
 
 
+class StoreNewerError(StoreError):
+    """The store was compiled by a newer graphyos than this process runs: the store is current and the
+    process is the stale side. A face prints restart-or-reconnect, never the rebuild advice (graphyos #148)."""
+
+
 class StaleCursorError(StoreError):
 
     def __init__(self, minted: str, live: str, seed: str):
@@ -398,10 +403,21 @@ class SQLiteStore:
             # generations only once the inputs moved, and a moved input is a rebuild either way. So an upgrade
             # never shuts a door: the next `build` compiles format 5 whole and updates in place after (#147).
             if got not in READABLE_GENERATION_FORMATS:
+                from graphy import __version__
+                if str(got or "").isdigit() and int(got) > GENERATION_FORMAT:
+                    # The store is ahead of the engine reading it: `pip install -U` never touches a running
+                    # process, so an MCP server launched before the upgrade meets the store the new build
+                    # converted. The store is current; the process is stale (graphyos #148).
+                    raise StoreNewerError(
+                        f"store at {p} was compiled under generation format {got} by a newer graphyos than "
+                        f"this process runs (graphyos {__version__} speaks format {GENERATION_FORMAT}). The store "
+                        f"is current and this process is the stale side: restart or reconnect it (the MCP "
+                        f"server, the client that launched it) so it loads the installed engine. Do not "
+                        f"rebuild the store")
                 raise StoreError(
                     f"store at {p} was compiled under generation format "
-                    f"{got or '<pre-versioning>'}; this build speaks {GENERATION_FORMAT}. Its "
-                    f"generations are not comparable with ours — recompile with `compile_store`")
+                    f"{got or '<pre-versioning>'}; this build (graphyos {__version__}) speaks "
+                    f"{GENERATION_FORMAT}. Its generations are not comparable with ours — recompile with `compile_store`")
             if "input_digest" not in meta:
                 raise StoreError(f"store at {p} carries no input_digest row — refusing to "
                                  f"serve a snapshot whose freshness cannot be measured; "
@@ -1109,7 +1125,8 @@ def refused(verb: str, exc: BaseException) -> str:
     the MCP server as the tool's error text (graphyos #97: one contract, two faces, one copy of the
     words). Flattened to one line: a refusal names its rebuild and a client reads it whole."""
     import re
-    return re.sub(r"[ \t]*\r?\n[ \t]*", " ", f"{verb} REFUSED: {exc} — rebuild the store with `graphy build`")
+    remedy = "" if isinstance(exc, StoreNewerError) else " — rebuild the store with `graphy build`"
+    return re.sub(r"[ \t]*\r?\n[ \t]*", " ", f"{verb} REFUSED: {exc}{remedy}")
 
 
 def input_signature(store_path: str | Path, substrates: list[str], *, tenant: Tenant,

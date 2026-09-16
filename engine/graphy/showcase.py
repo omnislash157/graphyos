@@ -243,10 +243,13 @@ def _clone(url: str, work: Path, log) -> Path:
 
 
 def showcase(target: str, *, out: str | Path | None = None, work: str | Path | None = None, log=None,
-             eat=None, open_store=None, graphy_cmd: list[str] | None = None, no_provision: bool = False) -> dict:
+             eat=None, open_store=None, graphy_cmd: list[str] | None = None, no_provision: bool = False,
+             package: str | None = None, site_packages: str | None = None) -> dict:
     """Clone when a URL, eat when no .graphy stands or the one standing is behind the working tree
     (its cursor drifted, graphyos #39), propose, draw, compose, check.
-    ``no_provision`` is handed to the eat: nothing of the repo's runs, the ring is empty (graphyos #35)."""
+    ``no_provision`` is handed to the eat: nothing of the repo's runs, the ring is empty (graphyos #35).
+    ``package`` and ``site_packages`` are handed to the eat too; a repo carrying several importable packages
+    and naming none refuses here, in showcase's words, with the showcase line to run (graphyos #100)."""
     from graphy import federated_store as fstore
     from graphy.cli import _load_tenant, _roster, _graphy_command, served_data_home, main as cli_main
     log = log or (lambda *_: None)
@@ -278,7 +281,24 @@ def showcase(target: str, *, out: str | Path | None = None, work: str | Path | N
         if stale:
             log(f"SHOWCASE: {stale} — eating again")
     if not desc.is_file() or stale:
+        if package is None and not (repo / "package.json").is_file():
+            # eat's several-packages refusal names --package and --site-packages, flags showcase did not take
+            # until graphyos #100: the user was told to pass flags to a command that refused them. Settled here,
+            # before a provision is paid, in the words of the command the user actually ran.
+            from graphy.cli import _package_candidates
+            cands = _package_candidates(repo)
+            if len(cands) > 1:
+                homes = sorted({c.parent for c in cands})
+                lines = [f"  graphy showcase {repo.as_posix()} --package {c.name} --site-packages {c.parent.as_posix()}"
+                         for c in cands]
+                raise ShowcaseError(
+                    f"{len(cands)} importable package(s) under {repo.as_posix()} — {', '.join(c.name for c in cands)}"
+                    f"{' in ' + str(len(homes)) + ' directories' if len(homes) > 1 else ''}; name the one to draw and "
+                    f"the directory that holds its siblings as the ring (its siblings minted beside it, nothing "
+                    f"installed). One of:\n" + "\n".join(lines))
         argv = ["eat", str(repo)] + (["--no-provision"] if no_provision else [])
+        argv += ["--package", package] if package else []
+        argv += ["--site-packages", site_packages] if site_packages else []
         rc = (eat or (lambda r: cli_main(argv)))(repo)
         if rc != 0:
             raise ShowcaseError(f"eat exited {rc} for {repo.as_posix()}")

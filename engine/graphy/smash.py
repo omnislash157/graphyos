@@ -570,6 +570,7 @@ def smash(package: str, *, site_packages: str | Path, out: str | Path,
     scheme_index: dict[str, dict] = {}
     imports: dict[str, list[str]] = {}
     skipped_stdlib: set[str] = set()
+    collisions: dict[str, str] = {}
     unresolved: dict[str, str] = {}
     queue: list[tuple[str, Path]] = [(package, root_corpus)]
     while queue:
@@ -607,7 +608,17 @@ def smash(package: str, *, site_packages: str | Path, out: str | Path,
             if s in minted or s in unresolved or any(q[0] == s for q in queue):
                 continue
             if s in stdlib:
-                skipped_stdlib.add(s)
+                # A repo's own package named like a standard-library module (`email/` beside `app/`) used to be
+                # counted in `stdlib skipped` and never minted, with nothing saying the repo's directory was the
+                # one skipped. The name is matched whole, by the same locate the ring uses (graphyos #101).
+                loc = prod.locate(s, sp) if sp.is_dir() else None
+                if loc is not None:
+                    collisions[s] = str(loc)
+                    unresolved[s] = (f"stdlib collision: {loc} is named like the standard library module {s!r}, "
+                                     f"which wins the import — not minted; rename the directory, or eat it alone "
+                                     f"with --package {s}")
+                else:
+                    skipped_stdlib.add(s)
                 continue
             if slug_for(s) is None:
                 unresolved[s] = "not a slug: the shard grammar is [a-z0-9_]+"
@@ -623,7 +634,7 @@ def smash(package: str, *, site_packages: str | Path, out: str | Path,
         "root": package, "producer": producer, "site_packages": str(sp), "out": str(out_dir), "mint_command": command,
         "minted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "minted": minted, "imports": imports, "scheme_index": scheme_index,
-        "stdlib": sorted(skipped_stdlib), "standard": sorted(stdlib),
+        "stdlib": sorted(skipped_stdlib), "stdlib_collisions": dict(sorted(collisions.items())), "standard": sorted(stdlib),
         "unresolved": dict(sorted(unresolved.items())),
     }
     _write_json(out_dir / RING_NAME, receipt)
